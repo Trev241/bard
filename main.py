@@ -2,11 +2,16 @@ import discord
 import asyncio
 import logging
 import sys
+import json
 
 # Importing cogs
 import music
 
 from discord.ext import commands
+
+# READING CONFIG AND FETCHING TOKEN
+with open('config.json') as config_file:
+    config = json.load(config_file)
 
 # SETTING UP LOGGING
 root = logging.getLogger()
@@ -44,7 +49,7 @@ async def main():
     async with client:
         await load_extensions()
         await client.start(
-            token="MTA0OTU1MjgzNjg5NzI4NDE5Ng.G6Ld6A.ZJBb5P58EUmXHbDJPU62jZblHX2r8vBxNDhAvY"
+            token=config['token']
         )
 
 asyncio.run(main())

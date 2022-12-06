@@ -40,7 +40,7 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         # Resetting bot's state
         self.idle = True
-        self.loop = False
+        self.looping = False
         self.current_track = None
         self.queue = deque()
 
@@ -58,7 +58,6 @@ class Music(commands.Cog):
                 'url': info['formats'][0]['url'],
                 'duration': f'{int(info["duration"] / 60)}:{info["duration"] % 60}',
                 'thumbnail': info['thumbnails'][0]['url'],
-                'source': await discord.FFmpegOpusAudio.from_probe(info['formats'][0]['url'], **FFMPEG_OPTIONS),
             }
             self.queue.append(track)
 
@@ -67,21 +66,29 @@ class Music(commands.Cog):
             else:
                 await ctx.send(f'Queued {track["title"]}')
 
+    async def on_track_complete(self, ctx):
+        # Pop track if not looping
+        if not self.looping:
+            self.queue.popleft()
+        
+        await self.play_next(ctx)
+
     async def play_next(self, ctx):
         if len(self.queue) > 0:
             self.idle = False
-            
-            # if not self.looping:
-            self.current_track = self.queue.popleft()
+
+            self.current_track = self.queue[0]
 
             # Fetching Event Loop to create a new task i.e. to play the next song
             # Courtesy of 
             # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
             el = asyncio.get_event_loop()
 
+            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **FFMPEG_OPTIONS)
+
             ctx.voice_client.play(
-                self.current_track['source'], 
-                after=lambda error : el.create_task(self.play_next(ctx))
+                source,
+                after=lambda error : el.create_task(self.on_track_complete(ctx))
             )
 
             await ctx.send(f'Now playing: {self.current_track["title"]}')
@@ -96,8 +103,13 @@ class Music(commands.Cog):
     @commands.command()
     async def loop(self, ctx):
         self.looping = not self.looping
-        await ctx.send(f'Looping {self.current_track["title"]}')
-        
+        await ctx.send(f'{"Looping" if self.looping else "Stopped looping"}: {self.current_track["title"]}')
+
+    @commands.command(aliases=['queue'])
+    async def show_queue(self, ctx):
+        tracks = '\n'.join([f'{i + 1}. {track["title"]}' for i, track in enumerate(self.queue)])
+        await ctx.send(tracks)
+
     @commands.command()
     async def pause(self, ctx):
         ctx.voice_client.pause()
