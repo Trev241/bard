@@ -15,6 +15,8 @@ YDL_OPTIONS = {
     'format': 'bestaudio'
 }
 
+EMBED_COLOR_THEME = 15844367
+
 IDLE_TIMEOUT_INTERVAL = 3
 
 class Music(commands.Cog):
@@ -51,6 +53,36 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         self.reset()
         await ctx.voice_client.disconnect()
+
+    @commands.command(aliases=['playing', 'nowplaying'])
+    async def now(self, ctx):
+        embed = discord.Embed.from_dict({
+            'title': self.current_track['title'],
+            'description': 'is now playing',
+            'thumbnail': {
+                'url': self.current_track['thumbnail'],
+            },
+            'color': 15844367,
+            'fields': [
+                {
+                    'name': 'Duration',
+                    'value': self.current_track['duration'],
+                    'inline': True
+                },
+                {
+                    'name': 'Loop',
+                    'value': 'Yes' if self.looping_video else 'No',
+                    'inline': True
+                },
+                {
+                    'name': 'Next',
+                    'value': self.queue[1]['title'] if len(self.queue) > 1 else self.current_track['title'] if self.looping_queue else '(End of queue)',
+                    'inline': True
+                }
+            ]
+        })
+
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def play(self, ctx, url):
@@ -157,29 +189,45 @@ class Music(commands.Cog):
             after=lambda error : el.create_task(self.on_track_complete(ctx))
         )
 
-        await ctx.send(f'Now playing: {self.current_track["title"]}')
+        # await ctx.send(f'Now playing: {self.current_track["title"]}')
+        await self.now(ctx)
 
     @play.error
     async def play_error(self, ctx, error):
         await ctx.send(f'There was an error while trying to process your request. Error: {error}')
 
-    @commands.command()
+    @commands.group(invoke_without_command=True)
     async def loop(self, ctx):
         self.looping_video = not self.looping_video
         await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}')
 
-    @commands.command()
+    @loop.command(name='queue', aliases=['all'])
     async def loop_queue(self, ctx):
         self.looping_queue = not self.looping_queue
         await ctx.send(f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}')
 
-    @commands.command(aliases=['queue'])
+    @commands.command(name='queue')
     async def show_queue(self, ctx):
-        tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
-            [f'{i + 1}.\t{track["title"]}' for i, track in enumerate(self.queue)]
-        ) + ('\n[LOOP BACK TO HEAD]' if self.looping_queue else '')
+        # tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
+        #     [f'{i + 1}.\t{track["title"]}' for i, track in enumerate(self.queue)]
+        # ) + ('\n[LOOP BACK TO HEAD]' if self.looping_queue else '')
 
-        await ctx.send(tracks)
+        # await ctx.send(tracks)
+
+        embed = discord.Embed.from_dict({
+            'title': 'Bard\'s Queue',
+            'description': f'{len(self.queue)} track(s) queued.{" Queue is currently set to loop." if self.looping_queue else ""}',
+            'color': 15844367,
+            'fields': [
+                {
+                    'name': f'{i + 1}. {track["title"]}',
+                    'value': track['duration'],
+                    'inline': False
+                } for i, track in enumerate(self.queue)
+            ]
+        })
+
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def skip(self, ctx):

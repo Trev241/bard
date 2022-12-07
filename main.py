@@ -32,7 +32,7 @@ client = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 
 async def load_extensions():
     '''
-    Load all extensions asynchornously by inovking the setup method of each cog.
+    Load all extensions asynchronously by inovking the setup method of each cog.
     '''
     
     for i in range(len(cogs)):
