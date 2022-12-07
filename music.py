@@ -20,8 +20,20 @@ IDLE_TIMEOUT_INTERVAL = 3
 class Music(commands.Cog):
     def __init__(self, client):
         self.client = client
-        self.looping = False
+        self.reset()
+
+    def reset(self):
+        '''
+        Resets the state of the bot. 
+        '''
+
+        self.idle = True
+        self.skip_track = False
+        self.removed_first = False
+        self.looping_video = False
+        self.looping_queue = False
         self.current_track = None
+
         self.queue = deque()
 
     @commands.command()
@@ -37,11 +49,7 @@ class Music(commands.Cog):
 
     @commands.command()
     async def disconnect(self, ctx):
-        # Resetting bot's state
-        self.looping = False
-        self.current_track = None
-        self.queue = deque()
-
+        self.reset()
         await ctx.voice_client.disconnect()
 
     @commands.command()
@@ -50,30 +58,89 @@ class Music(commands.Cog):
         await self.join(ctx)
 
         with youtube_dl.YoutubeDL(YDL_OPTIONS) as ydl:
+            await ctx.send('Searcing... (this may take some time if you have queued a playlist)')
+
             info = ydl.extract_info(url, download=False)
-            track = {
-                'title': info['title'],
-                'url': info['formats'][0]['url'],
-                'duration': str(datetime.timedelta(seconds=info['duration'])),
-                'thumbnail': info['thumbnails'][0]['url'],
-            }
 
-            self.queue.append(track)
+            # Determine if playlist or a single video. All other formats are ignored for now
+            if info.get('_type', None) == 'playlist':
 
-            # Play track immediately if it is the only element
-            if len(self.queue) == 1:
-                await self.play_next(ctx)
-            else:
+                for entry in info['entries']:
+                    self.queue.append(Music.create_track(entry))
+            
+                await ctx.send(f'Queued {len(info["entries"])} entries')
+
+            elif 'formats' in info:
+
+                track = Music.create_track(info)
+                self.queue.append(track)
                 await ctx.send(f'Queued {track["title"]}')
 
+            else:
+
+                await ctx.send('Unsupported format')
+                return
+
+            # Debugging
+            # with open('youtube_dl_info.txt', 'w') as f:
+            #     json.dump(info, f, ensure_ascii=True, indent=4)
+
+            # Commence playback if bot is idle
+            if self.idle:
+                self.idle = False
+                await self.play_next(ctx)
+
+    def create_track(info):
+        '''
+        Returns a dict containing a subset of the track's original attributes.
+        '''
+
+        return {
+            'title': info['title'],
+            'url': info['formats'][0]['url'],
+            'duration': str(datetime.timedelta(seconds=info['duration'])),
+            'thumbnail': info['thumbnails'][0]['url'],
+        }
+
     async def on_track_complete(self, ctx):
-        # Pop track if not looping
-        if not self.looping:
-            self.queue.popleft()
+        '''
+        Callback for when a track has completed playing either by exhausting its source or through interruption.
+        The decision on how to manage the queue is based on the current state of the bot.
+
+        If the bot is looping a single track, then the track at the front of the queue is not removed.
+        If the bot is skipping a track, then the track at the front of the queue is removed
+        If the bot is looping the queue, then the track at the front of the queue is removed and inserted at the rear.
+        
+        If both flags are true (i.e. loop single as well as queue), then the task of looping the single track takes
+        higher priority over looping the queue as one would expect intuitively. In other words, the next track
+        will not be played unless looping for the current track has been turned off. This is because the track  
+        at the front of the queue is not popped.
+
+        At the end of the callback, if there are still items in the queue, then play_next() is called to play
+        the next track at the head of the queue.
+        '''
+
+        # Pop the first track if
+        # 1. Not looping single
+        # 2. Skip called
+        # BUT DO NOT REMOVE if it already has been removed
+        if (not self.looping_video or self.skip_track) and not self.removed_first:
+            track = self.queue.popleft()
+
+            # Insert the track back at the end of the list if queue is being looped
+            if self.looping_queue:
+                self.queue.append(track)
         
         # Continue onto next track if it exists
         if len(self.queue) > 0:
             await self.play_next(ctx)
+        else:
+            self.reset()
+
+        # TODO: Perhaps find a better way to do these?
+        # Reset control flags
+        self.skip_track = False
+        self.removed_first = False
 
     async def play_next(self, ctx):
         self.current_track = self.queue[0]
@@ -98,37 +165,43 @@ class Music(commands.Cog):
 
     @commands.command()
     async def loop(self, ctx):
-        self.looping = not self.looping
-        await ctx.send(f'{"Looping" if self.looping else "Stopped looping"}: {self.current_track["title"]}')
+        self.looping_video = not self.looping_video
+        await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}')
+
+    @commands.command()
+    async def loop_queue(self, ctx):
+        self.looping_queue = not self.looping_queue
+        await ctx.send(f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}')
 
     @commands.command(aliases=['queue'])
     async def show_queue(self, ctx):
-        tracks = '\n'.join(
-            [f'{"[ON LOOP] " if self.looping and i == 0 else ""}{i + 1}. {track["title"]}' for i, track in enumerate(self.queue)]
-        )
+        tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
+            [f'{i + 1}.\t{track["title"]}' for i, track in enumerate(self.queue)]
+        ) + ('\n[LOOP BACK TO HEAD]' if self.looping_queue else '')
+
         await ctx.send(tracks)
 
     @commands.command()
     async def skip(self, ctx):
+        self.skip_track = True
+
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
         ctx.voice_client.stop()
-
-        # Turn off looping
-        self.looping = False
 
     @commands.command()
     async def remove(self, ctx, index):
         index = int(index) - 1
 
         if 0 <= index and index < len(self.queue):
+
             track = self.queue[index]
+            del self.queue[index]
             if index == 0:
-                # Invoking skip will stop the song and remove it from the queue
+                self.removed_first = True
                 await self.skip(ctx)
-            else:
-                del self.queue[index]
             await ctx.send(f'Removed {track["title"]}')
+
         else:
             await ctx.send(f'There is no track with that index')
 
