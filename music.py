@@ -3,6 +3,7 @@ import youtube_dl
 import asyncio
 import datetime
 
+from requests import get
 from discord.ext import commands
 from collections import deque
 
@@ -85,14 +86,23 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def play(self, ctx, url):
+    async def play(self, ctx, query):
         # Join voice channel
         await self.join(ctx)
 
         with youtube_dl.YoutubeDL(YDL_OPTIONS) as ydl:
             await ctx.send('Searcing... (this may take some time if you have queued a playlist)')
 
-            info = ydl.extract_info(url, download=False)
+            try:
+               get(query)
+            except: 
+                info = ydl.extract_info(f'ytsearch:{query}', download=False)
+            else:
+                info = ydl.extract_info(query, download=False)
+
+            # Debugging
+            # with open('youtube_dl_info.txt', 'w') as f:
+            #     json.dump(info, f, ensure_ascii=True, indent=4)
 
             # Determine if playlist or a single video. All other formats are ignored for now
             if info.get('_type', None) == 'playlist':
@@ -113,9 +123,6 @@ class Music(commands.Cog):
                 await ctx.send('Unsupported format')
                 return
 
-            # Debugging
-            # with open('youtube_dl_info.txt', 'w') as f:
-            #     json.dump(info, f, ensure_ascii=True, indent=4)
 
             # Commence playback if bot is idle
             if self.idle:

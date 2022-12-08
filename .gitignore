@@ -156,3 +156,4 @@ config.json
 
 # Debugging
 playlist sample json.txt
+youtube_dl_info.txt
