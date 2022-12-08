@@ -108,7 +108,7 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def play(self, ctx, query):
+    async def play(self, ctx, *, query):
         # Join voice channel
         await self.join(ctx)
 
