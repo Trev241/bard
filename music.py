@@ -50,7 +50,7 @@ class Music(commands.Cog):
                 await self.disconnect(ctx)
                 break
 
-    @commands.command()
+    @commands.command(aliases=['connect'])
     async def join(self, ctx):
         if ctx.author.voice is None:
             await ctx.send('Please join a voice channel')
@@ -134,7 +134,7 @@ class Music(commands.Cog):
                     entry['cmd_author'] = ctx.author
                     self.queue.append(Music.create_track(entry))
             
-                await ctx.send(f'Queued {len(info["entries"])} entries')
+                await ctx.send(f'Queued {len(info["entries"])} entrie(s)')
 
             elif 'formats' in info:
 
