@@ -57,17 +57,20 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['playing', 'nowplaying'])
     async def now(self, ctx):
+        track = self.current_track
+        cmd_author = track['cmd_author']
+
         embed = discord.Embed.from_dict({
-            'title': self.current_track['title'],
-            'description': 'is now playing',
+            'title': track['title'],
+            'description': f'[Click here for video link]({track["webpage_url"]})',
             'thumbnail': {
-                'url': self.current_track['thumbnail'],
+                'url': track['thumbnail'],
             },
             'color': 15844367,
             'fields': [
                 {
                     'name': 'Duration',
-                    'value': self.current_track['duration'],
+                    'value': track['duration'],
                     'inline': True
                 },
                 {
@@ -77,10 +80,14 @@ class Music(commands.Cog):
                 },
                 {
                     'name': 'Next',
-                    'value': self.queue[1]['title'] if len(self.queue) > 1 else self.current_track['title'] if self.looping_queue else '(End of queue)',
+                    'value': self.queue[1]['title'] if len(self.queue) > 1 else track['title'] if self.looping_queue else '(End of queue)',
                     'inline': True
-                }
-            ]
+                },
+            ],
+            'footer': {
+                'text': f'Song requested by {cmd_author.display_name}',
+                'icon_url': cmd_author.display_avatar.url
+            }
         })
 
         await ctx.send(embed=embed)
@@ -104,16 +111,19 @@ class Music(commands.Cog):
             # with open('youtube_dl_info.txt', 'w') as f:
             #     json.dump(info, f, ensure_ascii=True, indent=4)
 
+
             # Determine if playlist or a single video. All other formats are ignored for now
             if info.get('_type', None) == 'playlist':
 
                 for entry in info['entries']:
+                    entry['cmd_author'] = ctx.author
                     self.queue.append(Music.create_track(entry))
             
                 await ctx.send(f'Queued {len(info["entries"])} entries')
 
             elif 'formats' in info:
 
+                info['cmd_author'] = ctx.author
                 track = Music.create_track(info)
                 self.queue.append(track)
                 await ctx.send(f'Queued {track["title"]}')
@@ -139,6 +149,8 @@ class Music(commands.Cog):
             'url': info['formats'][0]['url'],
             'duration': str(datetime.timedelta(seconds=info['duration'])),
             'thumbnail': info['thumbnails'][0]['url'],
+            'webpage_url': info['webpage_url'],
+            'cmd_author': info['cmd_author']
         }
 
     async def on_track_complete(self, ctx):
@@ -161,14 +173,21 @@ class Music(commands.Cog):
 
         # Pop the first track if
         # 1. Not looping single
-        # 2. Skip called
+        # 2. Skip count is more than zero
         # BUT DO NOT REMOVE if it already has been removed
-        if (not self.looping_video or self.skip_track) and not self.removed_first:
-            track = self.queue.popleft()
+        if (not self.looping_video or self.skip_track > 0) and not self.removed_first:
 
-            # Insert the track back at the end of the list if queue is being looped
-            if self.looping_queue:
-                self.queue.append(track)
+            # Skip the number of tracks specified by limit
+            # The value 1 is given by default to allow the queue to progress if a track ends naturally
+            # i.e. it was neither skipped nor interrupted
+            limit = min(max(1, self.skip_track), len(self.queue))
+
+            for _ in range(limit):
+                track = self.queue.popleft()
+
+                # Insert the track back at the end of the list if queue is being looped
+                if self.looping_queue:
+                    self.queue.append(track)
         
         # Continue onto next track if it exists
         if len(self.queue) > 0:
@@ -178,7 +197,7 @@ class Music(commands.Cog):
 
         # TODO: Perhaps find a better way to do these?
         # Reset control flags
-        self.skip_track = False
+        self.skip_track = 0
         self.removed_first = False
 
     async def play_next(self, ctx):
@@ -222,8 +241,8 @@ class Music(commands.Cog):
         # await ctx.send(tracks)
 
         embed = discord.Embed.from_dict({
-            'title': 'Bard\'s Queue',
-            'description': f'{len(self.queue)} track(s) queued.{" Queue is currently set to loop." if self.looping_queue else ""}',
+            'title': f'Bard\'s Queue{" (Looping)." if self.looping_queue else ""}',
+            'description': f'{len(self.queue)} track(s) queued.',
             'color': 15844367,
             'fields': [
                 {
@@ -237,8 +256,8 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def skip(self, ctx):
-        self.skip_track = True
+    async def skip(self, ctx, count: int = 1):
+        self.skip_track = count 
 
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
