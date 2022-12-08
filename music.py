@@ -17,8 +17,7 @@ YDL_OPTIONS = {
 }
 
 EMBED_COLOR_THEME = 15844367
-
-IDLE_TIMEOUT_INTERVAL = 3
+IDLE_TIMEOUT_INTERVAL = 60
 
 class Music(commands.Cog):
     def __init__(self, client):
@@ -39,6 +38,18 @@ class Music(commands.Cog):
 
         self.queue = deque()
 
+    async def idle_timeout(self, ctx):
+        while True:
+            await asyncio.sleep(IDLE_TIMEOUT_INTERVAL)
+            
+            alone = len(ctx.voice_client.channel.members) == 1
+
+            if alone or self.idle:
+                bid = 'I am needed somewhere else' if self.idle else 'Where did everyone go?'
+                await ctx.send(f'_Melodic chimes suggesting worry_\n("{bid}")')
+                await self.disconnect(ctx)
+                break
+
     @commands.command()
     async def join(self, ctx):
         if ctx.author.voice is None:
@@ -50,10 +61,14 @@ class Music(commands.Cog):
             else:
                 await ctx.voice_client.move_to(voice_channel)
 
+            # Create task that checks if the bot is idle
+            el = asyncio.get_event_loop()
+            el.create_task(self.idle_timeout(ctx))
+
     @commands.command()
     async def disconnect(self, ctx):
-        self.reset()
         await ctx.voice_client.disconnect()
+        self.reset()
 
     @commands.command(aliases=['playing', 'nowplaying'])
     async def now(self, ctx):
@@ -241,7 +256,7 @@ class Music(commands.Cog):
         # await ctx.send(tracks)
 
         embed = discord.Embed.from_dict({
-            'title': f'Bard\'s Queue{" (Looping)." if self.looping_queue else ""}',
+            'title': f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
             'description': f'{len(self.queue)} track(s) queued.',
             'color': 15844367,
             'fields': [
