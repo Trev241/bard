@@ -38,16 +38,31 @@ class Music(commands.Cog):
 
         self.queue = deque()
 
+    def is_connected():
+        async def predicate(ctx):
+            connected = ctx.voice_client != None
+            if not connected:
+                await ctx.send(f'The bot must be in a voice channel for this command to work!')
+            return connected
+        return commands.check(predicate)
+
     async def idle_timeout(self, ctx):
         while True:
             await asyncio.sleep(IDLE_TIMEOUT_INTERVAL)
             
-            alone = len(ctx.voice_client.channel.members) == 1
+            alone = ctx.voice_client and len(ctx.voice_client.channel.members) == 1
 
             if alone or self.idle:
-                bid = 'I am needed somewhere else' if self.idle else 'Where did everyone go?'
-                await ctx.send(f'_Melodic chimes suggesting worry_\n("{bid}")')
-                await self.disconnect(ctx)
+                try:
+                    embed = discord.Embed.from_dict({
+                      'title': 'Bard is still in development!',
+                      'description': 'Please be patient with any bugs that you may encounter. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
+                      'color': EMBED_COLOR_THEME
+                    })
+                    await ctx.send(embed=embed)
+                    await self.disconnect(ctx)
+                except:
+                    pass
                 break
 
     @commands.command(aliases=['connect'])
@@ -65,12 +80,14 @@ class Music(commands.Cog):
             el = asyncio.get_event_loop()
             el.create_task(self.idle_timeout(ctx))
 
-    @commands.command()
+    @commands.command(aliases=['leave', 'quit'])
+    @is_connected()
     async def disconnect(self, ctx):
         await ctx.voice_client.disconnect()
         self.reset()
 
     @commands.command(aliases=['playing', 'nowplaying'])
+    @is_connected()
     async def now(self, ctx):
         track = self.current_track
         cmd_author = track['cmd_author']
@@ -113,7 +130,7 @@ class Music(commands.Cog):
         await self.join(ctx)
 
         with youtube_dl.YoutubeDL(YDL_OPTIONS) as ydl:
-            await ctx.send('Searcing... (this may take some time if you have queued a playlist)')
+            await ctx.send('Searching... (this may take some time if you have queued a playlist)')
 
             try:
                get(query)
@@ -134,7 +151,7 @@ class Music(commands.Cog):
                     entry['cmd_author'] = ctx.author
                     self.queue.append(Music.create_track(entry))
             
-                await ctx.send(f'Queued {len(info["entries"])} entrie(s)')
+                await ctx.send(f'Queued {len(info["entries"])} entr(y/ies)')
 
             elif 'formats' in info:
 
@@ -215,39 +232,47 @@ class Music(commands.Cog):
         self.skip_track = 0
         self.removed_first = False
 
+    @is_connected()
     async def play_next(self, ctx):
-        self.current_track = self.queue[0]
+        try:
+            self.current_track = self.queue[0]
 
-        # Fetching Event Loop to create a new task i.e. to play the next song
-        # Courtesy of 
-        # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
-        el = asyncio.get_event_loop()
+            # Fetching Event Loop to create a new task i.e. to play the next song
+            # Courtesy of 
+            # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
+            el = asyncio.get_event_loop()
 
-        source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **FFMPEG_OPTIONS)
+            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **FFMPEG_OPTIONS)
 
-        ctx.voice_client.play(
-            source,
-            after=lambda error : el.create_task(self.on_track_complete(ctx))
-        )
+            ctx.voice_client.play(
+                source,
+                after=lambda error : el.create_task(self.on_track_complete(ctx))
+            )
 
-        # await ctx.send(f'Now playing: {self.current_track["title"]}')
-        await self.now(ctx)
+            # await ctx.send(f'Now playing: {self.current_track["title"]}')
+            await self.now(ctx)
+        except:
+            await ctx.send(f'Could not play track. Bot was unexpectedly disconnected before playback could commence.')
+            self.reset()
 
     @play.error
     async def play_error(self, ctx, error):
         await ctx.send(f'There was an error while trying to process your request. Error: {error}')
 
     @commands.group(invoke_without_command=True)
+    @is_connected()
     async def loop(self, ctx):
         self.looping_video = not self.looping_video
         await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}')
 
     @loop.command(name='queue', aliases=['all'])
+    @is_connected()
     async def loop_queue(self, ctx):
         self.looping_queue = not self.looping_queue
         await ctx.send(f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}')
 
     @commands.command(name='queue')
+    @is_connected()
     async def show_queue(self, ctx):
         # tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
         #     [f'{i + 1}.\t{track["title"]}' for i, track in enumerate(self.queue)]
@@ -271,6 +296,7 @@ class Music(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
+    @is_connected()
     async def skip(self, ctx, count: int = 1):
         self.skip_track = count 
 
@@ -279,6 +305,7 @@ class Music(commands.Cog):
         ctx.voice_client.stop()
 
     @commands.command()
+    @is_connected()
     async def remove(self, ctx, index):
         index = int(index) - 1
 
@@ -295,11 +322,13 @@ class Music(commands.Cog):
             await ctx.send(f'There is no track with that index')
 
     @commands.command()
+    @is_connected()
     async def pause(self, ctx):
         ctx.voice_client.pause()
         await ctx.send('Paused')
 
     @commands.command()
+    @is_connected()
     async def resume(self, ctx):
         ctx.voice_client.resume()
         await ctx.send('Resumed')
