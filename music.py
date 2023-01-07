@@ -6,6 +6,7 @@ import datetime
 from requests import get
 from discord.ext import commands
 from collections import deque
+from constants import IDLE_TIMEOUT_INTERVAL, EMBED_COLOR_THEME
 
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -16,18 +17,13 @@ YDL_OPTIONS = {
     'format': 'bestaudio'
 }
 
-EMBED_COLOR_THEME = 15844367
-IDLE_TIMEOUT_INTERVAL = 60
-
 class Music(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.reset()
 
     def reset(self):
-        '''
-        Resets the state of the bot. 
-        '''
+        """Resets the state of the bot."""
 
         self.idle = True
         self.skip_track = False
@@ -35,6 +31,7 @@ class Music(commands.Cog):
         self.looping_video = False
         self.looping_queue = False
         self.current_track = None
+        self.tts = True
 
         self.queue = deque()
 
@@ -56,7 +53,7 @@ class Music(commands.Cog):
                 try:
                     embed = discord.Embed.from_dict({
                       'title': 'Bard is still in development!',
-                      'description': 'Please be patient with any bugs that you may encounter. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
+                      'description': 'Please be patient if you encounter any bugs. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
                       'color': EMBED_COLOR_THEME
                     })
                     await ctx.send(embed=embed)
@@ -80,7 +77,7 @@ class Music(commands.Cog):
             el = asyncio.get_event_loop()
             el.create_task(self.idle_timeout(ctx))
 
-    @commands.command(aliases=['leave', 'quit'])
+    @commands.command(aliases=['leave', 'quit', 'bye'])
     @is_connected()
     async def disconnect(self, ctx):
         await ctx.voice_client.disconnect()
@@ -122,7 +119,15 @@ class Music(commands.Cog):
             }
         })
 
+        if self.tts:
+            await ctx.send(f'Now playing {track["title"]}', tts=True, delete_after=30)
+
         await ctx.send(embed=embed)
+
+    @commands.command(name='tts')
+    async def tts_(self, ctx, flag: bool):
+        self.tts = flag
+        await ctx.send(f'TTS {"enabled" if self.tts else "disabled"}')
 
     @commands.command()
     async def play(self, ctx, *, query):
@@ -133,7 +138,7 @@ class Music(commands.Cog):
             await ctx.send('Searching... (this may take some time if you have queued a playlist)')
 
             try:
-               get(query)
+                get(query)
             except: 
                 info = ydl.extract_info(f'ytsearch:{query}', download=False)
             else:
@@ -142,7 +147,6 @@ class Music(commands.Cog):
             # Debugging
             # with open('youtube_dl_info.txt', 'w') as f:
             #     json.dump(info, f, ensure_ascii=True, indent=4)
-
 
             # Determine if playlist or a single video. All other formats are ignored for now
             if info.get('_type', None) == 'playlist':
@@ -172,9 +176,7 @@ class Music(commands.Cog):
                 await self.play_next(ctx)
 
     def create_track(info):
-        '''
-        Returns a dict containing a subset of the track's original attributes.
-        '''
+        """Returns a dict containing a subset of the track's original attributes."""
 
         return {
             'title': info['title'],
@@ -186,7 +188,7 @@ class Music(commands.Cog):
         }
 
     async def on_track_complete(self, ctx):
-        '''
+        """
         Callback for when a track has completed playing either by exhausting its source or through interruption.
         The decision on how to manage the queue is based on the current state of the bot.
 
@@ -201,7 +203,7 @@ class Music(commands.Cog):
 
         At the end of the callback, if there are still items in the queue, then play_next() is called to play
         the next track at the head of the queue.
-        '''
+        """
 
         # Pop the first track if
         # 1. Not looping single
@@ -271,7 +273,7 @@ class Music(commands.Cog):
         self.looping_queue = not self.looping_queue
         await ctx.send(f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}')
 
-    @commands.command(name='queue')
+    @commands.command(name='queue', aliases=['q'])
     @is_connected()
     async def show_queue(self, ctx):
         # tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
@@ -283,7 +285,7 @@ class Music(commands.Cog):
         embed = discord.Embed.from_dict({
             'title': f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
             'description': f'{len(self.queue)} track(s) queued.',
-            'color': 15844367,
+            'color': EMBED_COLOR_THEME,
             'fields': [
                 {
                     'name': f'{i + 1}. {track["title"]}',

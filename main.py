@@ -6,18 +6,20 @@ import json
 
 # Importing cogs
 import music
+import utils
+import events
 
 from discord.ext import commands
 
-# READING CONFIG AND FETCHING TOKEN
-with open('config.json') as config_file:
-    config = json.load(config_file)
+# FETCHING TOKEN
+with open('secrets.json') as f:
+    secrets = json.load(f)
 
 # SETTING UP LOGGING
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
 
-handler = logging.StreamHandler(sys.stderr)
+handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -25,7 +27,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 # ADDING COGS TO BOT
-cogs = [music]
+cogs = [music, utils, events]
 
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix='?', intents=discord.Intents.all())
@@ -49,7 +51,7 @@ async def main():
     async with client:
         await load_extensions()
         await client.start(
-            token=config['token']
+            token=secrets['token']
         )
 
 asyncio.run(main())

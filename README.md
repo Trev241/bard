@@ -34,7 +34,6 @@ The bot's prefix is `?`. Some commands have aliases which have not been mentione
 1. `play <query>`
 2. `skip [count]` 
 3. `loop`
-	Sub command(s):
 	1. `queue`
 4. `remove <index>`
 5. `queue`
@@ -47,3 +46,4 @@ The bot's prefix is `?`. Some commands have aliases which have not been mentione
 ## Known issues
 
 1. The bot cannot play age restricted videos. A temporary workaround is to simply query a reposted version of the video that has not yet been flagged.
+2. Since the bot was created with private use in mind, it does not support use across multiple guilds at once.
