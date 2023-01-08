@@ -6,18 +6,20 @@ import datetime
 from requests import get
 from discord.ext import commands
 from collections import deque
-from constants import IDLE_TIMEOUT_INTERVAL, EMBED_COLOR_THEME
-
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
-}
-
-YDL_OPTIONS = {
-    'format': 'bestaudio'
-}
+from constants import EMBED_COLOR_THEME
 
 class Music(commands.Cog):
+    IDLE_TIMEOUT_INTERVAL = 60
+
+    FFMPEG_OPTIONS = {
+        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+        'options': '-vn'
+    }
+
+    YDL_OPTIONS = {
+        'format': 'bestaudio'
+    }
+
     def __init__(self, client):
         self.client = client
         self.reset()
@@ -38,14 +40,16 @@ class Music(commands.Cog):
     def is_connected():
         async def predicate(ctx):
             connected = ctx.voice_client != None
-            if not connected:
-                await ctx.send(f'The bot must be in a voice channel for this command to work!')
+            # The help command utility skips commands for which the predicate check fails. 
+            # Hence, it is best not to send any messages here to avoid needless repetitive spam
+            # if not connected:
+            #     await ctx.send(f'The bot must be in a voice channel for this command to work!')
             return connected
         return commands.check(predicate)
 
     async def idle_timeout(self, ctx):
         while True:
-            await asyncio.sleep(IDLE_TIMEOUT_INTERVAL)
+            await asyncio.sleep(Music.IDLE_TIMEOUT_INTERVAL)
             
             alone = ctx.voice_client and len(ctx.voice_client.channel.members) == 1
 
@@ -134,7 +138,7 @@ class Music(commands.Cog):
         # Join voice channel
         await self.join(ctx)
 
-        with youtube_dl.YoutubeDL(YDL_OPTIONS) as ydl:
+        with youtube_dl.YoutubeDL(Music.YDL_OPTIONS) as ydl:
             await ctx.send('Searching... (this may take some time if you have queued a playlist)')
 
             try:
@@ -244,7 +248,7 @@ class Music(commands.Cog):
             # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
             el = asyncio.get_event_loop()
 
-            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **FFMPEG_OPTIONS)
+            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
 
             ctx.voice_client.play(
                 source,

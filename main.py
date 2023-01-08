@@ -8,6 +8,7 @@ import json
 import music
 import utils
 import events
+import wordle
 
 from discord.ext import commands
 
@@ -27,15 +28,15 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 # ADDING COGS TO BOT
-cogs = [music, utils, events]
+cogs = [music, utils, events, wordle]
 
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 
 async def load_extensions():
-    '''
+    """
     Load all extensions asynchronously by inovking the setup method of each cog.
-    '''
+    """
     
     for i in range(len(cogs)):
         await cogs[i].setup(client)

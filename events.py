@@ -2,20 +2,36 @@ import requests
 import urllib.parse
 
 from discord.ext import commands
-from discord import RawTypingEvent, Embed, RawReactionActionEvent
+from discord import RawTypingEvent, Embed, RawReactionActionEvent, Message
 from bs4 import BeautifulSoup
-from constants import EMBED_COLOR_THEME, NEXT_PAGE, PREV_PAGE, BOT_SPAM_CHANNEL
+from constants import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 
 class Events(commands.Cog):
+    # EMOJIS
+    NEXT_PAGE = '➡️'
+    PREV_PAGE = '⬅️'
+
     def __init__(self, client):
         self.client = client
 
+        # --TRACE MOE--
         self.message = None
         self.matches = None
         self.index = 0
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message: Message):
+        # Ignore messages sent by the bot
+        if message.author.id == self.client.user.id:
+            return 
+
+        await self.find_anime(message)
+
+    async def find_anime(self, message: Message):
+        """
+        Searches for anime that contain the attachment (image) sent using the trace.moe API.
+        """
+
         url = None
 
         # For now, only processing the first attachment
@@ -46,15 +62,16 @@ class Events(commands.Cog):
             self.message = await channel.send(embed=embed)
 
             # Adding reactions preemptively for navigation
-            await self.message.add_reaction(PREV_PAGE)
-            await self.message.add_reaction(NEXT_PAGE)
+            await self.message.add_reaction(Events.PREV_PAGE)
+            await self.message.add_reaction(Events.NEXT_PAGE)
+
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: RawReactionActionEvent):
         if payload.user_id != self.client.user.id and payload.message_id == self.message.id:
-            if str(payload.emoji) == NEXT_PAGE:
+            if str(payload.emoji) == Events.NEXT_PAGE:
                 self.index += 1
-            elif str(payload.emoji) == PREV_PAGE:
+            elif str(payload.emoji) == Events.PREV_PAGE:
                 self.index -= 1
 
             # Remove the emoji added by the user
@@ -67,6 +84,10 @@ class Events(commands.Cog):
             await self.message.edit(embed=embed)
 
     def process(url):
+        """
+        Sends an API request to trace.moe and processes the response before returning it.
+        """
+
         response = requests.get(
             f'https://api.trace.moe/search?url={urllib.parse.quote_plus(url)}'
         ).json()

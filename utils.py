@@ -1,10 +1,11 @@
 import discord
 import asyncio
 
-from constants import PING_DELAY
 from discord.ext import commands
 
 class Utils(commands.Cog):
+    PING_DELAY = 1
+
     def __init__(self, client):
         self.client = client
         self.is_pinging = False
@@ -27,13 +28,13 @@ class Utils(commands.Cog):
     @commands.command()
     async def ping_stop(self, ctx):
         self.is_pinging = False
-        await asyncio.sleep(PING_DELAY + 1)
+        await asyncio.sleep(Utils.PING_DELAY + 1)
 
     async def pinging(self, ctx):
         self.is_pinging = True
         while self.is_pinging and self.ping_count < self.ping_limit:
             await ctx.send(f'{self.who.mention} ({self.ping_count + 1}/{self.ping_limit})')
-            await asyncio.sleep(PING_DELAY)
+            await asyncio.sleep(Utils.PING_DELAY)
             self.ping_count += 1
         self.is_pinging = False
 

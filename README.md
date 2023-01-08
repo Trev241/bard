@@ -14,7 +14,7 @@ Before you begin, an installation of Python v3.8 or above is required.
 
 2. There is also another dependency called FFmpeg that you must install separately. You can get its packages and executable files from this [link](https://ffmpeg.org/download.html). You must also set the PATH environment variable to the directory of these files.  
 
-3. If you do not already have a Discord bot application ready, then you can create one [here](https://discord.com/developers/applications). Save the token generated for your bot. This token essentially acts as a credential for your application to run. In the same directory, create a new file named `config.json` and paste the following text in it.
+3. If you do not already have a Discord bot application ready, then you can create one [here](https://discord.com/developers/applications). Save the token generated for your bot. This token essentially acts as a credential for your application to run. In the same directory, create a new file named `secrets.json` and paste the following text in it.
     ``` json
     {
         "token": "<insert your token here>"
@@ -29,7 +29,7 @@ Before you begin, an installation of Python v3.8 or above is required.
 
 ## List of available commands
 
-The bot's prefix is `?`. Some commands have aliases which have not been mentioned for the sake of brevity
+The bot's prefix is `?`. Some commands have aliases which have not been mentioned for the sake of brevity. Only some of the commands have been included. For a full list, do `?help` when the bot is up and running.
 
 1. `play <query>`
 2. `skip [count]` 

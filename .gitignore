@@ -157,3 +157,6 @@ secrets.json
 # Debugging
 playlist sample json.txt
 youtube_dl_info.txt
+
+# Extras
+yordle_word.png
