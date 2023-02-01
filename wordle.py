@@ -78,8 +78,9 @@ class Wordle(commands.Cog):
 
     @commands.command()
     async def guess(self, ctx, guess: str):
-        if self.running and len(guess) == self.size:
-            guess = guess.upper()
+        guess = guess.upper()
+        
+        if self.running and len(guess) == self.size and guess in self.word_bank:
             self.last_guess = guess
             await self.display(ctx)
 
