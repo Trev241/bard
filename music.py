@@ -22,19 +22,25 @@ class Music(commands.Cog):
 
     def __init__(self, client):
         self.client = client
+        self.ydl = youtube_dl.YoutubeDL(Music.YDL_OPTIONS)
+
         self.reset()
 
     def reset(self):
         """Resets the state of the bot."""
 
+        # Bot state
+        self.tts = True
         self.idle = True
         self.skip_track = False
         self.removed_first = False
         self.looping_video = False
         self.looping_queue = False
+        
         self.current_track = None
-        self.tts = True
-
+        self.timeout_task = None
+        self.ctx = None
+        
         self.queue = deque()
 
     def is_connected():
@@ -47,39 +53,23 @@ class Music(commands.Cog):
             return connected
         return commands.check(predicate)
 
-    async def idle_timeout(self, ctx):
-        while True:
-            await asyncio.sleep(Music.IDLE_TIMEOUT_INTERVAL)
-            
-            alone = ctx.voice_client and len(ctx.voice_client.channel.members) == 1
-
-            if alone or self.idle:
-                try:
-                    embed = discord.Embed.from_dict({
-                      'title': 'Bard is still in development!',
-                      'description': 'Please be patient if you encounter any bugs. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
-                      'color': EMBED_COLOR_THEME
-                    })
-                    await ctx.send(embed=embed)
-                    await self.disconnect(ctx)
-                except:
-                    pass
-                break
-
     @commands.command(aliases=['connect'])
     async def join(self, ctx):
         if ctx.author.voice is None:
-            await ctx.send('Please join a voice channel')
+            await ctx.send('Please join a voice channel!')
+            return False
         else:
             voice_channel = ctx.author.voice.channel
             if ctx.voice_client is None:
                 await voice_channel.connect()
             else:
                 await ctx.voice_client.move_to(voice_channel)
+            
+            # Cache context
+            self.ctx = ctx
+            await self.start_timeout_timer()
 
-            # Create task that checks if the bot is idle
-            el = asyncio.get_event_loop()
-            el.create_task(self.idle_timeout(ctx))
+            return True
 
     @commands.command(aliases=['leave', 'quit', 'bye'])
     @is_connected()
@@ -91,7 +81,7 @@ class Music(commands.Cog):
     @is_connected()
     async def now(self, ctx):
         track = self.current_track
-        cmd_author = track['cmd_author']
+        requester = track['requester']
 
         embed = discord.Embed.from_dict({
             'title': track['title'],
@@ -118,8 +108,8 @@ class Music(commands.Cog):
                 },
             ],
             'footer': {
-                'text': f'Song requested by {cmd_author.display_name}',
-                'icon_url': cmd_author.display_avatar.url
+                'text': f'Song requested by {requester.display_name}',
+                'icon_url': requester.display_avatar.url
             }
         })
 
@@ -135,51 +125,41 @@ class Music(commands.Cog):
 
     @commands.command()
     async def play(self, ctx, *, query):
-        # Join voice channel
-        await self.join(ctx)
+        # Abort if not in voice channel
+        if not await self.join(ctx):
+            return
 
-        with youtube_dl.YoutubeDL(Music.YDL_OPTIONS) as ydl:
-            await ctx.send('Searching... (this may take some time if you have queued a playlist)')
-
-            try:
-                get(query)
-            except: 
-                info = ydl.extract_info(f'ytsearch:{query}', download=False)
-            else:
-                info = ydl.extract_info(query, download=False)
-
-            # Debugging
-            # with open('youtube_dl_info.txt', 'w') as f:
-            #     json.dump(info, f, ensure_ascii=True, indent=4)
-
-            # Determine if playlist or a single video. All other formats are ignored for now
-            if info.get('_type', None) == 'playlist':
-
-                for entry in info['entries']:
-                    entry['cmd_author'] = ctx.author
-                    self.queue.append(Music.create_track(entry))
+        await ctx.send('Searching...')
+        try:
+            get(query)
+        except: 
+            info = self.ydl.extract_info(f'ytsearch:{query}', download=False, process=False)
+        else:
+            # Avoid downloading by setting process=False to prevent blocking execution  
+            info = self.ydl.extract_info(query, download=False, process=False)
             
-                await ctx.send(f'Queued {len(info["entries"])} entr(y/ies)')
+        # Queue entries
+        if info.get('_type', None) == 'playlist':
+            count = 0
 
-            elif 'formats' in info:
+            for entry in info['entries']:
+                await self.queue_entry(entry, ctx)
+                count += 1
+            
+            await ctx.send(f'Queued {count} video(s).')
+        else:
+            await self.queue_entry(info, ctx)
+            await ctx.send(f'Queued {info["title"]}.')
 
-                info['cmd_author'] = ctx.author
-                track = Music.create_track(info)
-                self.queue.append(track)
-                await ctx.send(f'Queued {track["title"]}')
+    async def queue_entry(self, entry, ctx):
+        self.queue.append(entry)
 
-            else:
+        # Start playing if bot is idle
+        if self.idle:
+            self.idle = False
+            await self.play_next(ctx)
 
-                await ctx.send('Unsupported format')
-                return
-
-
-            # Commence playback if bot is idle
-            if self.idle:
-                self.idle = False
-                await self.play_next(ctx)
-
-    def create_track(info):
+    def create_track(info, requester):
         """Returns a dict containing a subset of the track's original attributes."""
 
         return {
@@ -188,7 +168,7 @@ class Music(commands.Cog):
             'duration': str(datetime.timedelta(seconds=info['duration'])),
             'thumbnail': info['thumbnails'][0]['url'],
             'webpage_url': info['webpage_url'],
-            'cmd_author': info['cmd_author']
+            'requester': requester
         }
 
     async def on_track_complete(self, ctx):
@@ -231,34 +211,64 @@ class Music(commands.Cog):
         if len(self.queue) > 0:
             await self.play_next(ctx)
         else:
-            self.reset()
+            self.idle = True
+            await self.start_timeout_timer()
+            # self.reset()
 
         # TODO: Perhaps find a better way to do these?
         # Reset control flags
         self.skip_track = 0
         self.removed_first = False
 
+    async def start_timeout_timer(self):
+        if self.timeout_task:
+            self.timeout_task.cancel()
+        self.timeout_task = asyncio.get_running_loop().create_task(self.idle_timeout())
+
+    async def idle_timeout(self):
+        # Timeout countdown
+        await asyncio.sleep(Music.IDLE_TIMEOUT_INTERVAL)
+
+        try:
+            voice_client = self.ctx.voice_client
+            alone = voice_client and len(voice_client.channel.members) == 1 and voice_client.channel.members[0].id == self.client.user.id
+            if alone or self.idle:
+                embed = discord.Embed.from_dict({
+                    'title': 'Bard is still in development!',
+                    'description': 'Please be patient if you encounter any bugs. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
+                    'color': EMBED_COLOR_THEME
+                })
+                await self.ctx.send(embed=embed)
+                
+                # It is necessary to pass all required arguments to the function in order for it to execute
+                # Calling self.disconnect() alone without any parameters does not actually invoke the function
+                # This could be because of some pre-processing done by the decorators attached.
+                await self.disconnect(self.ctx)
+        except:
+            pass
+
     @is_connected()
     async def play_next(self, ctx):
         try:
-            self.current_track = self.queue[0]
+            # IE most likely stands for Incomplete Entry
+            # Process IE and probe audio
+            complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
+            self.current_track = Music.create_track(complete_entry, ctx.author)
+            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
 
             # Fetching Event Loop to create a new task i.e. to play the next song
             # Courtesy of 
             # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
-            el = asyncio.get_event_loop()
-
-            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
-
+            el = asyncio.get_running_loop()
             ctx.voice_client.play(
                 source,
                 after=lambda error : el.create_task(self.on_track_complete(ctx))
             )
 
-            # await ctx.send(f'Now playing: {self.current_track["title"]}')
             await self.now(ctx)
-        except:
-            await ctx.send(f'Could not play track. Bot was unexpectedly disconnected before playback could commence.')
+        except Exception as e:
+            print(e)
+            await ctx.send(f'An error occurred while trying to play the track.')
             self.reset()
 
     @play.error
@@ -280,12 +290,6 @@ class Music(commands.Cog):
     @commands.command(name='queue', aliases=['q'])
     @is_connected()
     async def show_queue(self, ctx):
-        # tracks = ('[ON LOOP] ' if self.looping_video else '') + '\n'.join(
-        #     [f'{i + 1}.\t{track["title"]}' for i, track in enumerate(self.queue)]
-        # ) + ('\n[LOOP BACK TO HEAD]' if self.looping_queue else '')
-
-        # await ctx.send(tracks)
-
         embed = discord.Embed.from_dict({
             'title': f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
             'description': f'{len(self.queue)} track(s) queued.',
@@ -293,7 +297,7 @@ class Music(commands.Cog):
             'fields': [
                 {
                     'name': f'{i + 1}. {track["title"]}',
-                    'value': track['duration'],
+                    'value': str(datetime.timedelta(seconds=track['duration'])),
                     'inline': False
                 } for i, track in enumerate(self.queue)
             ]

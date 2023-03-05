@@ -153,5 +153,11 @@ class Events(commands.Cog):
             await util_base.ping_stop(util_base.ctx)
             await util_base.ctx.send('You\'re back!')
 
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if after.channel is None and len(before.channel.members) == 1 and before.channel.members[0].id == self.client.user.id:
+            await self.client.get_cog('Music').start_timeout_timer()
+            
+
 async def setup(client):
     await client.add_cog(Events(client))
