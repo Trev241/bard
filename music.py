@@ -74,8 +74,15 @@ class Music(commands.Cog):
     @commands.command(aliases=['leave', 'quit', 'bye'])
     @is_connected()
     async def disconnect(self, ctx):
-        await ctx.voice_client.disconnect()
+        ctx.voice_client.stop()
         self.reset()
+        
+        source = await discord.FFmpegOpusAudio.from_probe('sounds/bard.disconnect.ogg')
+        el = asyncio.get_running_loop()
+        ctx.voice_client.play(
+            source,
+            after=lambda error: el.create_task(ctx.voice_client.disconnect())
+        )
 
     @commands.command(aliases=['playing', 'nowplaying'])
     @is_connected()
