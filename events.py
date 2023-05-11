@@ -25,7 +25,7 @@ class Events(commands.Cog):
         if message.author.id == self.client.user.id:
             return 
 
-        await self.find_anime(message)
+        # await self.find_anime(message)
 
     async def find_anime(self, message: Message):
         """

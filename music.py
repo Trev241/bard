@@ -2,6 +2,7 @@ import discord
 import youtube_dl
 import asyncio
 import datetime
+import traceback
 
 from requests import get
 from discord.ext import commands
@@ -132,10 +133,11 @@ class Music(commands.Cog):
 
     @commands.command()
     async def play(self, ctx, *, query):
+
         # Abort if not in voice channel
         if not await self.join(ctx):
             return
-
+        
         await ctx.send('Searching...')
         try:
             get(query)
@@ -273,8 +275,8 @@ class Music(commands.Cog):
             )
 
             await self.now(ctx)
-        except Exception as e:
-            print(e)
+        except:
+            traceback.print_exc()
             await ctx.send(f'An error occurred while trying to play the track.')
             self.reset()
 
