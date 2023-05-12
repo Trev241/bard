@@ -5,3 +5,4 @@ Pillow==9.5.0
 python-dotenv==1.0.0
 requests==2.28.1
 youtube_dl==2021.12.17
+PyNaCl

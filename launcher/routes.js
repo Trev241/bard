@@ -28,9 +28,6 @@ router.route("/set").post((req, res) => {
 });
 
 router.route("/notify").post((req, res) => {
-  console.log(req.headers);
-  console.log(req.body);
-
   if (req.headers.secret === process.env.SECRET) {
     botStatus = req.body.running;
     res.sendStatus(200);

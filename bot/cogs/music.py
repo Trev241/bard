@@ -9,6 +9,7 @@ from discord.ext import commands
 from collections import deque
 from constants import EMBED_COLOR_THEME
 
+
 class Music(commands.Cog):
     IDLE_TIMEOUT_INTERVAL = 60
 
@@ -37,17 +38,17 @@ class Music(commands.Cog):
         self.removed_first = False
         self.looping_video = False
         self.looping_queue = False
-        
+
         self.current_track = None
         self.timeout_task = None
         self.ctx = None
-        
+
         self.queue = deque()
 
     def is_connected():
         async def predicate(ctx):
             connected = ctx.voice_client != None
-            # The help command utility skips commands for which the predicate check fails. 
+            # The help command utility skips commands for which the predicate check fails.
             # Hence, it is best not to send any messages here to avoid needless repetitive spam
             # if not connected:
             #     await ctx.send(f'The bot must be in a voice channel for this command to work!')
@@ -65,7 +66,7 @@ class Music(commands.Cog):
                 await voice_channel.connect()
             else:
                 await ctx.voice_client.move_to(voice_channel)
-            
+
             # Cache context
             self.ctx = ctx
             await self.start_timeout_timer()
@@ -77,8 +78,11 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         ctx.voice_client.stop()
         self.reset()
-        
-        source = await discord.FFmpegOpusAudio.from_probe('sounds/bard.disconnect.ogg')
+
+        # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
+        # TODO: Resolve sound if bot is launched from main.py
+        source = await discord.FFmpegOpusAudio.from_probe('./../bot/sounds/bard.disconnect.ogg')
+
         el = asyncio.get_running_loop()
         ctx.voice_client.play(
             source,
@@ -137,16 +141,17 @@ class Music(commands.Cog):
         # Abort if not in voice channel
         if not await self.join(ctx):
             return
-        
+
         await ctx.send('Searching...')
         try:
             get(query)
-        except: 
-            info = self.ydl.extract_info(f'ytsearch:{query}', download=False, process=False)
+        except:
+            info = self.ydl.extract_info(
+                f'ytsearch:{query}', download=False, process=False)
         else:
-            # Avoid downloading by setting process=False to prevent blocking execution  
+            # Avoid downloading by setting process=False to prevent blocking execution
             info = self.ydl.extract_info(query, download=False, process=False)
-            
+
         # Queue entries
         if info.get('_type', None) == 'playlist':
             count = 0
@@ -154,7 +159,7 @@ class Music(commands.Cog):
             for entry in info['entries']:
                 await self.queue_entry(entry, ctx)
                 count += 1
-            
+
             await ctx.send(f'Queued {count} video(s).')
         else:
             await self.queue_entry(info, ctx)
@@ -188,7 +193,7 @@ class Music(commands.Cog):
         If the bot is looping a single track, then the track at the front of the queue is not removed.
         If the bot is skipping a track, then the track at the front of the queue is removed
         If the bot is looping the queue, then the track at the front of the queue is removed and inserted at the rear.
-        
+
         If both flags are true (i.e. loop single as well as queue), then the task of looping the single track takes
         higher priority over looping the queue as one would expect intuitively. In other words, the next track
         will not be played unless looping for the current track has been turned off. This is because the track  
@@ -215,7 +220,7 @@ class Music(commands.Cog):
                 # Insert the track back at the end of the list if queue is being looped
                 if self.looping_queue:
                     self.queue.append(track)
-        
+
         # Continue onto next track if it exists
         if len(self.queue) > 0:
             await self.play_next(ctx)
@@ -240,7 +245,8 @@ class Music(commands.Cog):
 
         try:
             voice_client = self.ctx.voice_client
-            alone = voice_client and len(voice_client.channel.members) == 1 and voice_client.channel.members[0].id == self.client.user.id
+            alone = voice_client and len(
+                voice_client.channel.members) == 1 and voice_client.channel.members[0].id == self.client.user.id
             if alone or self.idle:
                 embed = discord.Embed.from_dict({
                     'title': 'Bard is still in development!',
@@ -248,7 +254,7 @@ class Music(commands.Cog):
                     'color': EMBED_COLOR_THEME
                 })
                 await self.ctx.send(embed=embed)
-                
+
                 # It is necessary to pass all required arguments to the function in order for it to execute
                 # Calling self.disconnect() alone without any parameters does not actually invoke the function
                 # This could be because of some pre-processing done by the decorators attached.
@@ -261,17 +267,18 @@ class Music(commands.Cog):
         try:
             # IE most likely stands for Incomplete Entry
             # Process IE and probe audio
-            complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
+            complete_entry = self.ydl.process_ie_result(
+                self.queue[0], download=False)
             self.current_track = Music.create_track(complete_entry, ctx.author)
             source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
 
             # Fetching Event Loop to create a new task i.e. to play the next song
-            # Courtesy of 
+            # Courtesy of
             # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
             el = asyncio.get_running_loop()
             ctx.voice_client.play(
                 source,
-                after=lambda error : el.create_task(self.on_track_complete(ctx))
+                after=lambda error: el.create_task(self.on_track_complete(ctx))
             )
 
             await self.now(ctx)
@@ -317,7 +324,7 @@ class Music(commands.Cog):
     @commands.command()
     @is_connected()
     async def skip(self, ctx, count: int = 1):
-        self.skip_track = count 
+        self.skip_track = count
 
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
@@ -351,6 +358,7 @@ class Music(commands.Cog):
     async def resume(self, ctx):
         ctx.voice_client.resume()
         await ctx.send('Resumed')
+
 
 async def setup(client):
     await client.add_cog(Music(client))
