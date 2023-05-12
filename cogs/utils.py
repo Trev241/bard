@@ -1,7 +1,11 @@
 import discord
 import asyncio
+import sys
+import os
+import requests
 
 from discord.ext import commands
+
 
 class Utils(commands.Cog):
     PING_DELAY = 1
@@ -28,7 +32,6 @@ class Utils(commands.Cog):
     @commands.command()
     async def ping_stop(self, ctx):
         self.is_pinging = False
-        await asyncio.sleep(Utils.PING_DELAY + 1)
 
     async def pinging(self, ctx):
         self.is_pinging = True
@@ -37,6 +40,21 @@ class Utils(commands.Cog):
             await asyncio.sleep(Utils.PING_DELAY)
             self.ping_count += 1
         self.is_pinging = False
+
+    @commands.command()
+    async def shutdown(self, ctx):
+        await ctx.send("Going to sleep...")
+
+        print(os.getenv('API_BASE_URL'))
+
+        headers = {"secret": os.getenv('SECRET')}
+        payload = {"running": False}
+        res = requests.post(
+            f'{os.getenv("API_BASE_URL")}/notify', json=payload, headers=headers)
+        print(res.status_code)
+
+        sys.exit(0)
+
 
 async def setup(client):
     await client.add_cog(Utils(client))

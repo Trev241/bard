@@ -5,16 +5,18 @@ import sys
 import os
 
 # Importing cogs
-import music
-import utils
-import events
-import wordle
+import cogs.music as music
+import cogs.utils as utils
+import cogs.events as events
+import cogs.wordle as wordle
 
 from discord.ext import commands
+from threading import Thread
 from dotenv import load_dotenv
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
+TOKEN = os.getenv('TOKEN')
 
 # SETTING UP LOGGING
 root = logging.getLogger()
@@ -55,7 +57,13 @@ async def main():
     async with client:
         await load_extensions()
         await client.start(
-            token=os.getenv('TOKEN')
+            token=TOKEN
         )
 
-asyncio.run(main())
+
+def launch():
+    Thread(target=asyncio.run, args=(main(),)).start()
+
+
+if __name__ == "__main__":
+    launch()
