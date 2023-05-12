@@ -16,7 +16,7 @@ RUN set -xe \
     && pip install pynacl \
     && git clone https://github.com/ytdl-org/youtube-dl.git dependencies/youtube-dl \
     && cd dependencies/youtube-dl \
-    && python3 setup.py install
+    && pip install .
 
 WORKDIR ../launcher
 RUN npm install
