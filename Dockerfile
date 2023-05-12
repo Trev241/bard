@@ -2,9 +2,10 @@ FROM node:lts
 WORKDIR /bard
 COPY . .
 
-ENV TOKEN MTA0OTU1MjgzNjg5NzI4NDE5Ng.G-FLs-.B79aQw8v1UJWEUKuKoBFb_mSeYw7AVaH7vsWK0
-ENV SECRET meeps
-ENV API_BASE_URL http://localhost:5000
+# ENV TOKEN MTA0OTU1MjgzNjg5NzI4NDE5Ng.G-FLs-.B79aQw8v1UJWEUKuKoBFb_mSeYw7AVaH7vsWK0
+# ENV SECRET meeps
+# ENV API_BASE_URL http://localhost:5000
+ENV $(cat .env | xargs)
 
 WORKDIR bot
 RUN set -xe \
