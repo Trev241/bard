@@ -13,7 +13,7 @@ RUN set -xe \
     && pip install --upgrade pip \
     && pip install -r requirements.txt \
     && pip install -U "discord.py[voice]" \
-    && pip install pynacl \
+    && pip install pynacl
 
 WORKDIR ../launcher
 RUN npm install
