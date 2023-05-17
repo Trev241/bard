@@ -4,5 +4,5 @@ matplotlib
 Pillow
 python-dotenv
 requests
-youtube_dl
+yt-dlp
 PyNaCl

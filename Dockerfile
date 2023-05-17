@@ -14,9 +14,6 @@ RUN set -xe \
     && pip install -r requirements.txt \
     && pip install -U "discord.py[voice]" \
     && pip install pynacl \
-    && git clone https://github.com/ytdl-org/youtube-dl.git dependencies/youtube-dl \
-    && cd dependencies/youtube-dl \
-    && pip install .
 
 WORKDIR ../launcher
 RUN npm install

@@ -45,15 +45,15 @@ class Utils(commands.Cog):
     async def shutdown(self, ctx):
         await ctx.send("Going to sleep...")
 
-        print(os.getenv('API_BASE_URL'))
-
         headers = {"secret": os.getenv('SECRET')}
         payload = {"running": False}
-        res = requests.post(
-            f'{os.getenv("API_BASE_URL")}/notify', json=payload, headers=headers)
-        print(res.status_code)
 
-        sys.exit(0)
+        try:
+            res = requests.post(f'{os.getenv("API_BASE_URL")}/notify', json=payload, headers=headers)
+        except:
+            print(f'Request failed with code {res.status_code}. Exiting anyways.')
+        finally:
+            sys.exit(0)
 
 
 async def setup(client):

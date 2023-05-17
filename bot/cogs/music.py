@@ -1,5 +1,6 @@
 import discord
-import youtube_dl
+import yt_dlp
+# import json
 import asyncio
 import datetime
 import traceback
@@ -24,7 +25,7 @@ class Music(commands.Cog):
 
     def __init__(self, client):
         self.client = client
-        self.ydl = youtube_dl.YoutubeDL(Music.YDL_OPTIONS)
+        self.ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
         self.reset()
 
@@ -176,9 +177,13 @@ class Music(commands.Cog):
     def create_track(info, requester):
         """Returns a dict containing a subset of the track's original attributes."""
 
+        url = None
+        for format in info['formats']:
+            url = format['url'] if format['fps'] == None else url
+
         return {
             'title': info['title'],
-            'url': info['formats'][0]['url'],
+            'url': url,
             'duration': str(datetime.timedelta(seconds=info['duration'])),
             'thumbnail': info['thumbnails'][0]['url'],
             'webpage_url': info['webpage_url'],
@@ -265,10 +270,13 @@ class Music(commands.Cog):
     @is_connected()
     async def play_next(self, ctx):
         try:
-            # IE most likely stands for Incomplete Entry
+            # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
             # Process IE and probe audio
-            complete_entry = self.ydl.process_ie_result(
-                self.queue[0], download=False)
+            complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
+
+            # with open('yt-dlp.json', 'w') as f:
+            #     json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
+
             self.current_track = Music.create_track(complete_entry, ctx.author)
             source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
 
@@ -282,9 +290,17 @@ class Music(commands.Cog):
             )
 
             await self.now(ctx)
-        except:
+        except yt_dlp.DownloadError as e:
             traceback.print_exc()
-            await ctx.send(f'An error occurred while trying to play the track.')
+            await ctx.send(f'An error occurred while trying to download the track. {e}')
+            await ctx.send('Continuing to next song if available...')
+            
+            # End current unplayable track
+            await self.on_track_complete(ctx)
+        except Exception as e:
+            traceback.print_exc()
+            await ctx.send(f'An error occurred while trying to play the track. {e}')
+
             self.reset()
 
     @play.error
@@ -313,7 +329,7 @@ class Music(commands.Cog):
             'fields': [
                 {
                     'name': f'{i + 1}. {track["title"]}',
-                    'value': str(datetime.timedelta(seconds=track['duration'])),
+                    'value': str(datetime.timedelta(seconds=track['duration'] if track['duration'] != None else 0)),
                     'inline': False
                 } for i, track in enumerate(self.queue)
             ]
