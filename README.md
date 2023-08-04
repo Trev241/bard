@@ -38,7 +38,7 @@ TOKEN=<your token here>
 python main.py
 ```
 
-You only need to type the last command if you need to stat the bot in the future.
+You only need to type the last command if you need to start the bot in the future.
 
 ### With the launcher
 
