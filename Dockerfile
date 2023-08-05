@@ -9,11 +9,11 @@ RUN set -xe \
     && apt-get update -y \
     && apt-get install -y ffmpeg \
     && apt-get install -y python3 \
-    && apt-get install -y python3-pip \
-    && pip install --upgrade pip \
-    && pip install -r requirements.txt --break-system-packages \
-    && pip install -U "discord.py[voice]" --break-system-packages \
-    && pip install pynacl
+    && apt-get install -y pipx \
+    && pipx install --upgrade pipx \
+    && pipx install -r requirements.txt \
+    && pipx install -U "discord.py[voice]" \
+    && pipx install pynacl
 
 WORKDIR ../launcher
 RUN npm install
