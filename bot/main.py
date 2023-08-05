@@ -58,7 +58,11 @@ async def main():
         )
 
 def launch():
-    Thread(target=asyncio.run, args=(main(),)).start()
+    t = Thread(target=asyncio.run, args=(main(),))
+    t.start()
+
+    # Main thread should end only after thread jumpstarter completes
+    t.join()
 
 if __name__ == "__main__":
     print(f'[{os.getcwd()}] Script was triggered.')
