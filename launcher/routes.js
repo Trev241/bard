@@ -31,9 +31,14 @@ router.route("/set").post((req, res) => {
 
     if (botStatus) {
       const scriptExecution = spawn(pythonExe, ["-u", botScript]);
-      scriptExecution.stdout.on("data", (data) => {
-        console.log(uint8arrayToString(data));
-      });
+      scriptExecution.stdout.on("data", (data) =>
+        console.log(uint8arrayToString(data))
+      );
+      scriptExecution.stderr.on("data", (data) =>
+        console.log(uint8arrayToString(data))
+      );
+
+      console.log("Bot subprocess spawned.");
     }
 
     res.send({ running: botStatus });

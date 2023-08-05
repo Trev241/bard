@@ -35,7 +35,6 @@ cogs = [music, utils, events, wordle]
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix='?', intents=discord.Intents.all())
 
-
 async def load_extensions():
     """
     Load all extensions asynchronously by inovking the setup method of each cog.
@@ -43,7 +42,6 @@ async def load_extensions():
 
     for i in range(len(cogs)):
         await cogs[i].setup(client)
-
 
 async def main():
     discord.utils.setup_logging(
@@ -59,11 +57,10 @@ async def main():
             token=TOKEN
         )
 
-
 def launch():
     Thread(target=asyncio.run, args=(main(),)).start()
-    print('Started bot thread successfully')
-
 
 if __name__ == "__main__":
+    print(f'[{os.getcwd()}] Script was triggered.')
     launch()
+    print(f'[{os.getcwd()}] Successfully launched Bard.')
