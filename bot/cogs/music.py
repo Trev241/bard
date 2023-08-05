@@ -177,9 +177,13 @@ class Music(commands.Cog):
     def create_track(info, requester):
         """Returns a dict containing a subset of the track's original attributes."""
 
+        # with open('debug.json', 'w') as f:
+        #     import json
+        #     json.dump(info, f, indent=4)
+
         url = None
         for format in info['formats']:
-            url = format['url'] if format['fps'] == None else url
+            url = format['url'] if format.get('fps', None) == None else url
 
         return {
             'title': info['title'],

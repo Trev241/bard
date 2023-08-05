@@ -67,4 +67,3 @@ def launch():
 if __name__ == "__main__":
     print(f'[{os.getcwd()}] Script was triggered.')
     launch()
-    print(f'[{os.getcwd()}] Successfully launched Bard.')
