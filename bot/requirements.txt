@@ -1,8 +1,7 @@
-beautifulsoup4
-discord.py
-matplotlib
-Pillow
-python-dotenv
-requests
-yt-dlp
-PyNaCl
+beautifulsoup4==4.12.2
+discord.py==2.3.1
+matplotlib==3.6.0
+Pillow==10.0.0
+python-dotenv==1.0.0
+requests==2.30.0
+yt_dlp==2023.3.4
