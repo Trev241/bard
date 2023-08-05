@@ -1,12 +1,14 @@
 const router = require("express").Router();
 const path = require("path");
-const { Worker } = require("worker_threads");
-const { python } = require("pythonia");
+// const { Worker } = require("worker_threads");
+// const { python } = require("pythonia");
+const spawn = require("child_process").spawn;
 
 require("dotenv").config();
 
 let botStatus = false;
-let worker;
+const botScript = "./../bot/main.py";
+const pythonExe = "./../bot/venv/bin/python3";
 
 router
   .route("/")
@@ -20,8 +22,10 @@ router.route("/set").post((req, res) => {
   if (req.body.secret === process.env.SECRET) {
     botStatus = req.body.mode;
 
-    if (botStatus) worker = new Worker("./bot-worker.js");
-    else python.exit();
+    // if (botStatus) worker = new Worker("./bot-worker.js");
+    // else python.exit();
+
+    if (botStatus) spawn(pythonExe, ["-u", botScript]);
 
     res.send({ running: botStatus });
   } else res.status(403).send({ message: "Invalid secret." });
