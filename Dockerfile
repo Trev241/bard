@@ -11,6 +11,9 @@ RUN set -xe \
     && apt-get install -y python3 \
     && apt-get install -y pipx \
     && pipx ensurepath \
+    && pipx update pipx
+
+RUN set -xe \
     && pipx install -r requirements.txt \
     && pipx install -U "discord.py[voice]" \
     && pipx install pynacl
