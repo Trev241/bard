@@ -62,6 +62,7 @@ async def main():
 
 def launch():
     Thread(target=asyncio.run, args=(main(),)).start()
+    print('Started bot thread successfully')
 
 
 if __name__ == "__main__":
