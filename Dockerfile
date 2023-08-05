@@ -15,7 +15,7 @@ RUN set -xe \
     && python3 -m venv venv
 
 RUN set -xe \
-    && source venv/bin/activate \
+    && . venv/bin/activate \
     && pip install -r requirements.txt \
     && pip install -U "discord.py[voice]" \
     && pip install pynacl
