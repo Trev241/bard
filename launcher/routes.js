@@ -15,6 +15,13 @@ const pythonExe = "./../bot/venv/bin/python3";
 // const pythonExe = "./bot/venv/scripts/python";
 
 module.exports = (socket) => {
+  socket.on("connection", (client) => {
+    console.log("Client established connection.");
+
+    // Return botStatus upon request.
+    client.on("status", () => client.emit("status", botStatus));
+  });
+
   router
     .route("/")
     .get((req, res) =>
@@ -44,6 +51,10 @@ module.exports = (socket) => {
         scriptExecution.stderr.on("data", (data) =>
           socket.emit("stderr", uint8arrayToString(data))
         );
+        scriptExecution.on("close", (code) => {
+          botStatus = false;
+          socket.emit("close", `Bot service exited with code ${code}.`);
+        });
 
         console.log("Bot subprocess spawned.");
       }

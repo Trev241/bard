@@ -16,18 +16,6 @@ const PORT = 5000;
 const server = require("http").createServer(app);
 const io = require("socket.io")(server);
 
-io.on("connection", (client) => {
-  console.log(`${client} connected.`);
-
-  client.on("message", (event) => {
-    console.log("Received message ", event);
-  });
-
-  client.on("disconnected", () => {
-    console.log(`${client} disconnected.`);
-  });
-});
-
 app.use(require("./routes")(io));
 
 server.listen(PORT);
