@@ -14,42 +14,50 @@ const pythonExe = "./../bot/venv/bin/python3";
 // const botScript = "./bot/main.py";
 // const pythonExe = "./bot/venv/scripts/python";
 
-router
-  .route("/")
-  .get((req, res) =>
-    res.sendFile(path.join(__dirname + "public", "index.html"))
-  );
+module.exports = (socket) => {
+  router
+    .route("/")
+    .get((req, res) =>
+      res.sendFile(path.join(__dirname, "public", "index.html"))
+    );
 
-router.route("/status").get((req, res) => res.send({ online: botStatus }));
+  router
+    .route("/console")
+    .get((req, res) =>
+      res.sendFile(path.join(__dirname, "public", "console.html"))
+    );
 
-router.route("/set").post((req, res) => {
-  if (req.body.secret === process.env.SECRET) {
-    botStatus = req.body.mode;
+  router.route("/status").get((req, res) => res.send({ online: botStatus }));
 
-    // if (botStatus) worker = new Worker("./bot-worker.js");
-    // else python.exit();
+  router.route("/set").post((req, res) => {
+    if (req.body.secret === process.env.SECRET) {
+      botStatus = req.body.mode;
 
-    if (botStatus) {
-      const scriptExecution = spawn(pythonExe, ["-u", botScript]);
-      scriptExecution.stdout.on("data", (data) =>
-        console.log(uint8arrayToString(data))
-      );
-      scriptExecution.stderr.on("data", (data) =>
-        console.log(uint8arrayToString(data))
-      );
+      // if (botStatus) worker = new Worker("./bot-worker.js");
+      // else python.exit();
 
-      console.log("Bot subprocess spawned.");
-    }
+      if (botStatus) {
+        const scriptExecution = spawn(pythonExe, ["-u", botScript]);
+        scriptExecution.stdout.on("data", (data) =>
+          socket.emit("stdout", uint8arrayToString(data))
+        );
+        scriptExecution.stderr.on("data", (data) =>
+          socket.emit("stderr", uint8arrayToString(data))
+        );
 
-    res.send({ running: botStatus });
-  } else res.status(403).send({ message: "Invalid secret." });
-});
+        console.log("Bot subprocess spawned.");
+      }
 
-router.route("/notify").post((req, res) => {
-  if (req.headers.secret === process.env.SECRET) {
-    botStatus = req.body.running;
-    res.sendStatus(200);
-  } else res.status(403).send({ message: "Invalid secret." });
-});
+      res.send({ running: botStatus });
+    } else res.status(403).send({ message: "Invalid secret." });
+  });
 
-module.exports = router;
+  router.route("/notify").post((req, res) => {
+    if (req.headers.secret === process.env.SECRET) {
+      botStatus = req.body.running;
+      res.sendStatus(200);
+    } else res.status(403).send({ message: "Invalid secret." });
+  });
+
+  return router;
+};

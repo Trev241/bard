@@ -94,3 +94,5 @@ The bot's prefix is `?`. Some commands have aliases which have not been mentione
 2. Since the bot was created with private use in mind, it does not support use across multiple guilds at once.
 
 3. The launcher relies on the bot to notify it whenever it exits. This can be problematic if the bot unexpectedly crashes and fails to make a POST request to the server.
+
+4. Some dependencies update with breaking changes. There's nothing that can be done about it other than freezing the requirements at a specific version. You may do this if you wish in your clone/fork of the repository. I've chosen not to since YT especially can undergo huge API changes which will require a library update anyways and some inevitable rewrite.

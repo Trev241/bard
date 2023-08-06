@@ -79,7 +79,7 @@ const handleSubmit = async (e) => {
     })
     .then((responseJson) => {
       botStatus = responseJson.running;
-      window.location.reload();
+      window.location.href = "console";
     })
     .catch((err) => {
       errorText.innerHTML = err.message;
