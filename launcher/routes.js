@@ -20,6 +20,9 @@ module.exports = (socket) => {
 
     // Return botStatus upon request.
     client.on("status", () => client.emit("status", botStatus));
+
+    // Refresh message received.
+    client.on("refresh", () => console.log("Received refresh message."));
   });
 
   router
