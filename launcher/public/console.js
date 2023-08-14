@@ -11,8 +11,8 @@ const FORMATTING_OPTIONS = {
 window.onload = () => {
   logContainer = document.getElementById("logContainer");
 
-  // Emit a message to the server every 2 minutes to keep the connection alive and to avoid inactivity
-  setInterval(() => socket.emit("refresh"), 120000);
+  // Emit a message to the server every 30 seconds to keep the connection alive and to avoid inactivity
+  setInterval(() => socket.emit("refresh"), 30000);
 };
 
 const log = (message, formatOpts) => {
