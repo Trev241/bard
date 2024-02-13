@@ -2,7 +2,7 @@ import requests
 import urllib.parse
 
 from discord.ext import commands
-from discord import RawTypingEvent, Embed, RawReactionActionEvent, Message
+from discord import Embed, RawReactionActionEvent, Message
 from bs4 import BeautifulSoup
 from constants import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 
@@ -26,6 +26,11 @@ class Events(commands.Cog):
             return 
 
         # await self.find_anime(message)
+        util_base = self.client.get_cog('Utils')
+
+        if util_base.is_pinging and util_base.who.id == message.author.id:
+            await util_base.ping_stop(util_base.ctx)
+            await util_base.ctx.send('You\'re back!')
 
     async def find_anime(self, message: Message):
         """
@@ -144,14 +149,6 @@ class Events(commands.Cog):
             },
             'color': EMBED_COLOR_THEME
         })
-
-    @commands.Cog.listener()
-    async def on_raw_typing(self, payload: RawTypingEvent):
-        util_base = self.client.get_cog('Utils')
-
-        if util_base.is_pinging and util_base.who.id == payload.user_id:
-            await util_base.ping_stop(util_base.ctx)
-            await util_base.ctx.send('You\'re back!')
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):

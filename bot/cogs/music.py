@@ -138,7 +138,6 @@ class Music(commands.Cog):
 
     @commands.command()
     async def play(self, ctx, *, query):
-
         # Abort if not in voice channel
         if not await self.join(ctx):
             return

@@ -55,6 +55,5 @@ class Utils(commands.Cog):
         finally:
             sys.exit(0)
 
-
 async def setup(client):
     await client.add_cog(Utils(client))

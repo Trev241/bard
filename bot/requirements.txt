@@ -1,8 +1,11 @@
 beautifulsoup4
-discord.py
+git+https://github.com/Rapptz/discord.py.git
 matplotlib
 Pillow
 python-dotenv
 requests
 yt-dlp
 PyNaCl
+discord-ext-voice-recv
+speech_recognition 
+openai-whisper

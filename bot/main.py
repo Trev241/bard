@@ -9,6 +9,7 @@ import cogs.music as music
 import cogs.utils as utils
 import cogs.events as events
 import cogs.wordle as wordle
+import cogs.voice as voice
 
 from discord.ext import commands
 from threading import Thread
@@ -30,7 +31,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 # ADDING COGS TO BOT
-cogs = [music, utils, events, wordle]
+cogs = [music, utils, events, wordle, voice]
 
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix='?', intents=discord.Intents.all())
