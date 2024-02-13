@@ -1,4 +1,5 @@
 import re
+import os
 import asyncio
 import speech_recognition as sr
 
@@ -11,18 +12,22 @@ class Voice(commands.Cog):
         self.recognizer = sr.Recognizer()
         self.ctx = None
         self.is_transcribing = False
+        self.vc = None
 
     @commands.command()
     async def listen(self, ctx): 
         self.ctx = ctx
-        vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
-        vc.listen(voice_recv.WaveSink(f"sounds/incoming.wav"))
+        if not self.vc:
+            self.vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+        self.vc.listen(voice_recv.WaveSink(f"sounds/incoming.wav"))
 
     @commands.command()
     async def transcribe(self, ctx):
         """
         Transcribes the most recent audio instruction recorded
         """
+        # Stop listening immediately
+        self.vc.stop_listening()
 
         self.is_transcribing = True
         message = await ctx.send(".")
@@ -55,6 +60,9 @@ class Voice(commands.Cog):
         for command in self.client.commands:
             if command.name == args[0]:
                 await ctx.invoke(self.client.get_command(command.name), query=" ".join(args[1:]))
+
+        # Delete audio file
+        os.remove("sounds/incoming.wav")
 
     async def send_loading_message(self, message):
         spinner_dot_count = 0
