@@ -9,3 +9,6 @@ PyNaCl
 discord-ext-voice-recv
 speech_recognition 
 openai-whisper
+pvporcupine
+resampy
+pyttsx3

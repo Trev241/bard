@@ -1,5 +1,6 @@
 import discord
 import yt_dlp
+
 # import json
 import asyncio
 import datetime
@@ -15,13 +16,11 @@ class Music(commands.Cog):
     IDLE_TIMEOUT_INTERVAL = 300
 
     FFMPEG_OPTIONS = {
-        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn'
+        "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+        "options": "-vn",
     }
 
-    YDL_OPTIONS = {
-        'format': 'bestaudio'
-    }
+    YDL_OPTIONS = {"format": "bestaudio"}
 
     def __init__(self, client):
         self.client = client
@@ -54,12 +53,13 @@ class Music(commands.Cog):
             # if not connected:
             #     await ctx.send(f'The bot must be in a voice channel for this command to work!')
             return connected
+
         return commands.check(predicate)
 
-    @commands.command(aliases=['connect'])
+    @commands.command(aliases=["connect"])
     async def join(self, ctx):
         if ctx.author.voice is None:
-            await ctx.send('Please join a voice channel!')
+            await ctx.send("Please join a voice channel!")
             return False
         else:
             voice_channel = ctx.author.voice.channel
@@ -74,7 +74,7 @@ class Music(commands.Cog):
 
             return True
 
-    @commands.command(aliases=['leave', 'quit', 'bye'])
+    @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx):
         ctx.voice_client.stop()
@@ -82,56 +82,63 @@ class Music(commands.Cog):
 
         # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
         # TODO: Resolve sound if bot is launched from main.py
-        source = await discord.FFmpegOpusAudio.from_probe('./../bot/sounds/bard.disconnect.ogg')
+        source = await discord.FFmpegOpusAudio.from_probe(
+            "./../bot/sounds/bard.disconnect.ogg"
+        )
 
         el = asyncio.get_running_loop()
         ctx.voice_client.play(
-            source,
-            after=lambda error: el.create_task(ctx.voice_client.disconnect())
+            source, after=lambda error: el.create_task(ctx.voice_client.disconnect())
         )
 
-    @commands.command(aliases=['playing', 'nowplaying'])
+    @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
     async def now(self, ctx):
         track = self.current_track
-        requester = track['requester']
+        requester = track["requester"]
 
-        embed = discord.Embed.from_dict({
-            'title': track['title'],
-            'description': f'[Click here for video link]({track["webpage_url"]})',
-            'thumbnail': {
-                'url': track['thumbnail'],
-            },
-            'color': 15844367,
-            'fields': [
-                {
-                    'name': 'Duration',
-                    'value': track['duration'],
-                    'inline': True
+        embed = discord.Embed.from_dict(
+            {
+                "title": track["title"],
+                "description": f'[Click here for video link]({track["webpage_url"]})',
+                "thumbnail": {
+                    "url": track["thumbnail"],
                 },
-                {
-                    'name': 'Loop',
-                    'value': 'Yes' if self.looping_video else 'No',
-                    'inline': True
+                "color": 15844367,
+                "fields": [
+                    {"name": "Duration", "value": track["duration"], "inline": True},
+                    {
+                        "name": "Loop",
+                        "value": "Yes" if self.looping_video else "No",
+                        "inline": True,
+                    },
+                    {
+                        "name": "Next",
+                        "value": (
+                            self.queue[1]["title"]
+                            if len(self.queue) > 1
+                            else (
+                                track["title"]
+                                if self.looping_queue
+                                else "(End of queue)"
+                            )
+                        ),
+                        "inline": True,
+                    },
+                ],
+                "footer": {
+                    "text": f"Song requested by {requester.display_name}",
+                    "icon_url": requester.display_avatar.url,
                 },
-                {
-                    'name': 'Next',
-                    'value': self.queue[1]['title'] if len(self.queue) > 1 else track['title'] if self.looping_queue else '(End of queue)',
-                    'inline': True
-                },
-            ],
-            'footer': {
-                'text': f'Song requested by {requester.display_name}',
-                'icon_url': requester.display_avatar.url
             }
-        })
+        )
 
         if self.tts:
             await ctx.send(f'Now playing {track["title"]}', tts=True, delete_after=30)
 
         await ctx.send(embed=embed)
 
-    @commands.command(name='tts')
+    @commands.command(name="tts")
     async def tts_(self, ctx, flag: bool):
         self.tts = flag
         await ctx.send(f'TTS {"enabled" if self.tts else "disabled"}')
@@ -142,25 +149,26 @@ class Music(commands.Cog):
         if not await self.join(ctx):
             return
 
-        await ctx.send('Searching...')
+        await ctx.send("Searching...")
         try:
             get(query)
         except:
             info = self.ydl.extract_info(
-                f'ytsearch:{query}', download=False, process=False)
+                f"ytsearch:{query}", download=False, process=False
+            )
         else:
             # Avoid downloading by setting process=False to prevent blocking execution
             info = self.ydl.extract_info(query, download=False, process=False)
 
         # Queue entries
-        if info.get('_type', None) == 'playlist':
+        if info.get("_type", None) == "playlist":
             count = 0
 
-            for entry in info['entries']:
+            for entry in info["entries"]:
                 await self.queue_entry(entry, ctx)
                 count += 1
 
-            await ctx.send(f'Queued {count} video(s).')
+            await ctx.send(f"Queued {count} video(s).")
         else:
             await self.queue_entry(info, ctx)
             await ctx.send(f'Queued {info["title"]}.')
@@ -181,16 +189,16 @@ class Music(commands.Cog):
         #     json.dump(info, f, indent=4)
 
         url = None
-        for format in info['formats']:
-            url = format['url'] if format.get('fps', None) == None else url
+        for format in info["formats"]:
+            url = format["url"] if format.get("fps", None) == None else url
 
         return {
-            'title': info['title'],
-            'url': url,
-            'duration': str(datetime.timedelta(seconds=info['duration'])),
-            'thumbnail': info['thumbnails'][0]['url'],
-            'webpage_url': info['webpage_url'],
-            'requester': requester
+            "title": info["title"],
+            "url": url,
+            "duration": str(datetime.timedelta(seconds=info["duration"])),
+            "thumbnail": info["thumbnails"][0]["url"],
+            "webpage_url": info["webpage_url"],
+            "requester": requester,
         }
 
     async def on_track_complete(self, ctx):
@@ -204,7 +212,7 @@ class Music(commands.Cog):
 
         If both flags are true (i.e. loop single as well as queue), then the task of looping the single track takes
         higher priority over looping the queue as one would expect intuitively. In other words, the next track
-        will not be played unless looping for the current track has been turned off. This is because the track  
+        will not be played unless looping for the current track has been turned off. This is because the track
         at the front of the queue is not popped.
 
         At the end of the callback, if there are still items in the queue, then play_next() is called to play
@@ -253,14 +261,19 @@ class Music(commands.Cog):
 
         try:
             voice_client = self.ctx.voice_client
-            alone = voice_client and len(
-                voice_client.channel.members) == 1 and voice_client.channel.members[0].id == self.client.user.id
+            alone = (
+                voice_client
+                and len(voice_client.channel.members) == 1
+                and voice_client.channel.members[0].id == self.client.user.id
+            )
             if alone or self.idle:
-                embed = discord.Embed.from_dict({
-                    'title': 'Bard is still in development!',
-                    'description': 'Please be patient if you encounter any bugs. You may also raise them as issues on the [bot\'s repository](https://github.com/Trev241/bard/issues)',
-                    'color': EMBED_COLOR_THEME
-                })
+                embed = discord.Embed.from_dict(
+                    {
+                        "title": "Bard is still in development!",
+                        "description": "Please be patient if you encounter any bugs. You may also raise them as issues on the [bot's repository](https://github.com/Trev241/bard/issues)",
+                        "color": EMBED_COLOR_THEME,
+                    }
+                )
                 await self.ctx.send(embed=embed)
 
                 # It is necessary to pass all required arguments to the function in order for it to execute
@@ -281,62 +294,80 @@ class Music(commands.Cog):
             #     json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
 
             self.current_track = Music.create_track(complete_entry, ctx.author)
-            source = await discord.FFmpegOpusAudio.from_probe(self.current_track['url'], **Music.FFMPEG_OPTIONS)
+            source = await discord.FFmpegOpusAudio.from_probe(
+                self.current_track["url"], **Music.FFMPEG_OPTIONS
+            )
 
             # Fetching Event Loop to create a new task i.e. to play the next song
             # Courtesy of
             # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
             el = asyncio.get_running_loop()
             ctx.voice_client.play(
-                source,
-                after=lambda error: el.create_task(self.on_track_complete(ctx))
+                source, after=lambda error: el.create_task(self.on_track_complete(ctx))
             )
 
             await self.now(ctx)
         except yt_dlp.DownloadError as e:
             traceback.print_exc()
-            await ctx.send(f'An error occurred while trying to download the track. {e}')
-            await ctx.send('Continuing to next song if available...')
-            
+            await ctx.send(f"An error occurred while trying to download the track. {e}")
+            await ctx.send("Continuing to next song if available...")
+
             # End current unplayable track
             await self.on_track_complete(ctx)
         except Exception as e:
             traceback.print_exc()
-            await ctx.send(f'An error occurred while trying to play the track. {e}')
+            await ctx.send(f"An error occurred while trying to play the track. {e}")
 
             self.reset()
 
     @play.error
     async def play_error(self, ctx, error):
-        await ctx.send(f'There was an error while trying to process your request. Error: {error}')
+        await ctx.send(
+            f"There was an error while trying to process your request. Error: {error}"
+        )
 
     @commands.group(invoke_without_command=True)
     @is_connected()
     async def loop(self, ctx):
         self.looping_video = not self.looping_video
-        await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}')
+        await ctx.send(
+            f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}'
+        )
 
-    @loop.command(name='queue', aliases=['all'])
+    @loop.command(name="queue", aliases=["all"])
     @is_connected()
     async def loop_queue(self, ctx):
         self.looping_queue = not self.looping_queue
-        await ctx.send(f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}')
+        await ctx.send(
+            f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}'
+        )
 
-    @commands.command(name='queue', aliases=['q'])
+    @commands.command(name="queue", aliases=["q"])
     @is_connected()
     async def show_queue(self, ctx):
-        embed = discord.Embed.from_dict({
-            'title': f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
-            'description': f'{len(self.queue)} track(s) queued.',
-            'color': EMBED_COLOR_THEME,
-            'fields': [
-                {
-                    'name': f'{i + 1}. {track["title"]}',
-                    'value': str(datetime.timedelta(seconds=track['duration'] if track['duration'] != None else 0)),
-                    'inline': False
-                } for i, track in enumerate(self.queue)
-            ]
-        })
+        embed = discord.Embed.from_dict(
+            {
+                "title": f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
+                "description": f"{len(self.queue)} track(s) queued.",
+                "color": EMBED_COLOR_THEME,
+                "fields": [
+                    {
+                        "name": f'{i + 1}. {track["title"]}',
+                        "value": str(
+                            datetime.timedelta(
+                                seconds=(
+                                    track["duration"]
+                                    if track["duration"] != None
+                                    else 0
+                                )
+                            )
+                        ),
+                        "inline": False,
+                    }
+                    for i, track in enumerate(self.queue)
+                ],
+            }
+        )
 
         await ctx.send(embed=embed)
 
@@ -364,19 +395,19 @@ class Music(commands.Cog):
             await ctx.send(f'Removed {track["title"]}')
 
         else:
-            await ctx.send(f'There is no track with that index')
+            await ctx.send(f"There is no track with that index")
 
     @commands.command()
     @is_connected()
     async def pause(self, ctx):
         ctx.voice_client.pause()
-        await ctx.send('Paused')
+        await ctx.send("Paused")
 
     @commands.command()
     @is_connected()
     async def resume(self, ctx):
         ctx.voice_client.resume()
-        await ctx.send('Resumed')
+        await ctx.send("Resumed")
 
 
 async def setup(client):
