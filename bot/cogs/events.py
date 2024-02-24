@@ -1,5 +1,6 @@
 import requests
 import urllib.parse
+import discord
 
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message

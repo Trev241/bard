@@ -7,7 +7,7 @@ import datetime
 import traceback
 
 from requests import get
-from discord.ext import commands
+from discord.ext import commands, voice_recv
 from collections import deque
 from constants import EMBED_COLOR_THEME
 
@@ -64,7 +64,7 @@ class Music(commands.Cog):
         else:
             voice_channel = ctx.author.voice.channel
             if ctx.voice_client is None:
-                await voice_channel.connect()
+                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
             else:
                 await ctx.voice_client.move_to(voice_channel)
 
@@ -72,12 +72,18 @@ class Music(commands.Cog):
             self.ctx = ctx
             await self.start_timeout_timer()
 
+            # Prepare assistant
+            assistant_base = self.client.get_cog("Assistant")
+            assistant_base.listen(vc)
+
             return True
 
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx):
         ctx.voice_client.stop()
+        assistant_base = self.client.get_cog("Assistant")
+        assistant_base.stop_listening(ctx.voice_client)
         self.reset()
 
         # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')

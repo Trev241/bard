@@ -10,7 +10,6 @@ import audioop
 import array
 import time
 import pvrhino
-import asyncio
 
 from discord.ext import commands, voice_recv
 from collections import defaultdict
@@ -53,19 +52,6 @@ class Assistant(commands.Cog):
             require_endpoint=False,  # Rhino will not require an chunk of silence at the end
         )
 
-    async def detect_silence(self):
-        while self.is_awake:
-            await asyncio.sleep(0.1)
-            curr_time = time.time_ns() // 1_000_000
-
-            # Check if 500ms of silence has elapsed
-            if curr_time - self.last_frame_time > 500:
-                # Rhino will only infer intent after a chunk of silence
-                silence_frame = [0 for _ in range(512)]
-                self.detect_intent(silence_frame)
-
-                return
-
     def detect_intent(self, audio_frame):
         # Determine intent from speech
         is_finalized = self.rhino.process(audio_frame)
@@ -76,14 +62,13 @@ class Assistant(commands.Cog):
                 self.is_awake = False
                 log.info(inference.intent)
 
-    @commands.command()
-    async def wake(self, ctx):
-        self.tts_engine.save_to_file(
-            f"Hi, What can I do for you?", "assistant/reply.wav"
-        )
-        self.tts_engine.runAndWait()
-        reply = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
-        vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+    def listen(self, vc):
+        # self.tts_engine.save_to_file(
+        #     f"Hi, What can I do for you?", "assistant/reply.wav"
+        # )
+        # self.tts_engine.runAndWait()
+        # reply = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+        # vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
 
         def callback(user: discord.User, data: voice_recv.VoiceData):
             # log.info(f"Got packet from {user.display_name}")
@@ -147,10 +132,7 @@ class Assistant(commands.Cog):
                         self.speaker = user
                         log.info("Detected wake word")
 
-                        # el = asyncio.get_event_loop()
-                        # el.create_task(self.detect_silence())
-
-                        vc.play(reply)
+                        # vc.play(reply)
 
             # elif self.speaker != None and self.speaker.id == user.id:
             #     sdata = self._stream_data[user.id]
@@ -165,6 +147,9 @@ class Assistant(commands.Cog):
 
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
         vc.listen(assistant_sink)
+
+    def stop_listening(self, vc):
+        vc.stop_listening()
 
     def get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio):
