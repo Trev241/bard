@@ -10,5 +10,6 @@ discord-ext-voice-recv
 speech_recognition 
 openai-whisper
 pvporcupine
+pvrhino
 resampy
 pyttsx3
