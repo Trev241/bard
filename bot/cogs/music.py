@@ -64,7 +64,8 @@ class Music(commands.Cog):
         else:
             voice_channel = ctx.author.voice.channel
             if ctx.voice_client is None:
-                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
+                await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
+                # await voice_channel.connect()
             else:
                 await ctx.voice_client.move_to(voice_channel)
 
@@ -74,7 +75,7 @@ class Music(commands.Cog):
 
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
-            assistant_base.listen(vc)
+            assistant_base.enable(ctx)
 
             return True
 
@@ -83,7 +84,7 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         ctx.voice_client.stop()
         assistant_base = self.client.get_cog("Assistant")
-        assistant_base.stop_listening(ctx.voice_client)
+        assistant_base.disable(ctx)
         self.reset()
 
         # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
@@ -195,8 +196,12 @@ class Music(commands.Cog):
         #     json.dump(info, f, indent=4)
 
         url = None
+        abr = 0
+
         for format in info["formats"]:
-            url = format["url"] if format.get("fps", None) == None else url
+            if float(format.get("abr", 0) or 0) > abr:
+                # Save the URL with the highest audio bit rate
+                url = format["url"]
 
         return {
             "title": info["title"],
@@ -296,8 +301,10 @@ class Music(commands.Cog):
             # Process IE and probe audio
             complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
 
-            # with open('yt-dlp.json', 'w') as f:
-            #     json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
+            import json
+
+            with open("yt-dlp.json", "w") as f:
+                json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
 
             self.current_track = Music.create_track(complete_entry, ctx.author)
             source = await discord.FFmpegOpusAudio.from_probe(
@@ -385,6 +392,15 @@ class Music(commands.Cog):
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
         ctx.voice_client.stop()
+
+        # Experimental feature in VoiceRecvClient, calling stop() will
+        # halt both listening and playback services. There is currently no
+        # way to halt one service separately from the other. A temporary workaround
+        # is to restart the assistant if it was initially enabled
+        assistant_base = self.client.get_cog("Assistant")
+        if assistant_base.enabled:
+            assistant_base.disable(ctx)
+            assistant_base.enable(ctx)
 
     @commands.command()
     @is_connected()

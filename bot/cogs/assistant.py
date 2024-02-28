@@ -1,7 +1,5 @@
 import os
-import speech_recognition as sr
 import pvporcupine
-import numpy as np
 import resampy
 import logging
 import pyttsx3
@@ -10,9 +8,14 @@ import audioop
 import array
 import time
 import pvrhino
+import asyncio
+
+import numpy as np
+import speech_recognition as sr
 
 from discord.ext import commands, voice_recv
-from collections import defaultdict
+from discord.ext.commands import Context
+from collections import defaultdict, deque
 
 log = logging.getLogger()
 
@@ -22,56 +25,172 @@ class Assistant(commands.Cog):
         # Bot state
         self.client = client
         self.recognizer = sr.Recognizer()
-        self.ctx = None
-        self.is_transcribing = False
-        self.vc = None
-        self.is_awake = False
-        self._resampled_stream = defaultdict(lambda: list())
+        self.enabled = False
+        self._ctx = None
+        self._is_awake = False
+        self._query = None
+        self._transcription_required = False
+
+        # Events
+        self._speech_event = asyncio.Event()
+        self._intent_event = asyncio.Event()
+        self._query_event = asyncio.Event()
+
+        self._loop = asyncio.get_event_loop()
+        self._voice_client: discord.VoiceClient = None
+        self._resampled_stream = []
         self._stream_data = defaultdict(
             lambda: {"stopper": None, "buffer": array.array("B")}
         )
 
         # Porcupine wake-word
-        self.speaker = None
+        self._priority_speaker = None
         self.porcupine = pvporcupine.create(
             access_key=os.getenv("PV_ACCESS_KEY"),
             keyword_paths=["assistant/Okay-Bard_en_windows_v3_0_0.ppn"],
             # keywords=["picovoice", "bumblebee"],
+            # sensitivities=[1.0, 1.0],
         )
 
         # TTS
-        self.tts_engine = pyttsx3.init()
-        tts_voice_id = self.tts_engine.getProperty("voices")[1].id
-        self.tts_engine.setProperty("voice", tts_voice_id)
+        self._tts_engine = pyttsx3.init()
+        tts_voice_id = self._tts_engine.getProperty("voices")[1].id
+        self._tts_engine.setProperty("voice", tts_voice_id)
+        self._message_queue = deque()
+        self._msg_queue_task = None
 
         # Rhino speech-to-intent
-        self.last_frame_time = None
+        self._intent_queue = deque()
+        self._loop.create_task(self._process_intent())
         self.rhino = pvrhino.create(
             access_key=os.getenv("PV_ACCESS_KEY"),
             context_path="assistant/Bard-Assistant_en_windows_v3_0_0.rhn",
-            require_endpoint=False,  # Rhino will not require an chunk of silence at the end
+            # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
         )
 
-    def detect_intent(self, audio_frame):
+    def _detect_intent(self, audio_frame):
+        """
+        Detects intent. Inferred intent is pushed to the intent
+        queue to be processed.
+        """
+
         # Determine intent from speech
         is_finalized = self.rhino.process(audio_frame)
         if is_finalized:
             inference = self.rhino.get_inference()
 
             if inference.is_understood:
-                self.is_awake = False
-                log.info(inference.intent)
+                self._is_awake = False
 
-    def listen(self, vc):
-        # self.tts_engine.save_to_file(
-        #     f"Hi, What can I do for you?", "assistant/reply.wav"
-        # )
-        # self.tts_engine.runAndWait()
-        # reply = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
-        # vc = await ctx.author.voice.channel.connect(cls=voice_recv.VoiceRecvClient)
+                # Add intent to queue and set event for processing
+                log.info(inference.intent)
+                self._intent_queue.append(inference)
+                self._loop.call_soon_threadsafe(self._intent_event.set)
+
+    def say(self, msg):
+        """
+        Adds a message to the assistant's message queue which will be
+        played over the bot's voice client connection using TTS.
+        Messages will not play over each other and can only played if
+        a coroutine to process them exists. In other words, the assistant
+        should be enabled.
+        """
+
+        self._message_queue.append(msg)
+
+        # Modify the event from another thread using call_soon_threadsafe
+        # Reference: https://stackoverflow.com/questions/64651519/how-to-pass-an-event-into-an-async-task-from-another-thread
+        self._loop.call_soon_threadsafe(self._speech_event.set)
+
+    async def _process_message_queue(self):
+        """
+        Starts a repeating coroutine that generates speech for messages
+        added to message_queue. There should be only one instance of
+        this task running.
+        """
+
+        while True:
+            # Wait for a message event
+            await self._speech_event.wait()
+
+            if len(self._message_queue) == 0:
+                return
+
+            message = self._message_queue.popleft()
+            self._tts_engine.save_to_file(message, "assistant/reply.wav")
+            self._tts_engine.runAndWait()
+
+            audio = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+            if not self._voice_client.is_playing():
+                self._voice_client.play(audio)
+            await self._ctx.send(message)
+
+            self._speech_event.clear()
+
+    async def _process_intent(self):
+        """
+        Starts a repeating coroutine to process intents one at a time.
+        """
+
+        while True:
+            # Wait for intent
+            await self._intent_event.wait()
+
+            if len(self._intent_queue) == 0:
+                return
+
+            inference = self._intent_queue.popleft()
+            command = self.client.get_command(inference.intent)
+            if command:
+                log.info(f"Executing intent: {command}")
+                if inference.intent == "play":
+                    # Additional transcription is required
+                    self._stream_data[self._priority_speaker.id]["stopper"] = None
+                    self._transcription_required = True
+                    self.say("What song would you like me to play?")
+
+                    await self._query_event.wait()
+
+                    # Stop background whisper transcriber and delete stopper callback
+                    stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
+                    stopper_cb(False)
+
+                    await command(self._ctx, query=self._query)
+                    self._query_event.clear()
+                    self._transcription_required = False
+                else:
+                    self.say(f"Okay, {inference.intent}ing")
+                    await command(self._ctx)
+
+            self._intent_event.clear()
+
+    def enable(self, ctx: Context):
+        """
+        Enables the assistant. When in listening mode, the assistant waits
+        for the wake word to trigger command mode. In command mode, the
+        assistant will interpret the intent of the speaker who woke the assistant
+        """
+
+        if self.enabled:
+            log.info("Assistant is already enabled")
+            return
+
+        self.enabled = True
+        self._ctx = ctx
+        self._voice_client = ctx.voice_client
+        self._priority_speaker = ctx.author
+
+        el = asyncio.get_event_loop()
+        self._msg_queue_task = el.create_task(self._process_message_queue())
+
+        self.say(
+            f"{self._priority_speaker.display_name}, you are the priority speaker now."
+        )
 
         def callback(user: discord.User, data: voice_recv.VoiceData):
-            # log.info(f"Got packet from {user.display_name}")
+            # Only process packets from the priority speaker
+            if user and user.id != self._priority_speaker.id:
+                return
 
             """
             Porcupine expects a frame of 512 samples.
@@ -97,66 +216,85 @@ class Assistant(commands.Cog):
             https://stackoverflow.com/questions/32128206/what-does-interleaved-stereo-pcm-linear-int16-big-endian-audio-look-like
             """
 
-            # The PCM stream from Discord arrives in bytes in Little Endian format
-            values = np.frombuffer(data.pcm, dtype=np.int16)
-            value_matrix = np.array((values[::2], values[1::2]))
+            if self._transcription_required:
+                # Additional speech transcription is required
 
-            # Downsample the audio stream from 48kHz to 16kHz
-            resampled_values = resampy.resample(value_matrix, 48_000, 16_000).astype(
-                value_matrix.dtype
-            )
+                sdata = self._stream_data[user.id]
+                sdata["buffer"].extend(data.pcm)
 
-            # Extend the buffer with the samples collected at this instance
-            # and choose left channel only
-            self._resampled_stream[user.id].extend(resampled_values[0])
-            resampled_buffer = self._resampled_stream[user.id]
+                if not sdata["stopper"]:
+                    sdata["stopper"] = self.recognizer.listen_in_background(
+                        DiscordSRAudioSource(sdata["buffer"]),
+                        self.get_bg_listener_callback(user),
+                        phrase_time_limit=10,
+                    )
+            else:
+                # Direct all PCM packets to porcupine or rhino if
+                # transcription is not required
 
-            # Mark the timestamp of this audio frame as the most recent one received
-            self.last_frame_time = time.time_ns() // 1_000_000
+                # The PCM stream from Discord arrives in bytes in Little Endian format
+                values = np.frombuffer(data.pcm, dtype=np.int16)
+                value_matrix = np.array((values[::2], values[1::2]))
 
-            if len(resampled_buffer) >= 512:
-                # Buffer has >512 bytes
-                audio_frame = resampled_buffer[:512]
-                self._resampled_stream[user.id] = resampled_buffer[512:]
+                # Downsample the audio stream from 48kHz to 16kHz
+                resampled_values = resampy.resample(
+                    value_matrix, 48_000, 16_000
+                ).astype(value_matrix.dtype)
 
-                if self.is_awake:
-                    # Determine intent from speech
-                    self.detect_intent(audio_frame)
-                else:
-                    # Listen for wake word
-                    result = self.porcupine.process(audio_frame)
+                # Extend the buffer with the samples for the current user collected
+                # at this instance and choose the left channel only
+                self._resampled_stream.extend(resampled_values[0])
+                resampled_buffer = self._resampled_stream
 
-                    if result == 0:
-                        # Set awake
-                        self.is_awake = True
-                        self.speaker = user
-                        log.info("Detected wake word")
+                # log.info(self._resampled_stream)
 
-                        # vc.play(reply)
+                if len(resampled_buffer) >= 512:
+                    # Buffer has >512 bytes
+                    audio_frame = resampled_buffer[:512]
+                    self._resampled_stream = resampled_buffer[512:]
 
-            # elif self.speaker != None and self.speaker.id == user.id:
-            #     sdata = self._stream_data[user.id]
-            #     sdata["buffer"].extend(data.pcm)
+                    if self._is_awake:
+                        # Determine intent from speech
+                        self._detect_intent(audio_frame)
+                    else:
+                        # Listen for wake word
+                        result = self.porcupine.process(audio_frame)
+                        log.info(result)
 
-            #     if not sdata["stopper"]:
-            #         sdata["stopper"] = self.recognizer.listen_in_background(
-            #             DiscordSRAudioSource(sdata["buffer"]),
-            #             self.get_bg_listener_callback(user),
-            #             phrase_time_limit=10,
-            #         )
+                        if result >= 0:
+                            # Set awake
+                            self._is_awake = True
+
+                            log.info("Detected wake word")
+                            self.say(f"Hi {user.display_name}, how can I help you?")
 
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
-        vc.listen(assistant_sink)
+        ctx.voice_client.listen(assistant_sink)
 
-    def stop_listening(self, vc):
-        vc.stop_listening()
+    def disable(self, ctx: Context):
+        """
+        Disables the assistant and cancels any connections and related tasks
+        """
+
+        self.enabled = False
+        self._ctx = ctx
+        ctx.voice_client.stop_listening()
+
+        # Clean up
+        self._msg_queue_task.cancel()
+        self._speech_event.clear()
+        self._intent_event.clear()
+        self._message_queue.clear()
+        self._intent_queue.clear()
 
     def get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio):
-            output = recognizer.recognize_whisper(
-                audio, model="tiny", language="english"
+            self._query = recognizer.recognize_whisper(
+                audio, model="base", language="english"
             )
-            print(f'{user.display_name} said "{output}"')
+            self.say("Let me look for that")
+            self._loop.call_soon_threadsafe(self._query_event.set)
+            print(f'{user.display_name} said "{self._query}"')
 
         return callback
 
