@@ -26,6 +26,8 @@ class Assistant(commands.Cog):
         self.client = client
         self.recognizer = sr.Recognizer()
         self.enabled = False
+        self.always_awake = True
+
         self._ctx = None
         self._is_awake = False
         self._query = None
@@ -90,10 +92,15 @@ class Assistant(commands.Cog):
     def say(self, msg):
         """
         Adds a message to the assistant's message queue which will be
-        played over the bot's voice client connection using TTS.
+        played over the bot's voice client connection using TTS along with
+        a text message.
+
+        Audio for the message will only be played if there is no audio
+        currently playing. Otherwise, only a text message will be displayed
+
         Messages will not play over each other and can only played if
         a coroutine to process them exists. In other words, the assistant
-        should be enabled.
+        should be enabled for the assistant to broadcast messages.
         """
 
         self._message_queue.append(msg)
@@ -104,9 +111,9 @@ class Assistant(commands.Cog):
 
     async def _process_message_queue(self):
         """
-        Starts a repeating coroutine that generates speech for messages
-        added to message_queue. There should be only one instance of
-        this task running.
+        Starts a repeating coroutine service that generates speech for
+        messages added to message_queue. There should be only one instance
+        of this task running.
         """
 
         while True:
@@ -141,13 +148,21 @@ class Assistant(commands.Cog):
 
             inference = self._intent_queue.popleft()
             command = self.client.get_command(inference.intent)
+
             if command:
                 log.info(f"Executing intent: {command}")
+
                 if inference.intent == "play":
                     # Additional transcription is required
-                    self._stream_data[self._priority_speaker.id]["stopper"] = None
+
+                    # TODO: Refactor into own method
+                    self._query = None
+                    self._stream_data[self._priority_speaker.id] = {
+                        "stopper": None,
+                        "buffer": array.array("B"),
+                    }
                     self._transcription_required = True
-                    self.say("What song would you like me to play?")
+                    self.say("What would you like me to play?")
 
                     await self._query_event.wait()
 
@@ -158,8 +173,9 @@ class Assistant(commands.Cog):
                     await command(self._ctx, query=self._query)
                     self._query_event.clear()
                     self._transcription_required = False
+
                 else:
-                    self.say(f"Okay, {inference.intent}ing")
+                    self.say(f"Okay, I will {inference.intent}")
                     await command(self._ctx)
 
             self._intent_event.clear()
@@ -183,13 +199,9 @@ class Assistant(commands.Cog):
         el = asyncio.get_event_loop()
         self._msg_queue_task = el.create_task(self._process_message_queue())
 
-        self.say(
-            f"{self._priority_speaker.display_name}, you are the priority speaker now."
-        )
-
         def callback(user: discord.User, data: voice_recv.VoiceData):
             # Only process packets from the priority speaker
-            if user and user.id != self._priority_speaker.id:
+            if user is None or user.id != self._priority_speaker.id:
                 return
 
             """
@@ -253,7 +265,7 @@ class Assistant(commands.Cog):
                     audio_frame = resampled_buffer[:512]
                     self._resampled_stream = resampled_buffer[512:]
 
-                    if self._is_awake:
+                    if self.always_awake or self._is_awake:
                         # Determine intent from speech
                         self._detect_intent(audio_frame)
                     else:
@@ -289,12 +301,12 @@ class Assistant(commands.Cog):
 
     def get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio):
-            self._query = recognizer.recognize_whisper(
-                audio, model="base", language="english"
-            )
-            self.say("Let me look for that")
-            self._loop.call_soon_threadsafe(self._query_event.set)
-            print(f'{user.display_name} said "{self._query}"')
+            if self._query == None:
+                self._query = recognizer.recognize_whisper(
+                    audio, model="small", language="english"
+                )
+                self._loop.call_soon_threadsafe(self._query_event.set)
+                print(f'{user.display_name} said "{self._query}"')
 
         return callback
 

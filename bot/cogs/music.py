@@ -1,7 +1,7 @@
 import discord
 import yt_dlp
 
-# import json
+import json
 import asyncio
 import datetime
 import traceback
@@ -301,8 +301,6 @@ class Music(commands.Cog):
             # Process IE and probe audio
             complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
 
-            import json
-
             with open("yt-dlp.json", "w") as f:
                 json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
 
@@ -343,9 +341,7 @@ class Music(commands.Cog):
     @is_connected()
     async def loop(self, ctx):
         self.looping_video = not self.looping_video
-        await ctx.send(
-            f'{"Looping" if self.looping_video else "Stopped looping"}: {self.current_track["title"]}'
-        )
+        await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}')
 
     @loop.command(name="queue", aliases=["all"])
     @is_connected()
