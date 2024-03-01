@@ -1,14 +1,19 @@
 import os
-import pvporcupine
-import resampy
-import logging
-import pyttsx3
-import discord
-import audioop
 import array
 import time
-import pvrhino
 import asyncio
+import json
+
+import resampy
+import logging
+import discord
+import audioop
+
+import pyttsx3
+import pvporcupine
+import pvrhino
+import vosk
+import assemblyai as aai
 
 import numpy as np
 import speech_recognition as sr
@@ -69,6 +74,11 @@ class Assistant(commands.Cog):
             context_path="assistant/Bard-Assistant_en_windows_v3_0_0.rhn",
             # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
         )
+
+        # AssemblyAI
+        aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
+        config = aai.TranscriptionConfig(language_code="en", punctuate=False)
+        self._transcriber = aai.Transcriber(config=config)
 
     def _detect_intent(self, audio_frame):
         """
@@ -238,7 +248,7 @@ class Assistant(commands.Cog):
                     sdata["stopper"] = self.recognizer.listen_in_background(
                         DiscordSRAudioSource(sdata["buffer"]),
                         self.get_bg_listener_callback(user),
-                        phrase_time_limit=10,
+                        phrase_time_limit=15,
                     )
             else:
                 # Direct all PCM packets to porcupine or rhino if
@@ -300,11 +310,25 @@ class Assistant(commands.Cog):
         self._intent_queue.clear()
 
     def get_bg_listener_callback(self, user: discord.User):
-        def callback(recognizer: sr.Recognizer, audio):
+        def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
             if self._query == None:
+                # AssemblyAI
+                # audio_path = "assistant/incoming.wav"
+                # with open(audio_path, "wb") as fp:
+                #     fp.write(audio.get_wav_data())
+
+                # self._query = self._transcriber.transcribe(audio_path).text
+
+                # Vosk
+                # self.recognizer.vosk_model = vosk.Model("assistant/model")
+                # result = json.loads(recognizer.recognize_vosk(audio))
+                # self._query = result["text"]
+
+                # Whisper
                 self._query = recognizer.recognize_whisper(
                     audio, model="small", language="english"
                 )
+
                 self._loop.call_soon_threadsafe(self._query_event.set)
                 print(f'{user.display_name} said "{self._query}"')
 
