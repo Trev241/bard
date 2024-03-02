@@ -2,6 +2,7 @@ import discord
 import yt_dlp
 
 import json
+import time
 import asyncio
 import datetime
 import traceback
@@ -40,8 +41,9 @@ class Music(commands.Cog):
         self.looping_queue = False
 
         self.current_track = None
-        self.timeout_task = None
-        self.ctx = None
+        self._timeout_task = None
+        self._ctx = None
+        self._track_start_time = None
 
         self.queue = deque()
 
@@ -70,7 +72,7 @@ class Music(commands.Cog):
                 await ctx.voice_client.move_to(voice_channel)
 
             # Cache context
-            self.ctx = ctx
+            self._ctx = ctx
             await self.start_timeout_timer()
 
             # Prepare assistant
@@ -101,54 +103,65 @@ class Music(commands.Cog):
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
     async def now(self, ctx):
-        track = self.current_track
-        requester = track["requester"]
+        try:
+            # It is possible that the current audio playing is not a music track
 
-        embed = discord.Embed.from_dict(
-            {
-                "title": track["title"],
-                "description": f'[Click here for video link]({track["webpage_url"]})',
-                "thumbnail": {
-                    "url": track["thumbnail"],
-                },
-                "color": 15844367,
-                "fields": [
-                    {"name": "Duration", "value": track["duration"], "inline": True},
-                    {
-                        "name": "Loop",
-                        "value": "Yes" if self.looping_video else "No",
-                        "inline": True,
+            track = self.current_track
+            requester = track["requester"]
+
+            embed = discord.Embed.from_dict(
+                {
+                    "title": track["title"],
+                    "description": f'[Click here for video link]({track["webpage_url"]})',
+                    "thumbnail": {
+                        "url": track["thumbnail"],
                     },
-                    {
-                        "name": "Next",
-                        "value": (
-                            self.queue[1]["title"]
-                            if len(self.queue) > 1
-                            else (
-                                track["title"]
-                                if self.looping_queue
-                                else "(End of queue)"
-                            )
-                        ),
-                        "inline": True,
+                    "color": 15844367,
+                    "fields": [
+                        {
+                            "name": "Duration",
+                            "value": track["duration"],
+                            "inline": True,
+                        },
+                        {
+                            "name": "Loop",
+                            "value": "Yes" if self.looping_video else "No",
+                            "inline": True,
+                        },
+                        {
+                            "name": "Next",
+                            "value": (
+                                self.queue[1]["title"]
+                                if len(self.queue) > 1
+                                else (
+                                    track["title"]
+                                    if self.looping_queue
+                                    else "(End of queue)"
+                                )
+                            ),
+                            "inline": True,
+                        },
+                    ],
+                    "footer": {
+                        "text": f"Song requested by {requester.display_name}",
+                        "icon_url": requester.display_avatar.url,
                     },
-                ],
-                "footer": {
-                    "text": f"Song requested by {requester.display_name}",
-                    "icon_url": requester.display_avatar.url,
-                },
-            }
-        )
+                }
+            )
 
-        if self.tts:
-            await ctx.send(f'Now playing {track["title"]}', tts=True, delete_after=30)
+            # if self.tts:
+            #     await ctx.send(
+            #         f'Now playing {track["title"]}', tts=True, delete_after=30
+            #     )
 
-        await ctx.send(embed=embed)
+            await ctx.send(embed=embed)
+        except:
+            pass
 
-    @commands.command(name="tts")
-    async def tts_(self, ctx, flag: bool):
-        self.tts = flag
-        await ctx.send(f'TTS {"enabled" if self.tts else "disabled"}')
+    # @commands.command(name="tts")
+    # async def tts_(self, ctx, flag: bool):
+    #     self.tts = flag
+    #     await ctx.send(f'TTS {"enabled" if self.tts else "disabled"}')
 
     @commands.command()
     async def play(self, ctx, *, query):
@@ -180,6 +193,8 @@ class Music(commands.Cog):
             await self.queue_entry(info, ctx)
             await ctx.send(f'Queued {info["title"]}.')
 
+        self._ctx = ctx
+
     async def queue_entry(self, entry, ctx):
         self.queue.append(entry)
 
@@ -204,12 +219,15 @@ class Music(commands.Cog):
                 url = format["url"]
 
         return {
+            "type": "processed_music",
             "title": info["title"],
             "url": url,
             "duration": str(datetime.timedelta(seconds=info["duration"])),
             "thumbnail": info["thumbnails"][0]["url"],
             "webpage_url": info["webpage_url"],
             "requester": requester,
+            # Retaining specific properties
+            "start_from": info.get("start_from", 0),
         }
 
     async def on_track_complete(self, ctx):
@@ -233,8 +251,13 @@ class Music(commands.Cog):
         # Pop the first track if
         # 1. Not looping single
         # 2. Skip count is more than zero
+        # 3. Track cannot be looped
         # BUT DO NOT REMOVE if it already has been removed
-        if (not self.looping_video or self.skip_track > 0) and not self.removed_first:
+        if (
+            not self.looping_video
+            or self.skip_track > 0
+            or self.current_track.get("no_looping", False)
+        ) and not self.removed_first:
 
             # Skip the number of tracks specified by limit
             # The value 1 is given by default to allow the queue to progress if a track ends naturally
@@ -261,17 +284,44 @@ class Music(commands.Cog):
         self.skip_track = 0
         self.removed_first = False
 
+    async def play_now(self, audio_url):
+        """
+        Plays an audio source immediately. If there is another audio source
+        currently playing, it is temporarily paused.
+        """
+
+        interrupting_track = {
+            "type": "bot_speech",
+            "url": audio_url,
+            "start_from": 0,
+            "no_looping": True,
+        }
+
+        if self.idle:
+            self.queue.append(interrupting_track)
+            await self.play_next(self._ctx)
+        else:
+            interrupted_track = self.current_track.copy()
+            interrupted_track["start_from"] = int(time.time() - self._track_start_time)
+
+            current_track = self.queue.popleft()
+            self.queue.appendleft(interrupted_track)
+            self.queue.appendleft(interrupting_track)
+            self.queue.appendleft(current_track)
+
+            await self.skip(self._ctx)
+
     async def start_timeout_timer(self):
-        if self.timeout_task:
-            self.timeout_task.cancel()
-        self.timeout_task = asyncio.get_running_loop().create_task(self.idle_timeout())
+        if self._timeout_task:
+            self._timeout_task.cancel()
+        self._timeout_task = asyncio.get_running_loop().create_task(self.idle_timeout())
 
     async def idle_timeout(self):
         # Timeout countdown
         await asyncio.sleep(Music.IDLE_TIMEOUT_INTERVAL)
 
         try:
-            voice_client = self.ctx.voice_client
+            voice_client = self._ctx.voice_client
             alone = (
                 voice_client
                 and len(voice_client.channel.members) == 1
@@ -285,28 +335,50 @@ class Music(commands.Cog):
                         "color": EMBED_COLOR_THEME,
                     }
                 )
-                await self.ctx.send(embed=embed)
+                await self._ctx.send(embed=embed)
 
                 # It is necessary to pass all required arguments to the function in order for it to execute
                 # Calling self.disconnect() alone without any parameters does not actually invoke the function
                 # This could be because of some pre-processing done by the decorators attached.
-                await self.disconnect(self.ctx)
+                await self.disconnect(self._ctx)
         except:
             pass
 
     @is_connected()
     async def play_next(self, ctx):
         try:
-            # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
-            # Process IE and probe audio
-            complete_entry = self.ydl.process_ie_result(self.queue[0], download=False)
 
-            with open("yt-dlp.json", "w") as f:
-                json.dump(self.ydl.sanitize_info(complete_entry), fp=f, indent=2)
+            track_type = self.queue[0].get("type", None)
+            self.current_track = self.queue[0]
+            ffmpeg_opts = {}
 
-            self.current_track = Music.create_track(complete_entry, ctx.author)
+            if track_type == "bot_speech":
+                self.current_track = self.queue[0]
+            else:
+                # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
+                # Process IE and probe audio
+                if track_type is None:
+                    complete_entry = self.ydl.process_ie_result(
+                        self.queue[0], download=False
+                    )
+
+                    with open("yt-dlp.json", "w") as f:
+                        json.dump(
+                            self.ydl.sanitize_info(complete_entry), fp=f, indent=2
+                        )
+
+                    # If the track was already processed, the same result will be returned
+                    self.current_track = Music.create_track(complete_entry, ctx.author)
+
+                # Adjust FFmpeg options to start
+                start_from = self.current_track.get("start_from", 0)
+                ffmpeg_opts = Music.FFMPEG_OPTIONS.copy()
+                ffmpeg_opts["options"] = (
+                    ffmpeg_opts.get("options", "") + f" -ss {start_from}"
+                )
+
             source = await discord.FFmpegOpusAudio.from_probe(
-                self.current_track["url"], **Music.FFMPEG_OPTIONS
+                self.current_track["url"], **ffmpeg_opts
             )
 
             # Fetching Event Loop to create a new task i.e. to play the next song
@@ -316,6 +388,10 @@ class Music(commands.Cog):
             ctx.voice_client.play(
                 source, after=lambda error: el.create_task(self.on_track_complete(ctx))
             )
+
+            # Set start time to current time minus time seeked ahead
+            start_from = self.current_track.get("start_from", 0)
+            self._track_start_time = time.time() - start_from
 
             await self.now(ctx)
         except yt_dlp.DownloadError as e:
@@ -394,9 +470,8 @@ class Music(commands.Cog):
         # way to halt one service separately from the other. A temporary workaround
         # is to restart the assistant if it was initially enabled
         assistant_base = self.client.get_cog("Assistant")
-        if assistant_base.enabled:
-            assistant_base.disable(ctx)
-            assistant_base.enable(ctx)
+        assistant_base.disable(ctx)
+        assistant_base.enable(ctx)
 
     @commands.command()
     @is_connected()

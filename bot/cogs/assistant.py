@@ -39,9 +39,15 @@ class Assistant(commands.Cog):
         self._transcription_required = False
 
         # Events
-        self._speech_event = asyncio.Event()
-        self._intent_event = asyncio.Event()
-        self._query_event = asyncio.Event()
+        self._events = {
+            event_type: asyncio.Event()
+            for event_type in [
+                "SPEECH_START",
+                "SPEECH_END",
+                "INTENT_DETECTED",
+                "QUERY_DETECTED",
+            ]
+        }
 
         self._loop = asyncio.get_event_loop()
         self._voice_client: discord.VoiceClient = None
@@ -97,7 +103,7 @@ class Assistant(commands.Cog):
                 # Add intent to queue and set event for processing
                 log.info(inference.intent)
                 self._intent_queue.append(inference)
-                self._loop.call_soon_threadsafe(self._intent_event.set)
+                self._loop.call_soon_threadsafe(self._events["INTENT_DETECTED"].set)
 
     def say(self, msg):
         """
@@ -117,7 +123,7 @@ class Assistant(commands.Cog):
 
         # Modify the event from another thread using call_soon_threadsafe
         # Reference: https://stackoverflow.com/questions/64651519/how-to-pass-an-event-into-an-async-task-from-another-thread
-        self._loop.call_soon_threadsafe(self._speech_event.set)
+        self._loop.call_soon_threadsafe(self._events["SPEECH_START"].set)
 
     async def _process_message_queue(self):
         """
@@ -128,7 +134,8 @@ class Assistant(commands.Cog):
 
         while True:
             # Wait for a message event
-            await self._speech_event.wait()
+            await self._events["SPEECH_START"].wait()
+            log.info("Processing pending message to speech.")
 
             if len(self._message_queue) == 0:
                 return
@@ -137,12 +144,12 @@ class Assistant(commands.Cog):
             self._tts_engine.save_to_file(message, "assistant/reply.wav")
             self._tts_engine.runAndWait()
 
-            audio = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
-            if not self._voice_client.is_playing():
-                self._voice_client.play(audio)
+            music_base = self.client.get_cog("Music")
+            await music_base.play_now("assistant/reply.wav")
             await self._ctx.send(message)
 
-            self._speech_event.clear()
+            self._events["SPEECH_START"].clear()
+            log.info("Success. STT was completed.")
 
     async def _process_intent(self):
         """
@@ -151,7 +158,7 @@ class Assistant(commands.Cog):
 
         while True:
             # Wait for intent
-            await self._intent_event.wait()
+            await self._events["INTENT_DETECTED"].wait()
 
             if len(self._intent_queue) == 0:
                 return
@@ -171,24 +178,25 @@ class Assistant(commands.Cog):
                         "stopper": None,
                         "buffer": array.array("B"),
                     }
-                    self._transcription_required = True
                     self.say("What would you like me to play?")
 
-                    await self._query_event.wait()
+                    # await self._speech_event.wait()
+                    self._transcription_required = True
+                    await self._events["QUERY_DETECTED"].wait()
 
                     # Stop background whisper transcriber and delete stopper callback
                     stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
                     stopper_cb(False)
 
                     await command(self._ctx, query=self._query)
-                    self._query_event.clear()
+                    self._events["QUERY_DETECTED"].clear()
                     self._transcription_required = False
 
                 else:
-                    self.say(f"Okay, I will {inference.intent}")
+                    # self.say(f"Okay, I will {inference.intent}")
                     await command(self._ctx)
 
-            self._intent_event.clear()
+            self._events["INTENT_DETECTED"].clear()
 
     def enable(self, ctx: Context):
         """
@@ -205,6 +213,9 @@ class Assistant(commands.Cog):
         self._ctx = ctx
         self._voice_client = ctx.voice_client
         self._priority_speaker = ctx.author
+
+        for event in self._events.values():
+            event.clear()
 
         el = asyncio.get_event_loop()
         self._msg_queue_task = el.create_task(self._process_message_queue())
@@ -293,6 +304,8 @@ class Assistant(commands.Cog):
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
         ctx.voice_client.listen(assistant_sink)
 
+        log.info("Enabled assistant")
+
     def disable(self, ctx: Context):
         """
         Disables the assistant and cancels any connections and related tasks
@@ -302,20 +315,26 @@ class Assistant(commands.Cog):
         self._ctx = ctx
         ctx.voice_client.stop_listening()
 
+        # Clear events
+        for event in self._events.values():
+            event.clear()
+
         # Clean up
         self._msg_queue_task.cancel()
-        self._speech_event.clear()
-        self._intent_event.clear()
+
+        # Clear queues
         self._message_queue.clear()
         self._intent_queue.clear()
+
+        log.info("Disabled assistant")
 
     def get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
             if self._query == None:
                 # AssemblyAI
-                # audio_path = "assistant/incoming.wav"
-                # with open(audio_path, "wb") as fp:
-                #     fp.write(audio.get_wav_data())
+                audio_path = "assistant/incoming.wav"
+                with open(audio_path, "wb") as fp:
+                    fp.write(audio.get_wav_data())
 
                 # self._query = self._transcriber.transcribe(audio_path).text
 
@@ -329,7 +348,7 @@ class Assistant(commands.Cog):
                     audio, model="small", language="english"
                 )
 
-                self._loop.call_soon_threadsafe(self._query_event.set)
+                self._loop.call_soon_threadsafe(self._events["QUERY_DETECTED"].set)
                 print(f'{user.display_name} said "{self._query}"')
 
         return callback
