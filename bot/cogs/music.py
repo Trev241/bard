@@ -26,6 +26,7 @@ class Music(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+        self._playback_enabled = asyncio.Event()
 
         self.reset()
 
@@ -36,7 +37,6 @@ class Music(commands.Cog):
         self.tts = True
         self.idle = True
         self.skip_track = False
-        self.removed_first = False
         self.looping_video = False
         self.looping_queue = False
 
@@ -44,6 +44,7 @@ class Music(commands.Cog):
         self._timeout_task = None
         self._ctx = None
         self._track_start_time = None
+        self._playback_enabled.set()
 
         self.queue = deque()
 
@@ -218,11 +219,14 @@ class Music(commands.Cog):
                 # Save the URL with the highest audio bit rate
                 url = format["url"]
 
+        if type(info["duration"]) is not str:
+            info["duration"] = str(datetime.timedelta(seconds=info["duration"]))
+
         return {
             "type": "processed_music",
             "title": info["title"],
             "url": url,
-            "duration": str(datetime.timedelta(seconds=info["duration"])),
+            "duration": info["duration"],
             "thumbnail": info["thumbnails"][0]["url"],
             "webpage_url": info["webpage_url"],
             "requester": requester,
@@ -248,17 +252,15 @@ class Music(commands.Cog):
         the next track at the head of the queue.
         """
 
-        # Pop the first track if
-        # 1. Not looping single
+        # Pop tracks from the playback queue if
+        # 1. The current track is not set to loop
         # 2. Skip count is more than zero
-        # 3. Track cannot be looped
-        # BUT DO NOT REMOVE if it already has been removed
+        # 3. Force skip requested
         if (
             not self.looping_video
             or self.skip_track > 0
-            or self.current_track.get("no_looping", False)
-        ) and not self.removed_first:
-
+            or self.current_track.get("force_skip", False)
+        ):
             # Skip the number of tracks specified by limit
             # The value 1 is given by default to allow the queue to progress if a track ends naturally
             # i.e. it was neither skipped nor interrupted
@@ -270,6 +272,13 @@ class Music(commands.Cog):
                 # Insert the track back at the end of the list if queue is being looped
                 if self.looping_queue:
                     self.queue.append(track)
+        elif self.looping_video:
+            # If no track was popped from the queue, and the current
+            # one needs to loop, then reset the start_from property to 0
+            self.queue[0]["start_from"] = 0
+
+        # Wait if playback was interrupted
+        await self._playback_enabled.wait()
 
         # Continue onto next track if it exists
         if len(self.queue) > 0:
@@ -277,12 +286,9 @@ class Music(commands.Cog):
         else:
             self.idle = True
             await self.start_timeout_timer()
-            # self.reset()
 
-        # TODO: Perhaps find a better way to do these?
         # Reset control flags
         self.skip_track = 0
-        self.removed_first = False
 
     async def play_now(self, audio_url):
         """
@@ -438,14 +444,18 @@ class Music(commands.Cog):
                 "fields": [
                     {
                         "name": f'{i + 1}. {track["title"]}',
-                        "value": str(
-                            datetime.timedelta(
-                                seconds=(
-                                    track["duration"]
-                                    if track["duration"] != None
-                                    else 0
+                        "value": (
+                            str(
+                                datetime.timedelta(
+                                    seconds=(
+                                        track["duration"]
+                                        if track["duration"] != None
+                                        else 0
+                                    )
                                 )
                             )
+                            if type(track["duration"]) is not str
+                            else track["duration"]
                         ),
                         "inline": False,
                     }
@@ -479,28 +489,62 @@ class Music(commands.Cog):
         index = int(index) - 1
 
         if 0 <= index and index < len(self.queue):
-
-            track = self.queue[index]
-            del self.queue[index]
             if index == 0:
-                self.removed_first = True
                 await self.skip(ctx)
-            await ctx.send(f'Removed {track["title"]}')
-
+            else:
+                track = self.queue[index]
+                del self.queue[index]
+                await ctx.send(f'Removed {track["title"]}')
         else:
             await ctx.send(f"There is no track with that index")
 
     @commands.command()
     @is_connected()
     async def pause(self, ctx):
-        ctx.voice_client.pause()
-        await ctx.send("Paused")
+        """
+        Pauses playback by suspending the music playback cycle
+        until a command to resume has been given.
+        """
+
+        if len(self.queue) == 0 or not self._playback_enabled.is_set():
+            return
+
+        """
+        Pausing playback works by creating a copy of the current
+        track playing. The only difference being is an additional
+        property that is added stating where to begin from. Hence,
+        giving the illusion of resuming the track from where it 
+        was last paused.
+
+        The current track is then skipped and the playback cycle
+        will continue by queuing the copied version of the track 
+        next once the interrupt event has been set.
+
+        To counter the quirk of loops not popping the current track,
+        an additional property is added to the paused track
+        strictly instructing it to forcefully skip even if the track is
+        looping
+        """
+
+        curr_track_copy = self.current_track.copy()
+        curr_track_copy["start_from"] = int(time.time() - self._track_start_time)
+        curr_track_orig = self.queue.popleft()
+        curr_track_orig["force_skip"] = True
+        self.queue.appendleft(curr_track_copy)
+        self.queue.appendleft(curr_track_orig)
+
+        self._playback_enabled.clear()
+        await self.skip(ctx)
 
     @commands.command()
     @is_connected()
     async def resume(self, ctx):
-        ctx.voice_client.resume()
-        await ctx.send("Resumed")
+        """
+        Resumes playback
+        """
+
+        # Resume playback by setting flag
+        self._playback_enabled.set()
 
 
 async def setup(client):
