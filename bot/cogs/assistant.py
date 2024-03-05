@@ -49,6 +49,7 @@ class Assistant(commands.Cog):
                 "INTENT_DETECTED",
                 "QUERY_DETECTED",
                 "UTTERANCE_FINISHED",
+                "TRANSCRIPTION_COMPLETE",
             ]
         }
         self._events["UTTERANCE_FINISHED"].set()
@@ -148,11 +149,8 @@ class Assistant(commands.Cog):
                 log.info("Converting pending message to utterance.")
 
                 utterance: Assistant.Utterance = self._message_queue.popleft()
-                self._tts_engine.save_to_file(utterance.content, "assistant/reply.wav")
-                self._tts_engine.runAndWait()
-
                 music_base = self.client.get_cog("Music")
-                audio = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+                audio = await self.get_audio_from_text(utterance.content)
                 await music_base.pause(self._ctx)
                 log.info("Playback from music cog paused.")
                 await self._ctx.send(utterance.content)
@@ -164,16 +162,53 @@ class Assistant(commands.Cog):
             self._events["UTTERANCE_REQUIRED"].clear()
 
     def _process_message_queue_cb(self, callback=None):
-        log.info("Utterance finished.")
         if callback:
             callback()
 
         self._events["UTTERANCE_FINISHED"].set()
         music_base = self.client.get_cog("Music")
-        log.info(f"Playing? {self._voice_client.is_playing()}")
         self._loop.create_task(music_base.resume(self._ctx))
 
-        log.info(f"Success. STT was completed.")
+        log.info(f"Success. Utterance transmitted successfully.")
+
+    async def get_audio_from_text(self, message):
+        """Converts and returns an Opus-ready audio source from the given message"""
+
+        self._tts_engine.save_to_file(message, "assistant/reply.wav")
+        self._tts_engine.runAndWait()
+        return await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+
+    async def transcribe(self, prompt):
+        """Enables the transcription service and returns the transcription of the shortest phrase captured"""
+        self._events["QUERY_DETECTED"].clear()
+
+        music_base = self.client.get_cog("Music")
+        await music_base.pause(self._ctx)
+        audio = await self.get_audio_from_text(prompt)
+        prompt_msg: discord.Message = await self._ctx.send(prompt)
+        self._voice_client.play(audio, after=lambda _: self._transcribe_cb())
+
+        log.info("Waiting for transcription to complete")
+        await self._events["QUERY_DETECTED"].wait()
+
+        # Stop background whisper transcriber and delete stopper callback
+        self._transcription_required = False
+        stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
+        stopper_cb(False)
+
+        await music_base.resume(self._ctx)
+        await prompt_msg.edit(content=f'{prompt} "*{self._query.strip()}*"')
+
+        log.info("Returning transcription.")
+        return self._query
+
+    def _transcribe_cb(self):
+        self._query = None
+        self._stream_data[self._priority_speaker.id] = {
+            "stopper": None,
+            "buffer": array.array("B"),
+        }
+        self._transcription_required = True
 
     async def _process_intent(self):
         """
@@ -194,27 +229,8 @@ class Assistant(commands.Cog):
 
                 if inference.intent == "play":
                     # Additional transcription is required
-
-                    # TODO: Refactor into own method
-                    self._query = None
-                    self._stream_data[self._priority_speaker.id] = {
-                        "stopper": None,
-                        "buffer": array.array("B"),
-                    }
-                    self.say(
-                        "What would you like me to play?",
-                        self._set_transcription_required,
-                    )
-
-                    await self._events["QUERY_DETECTED"].wait()
-
-                    # Stop background whisper transcriber and delete stopper callback
-                    stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
-                    stopper_cb(False)
-
-                    await command(self._ctx, query=self._query)
-                    self._events["QUERY_DETECTED"].clear()
-                    self._transcription_required = False
+                    query = await self.transcribe("What would you like to play?")
+                    await command(self._ctx, query=query)
                 else:
                     # self.say(f"Okay, I will {inference.intent}")
                     await command(self._ctx)
