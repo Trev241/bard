@@ -20,12 +20,14 @@ import speech_recognition as sr
 
 from discord.ext import commands, voice_recv
 from discord.ext.commands import Context
-from collections import defaultdict, deque
+from collections import defaultdict, deque, namedtuple
 
 log = logging.getLogger()
 
 
 class Assistant(commands.Cog):
+    Utterance = namedtuple("Utterance", ["content", "after"])
+
     def __init__(self, client):
         # Bot state
         self.client = client
@@ -42,12 +44,14 @@ class Assistant(commands.Cog):
         self._events = {
             event_type: asyncio.Event()
             for event_type in [
-                "SPEECH_START",
+                "UTTERANCE_REQUIRED",
                 "SPEECH_END",
                 "INTENT_DETECTED",
                 "QUERY_DETECTED",
+                "UTTERANCE_FINISHED",
             ]
         }
+        self._events["UTTERANCE_FINISHED"].set()
 
         self._loop = asyncio.get_event_loop()
         self._voice_client: discord.VoiceClient = None
@@ -105,7 +109,7 @@ class Assistant(commands.Cog):
                 self._intent_queue.append(inference)
                 self._loop.call_soon_threadsafe(self._events["INTENT_DETECTED"].set)
 
-    def say(self, msg):
+    def say(self, message, after=None):
         """
         Adds a message to the assistant's message queue which will be
         played over the bot's voice client connection using TTS along with
@@ -119,37 +123,57 @@ class Assistant(commands.Cog):
         should be enabled for the assistant to broadcast messages.
         """
 
-        self._message_queue.append(msg)
+        utterance = Assistant.Utterance(message, after)
+        self._message_queue.append(utterance)
 
         # Modify the event from another thread using call_soon_threadsafe
         # Reference: https://stackoverflow.com/questions/64651519/how-to-pass-an-event-into-an-async-task-from-another-thread
-        self._loop.call_soon_threadsafe(self._events["SPEECH_START"].set)
+        self._loop.call_soon_threadsafe(self._events["UTTERANCE_REQUIRED"].set)
 
     async def _process_message_queue(self):
         """
-        Starts a repeating coroutine service that generates speech for
+        A repeating coroutine service that generates speech for
         messages added to message_queue. There should be only one instance
         of this task running.
         """
 
         while True:
-            # Wait for a message event
-            await self._events["SPEECH_START"].wait()
-            log.info("Processing pending message to speech.")
+            await self._events["UTTERANCE_FINISHED"].wait()
+            await self._events["UTTERANCE_REQUIRED"].wait()
 
-            if len(self._message_queue) == 0:
-                return
+            if len(self._message_queue) > 0:
+                # Clear this flag so that coroutines will correctly wait for this event
+                self._events["UTTERANCE_FINISHED"].clear()
 
-            message = self._message_queue.popleft()
-            self._tts_engine.save_to_file(message, "assistant/reply.wav")
-            self._tts_engine.runAndWait()
+                log.info("Converting pending message to utterance.")
 
-            music_base = self.client.get_cog("Music")
-            await music_base.play_now("assistant/reply.wav")
-            await self._ctx.send(message)
+                utterance: Assistant.Utterance = self._message_queue.popleft()
+                self._tts_engine.save_to_file(utterance.content, "assistant/reply.wav")
+                self._tts_engine.runAndWait()
 
-            self._events["SPEECH_START"].clear()
-            log.info("Success. STT was completed.")
+                music_base = self.client.get_cog("Music")
+                audio = await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+                await music_base.pause(self._ctx)
+                log.info("Playback from music cog paused.")
+                await self._ctx.send(utterance.content)
+                self._voice_client.play(
+                    audio,
+                    after=lambda _: self._process_message_queue_cb(utterance.after),
+                )
+
+            self._events["UTTERANCE_REQUIRED"].clear()
+
+    def _process_message_queue_cb(self, callback=None):
+        log.info("Utterance finished.")
+        if callback:
+            callback()
+
+        self._events["UTTERANCE_FINISHED"].set()
+        music_base = self.client.get_cog("Music")
+        log.info(f"Playing? {self._voice_client.is_playing()}")
+        self._loop.create_task(music_base.resume(self._ctx))
+
+        log.info(f"Success. STT was completed.")
 
     async def _process_intent(self):
         """
@@ -157,7 +181,6 @@ class Assistant(commands.Cog):
         """
 
         while True:
-            # Wait for intent
             await self._events["INTENT_DETECTED"].wait()
 
             if len(self._intent_queue) == 0:
@@ -178,10 +201,11 @@ class Assistant(commands.Cog):
                         "stopper": None,
                         "buffer": array.array("B"),
                     }
-                    self.say("What would you like me to play?")
+                    self.say(
+                        "What would you like me to play?",
+                        self._set_transcription_required,
+                    )
 
-                    # await self._speech_event.wait()
-                    self._transcription_required = True
                     await self._events["QUERY_DETECTED"].wait()
 
                     # Stop background whisper transcriber and delete stopper callback
@@ -191,34 +215,25 @@ class Assistant(commands.Cog):
                     await command(self._ctx, query=self._query)
                     self._events["QUERY_DETECTED"].clear()
                     self._transcription_required = False
-
                 else:
                     # self.say(f"Okay, I will {inference.intent}")
                     await command(self._ctx)
 
             self._events["INTENT_DETECTED"].clear()
 
-    def enable(self, ctx: Context):
+    def _set_transcription_required(self):
+        self._transcription_required = True
+
+    def restore(self, ctx: Context):
         """
-        Enables the assistant. When in listening mode, the assistant waits
-        for the wake word to trigger command mode. In command mode, the
-        assistant will interpret the intent of the speaker who woke the assistant
+        Restores the listening state of the bot.
+        Should always be invoked if stop() is called on the voice_client
         """
 
-        if self.enabled:
-            log.info("Assistant is already enabled")
-            return
+        self._apply_sink(ctx)
 
-        self.enabled = True
-        self._ctx = ctx
-        self._voice_client = ctx.voice_client
-        self._priority_speaker = ctx.author
-
-        for event in self._events.values():
-            event.clear()
-
-        el = asyncio.get_event_loop()
-        self._msg_queue_task = el.create_task(self._process_message_queue())
+    def _apply_sink(self, ctx: Context):
+        """Registers a callback to a BasicSink which is later applied on the bot."""
 
         def callback(user: discord.User, data: voice_recv.VoiceData):
             # Only process packets from the priority speaker
@@ -251,7 +266,6 @@ class Assistant(commands.Cog):
 
             if self._transcription_required:
                 # Additional speech transcription is required
-
                 sdata = self._stream_data[user.id]
                 sdata["buffer"].extend(data.pcm)
 
@@ -304,6 +318,28 @@ class Assistant(commands.Cog):
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
         ctx.voice_client.listen(assistant_sink)
 
+    def enable(self, ctx: Context):
+        """
+        Enables the assistant. When in listening mode, the assistant waits
+        for the wake word to trigger command mode. In command mode, the
+        assistant will interpret the intent of the speaker who woke the assistant
+        """
+
+        if self.enabled:
+            log.info("Assistant is already enabled")
+            return
+
+        self.enabled = True
+
+        # Caching important properties
+        self._ctx = ctx
+        self._voice_client = ctx.voice_client
+        self._priority_speaker = ctx.author
+
+        el = asyncio.get_event_loop()
+        self._msg_queue_task = el.create_task(self._process_message_queue())
+        self._apply_sink(ctx)
+
         log.info("Enabled assistant")
 
     def disable(self, ctx: Context):
@@ -314,19 +350,22 @@ class Assistant(commands.Cog):
         self.enabled = False
         self._ctx = ctx
         ctx.voice_client.stop_listening()
+        self.cleanup()
 
-        # Clear events
+        log.info("Disabled assistant")
+
+    def cleanup(self):
+        # Reset events
         for event in self._events.values():
             event.clear()
+        self._events["UTTERANCE_FINISHED"].set()
 
-        # Clean up
+        # Clean up tasks
         self._msg_queue_task.cancel()
 
         # Clear queues
         self._message_queue.clear()
         self._intent_queue.clear()
-
-        log.info("Disabled assistant")
 
     def get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):

@@ -78,7 +78,8 @@ class Music(commands.Cog):
 
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
-            assistant_base.enable(ctx)
+            if not assistant_base.enabled:
+                assistant_base.enable(ctx)
 
             return True
 
@@ -150,19 +151,9 @@ class Music(commands.Cog):
                 }
             )
 
-            # if self.tts:
-            #     await ctx.send(
-            #         f'Now playing {track["title"]}', tts=True, delete_after=30
-            #     )
-
             await ctx.send(embed=embed)
         except:
             pass
-
-    # @commands.command(name="tts")
-    # async def tts_(self, ctx, flag: bool):
-    #     self.tts = flag
-    #     await ctx.send(f'TTS {"enabled" if self.tts else "disabled"}')
 
     @commands.command()
     async def play(self, ctx, *, query):
@@ -206,10 +197,6 @@ class Music(commands.Cog):
 
     def create_track(info, requester):
         """Returns a dict containing a subset of the track's original attributes."""
-
-        # with open('debug.json', 'w') as f:
-        #     import json
-        #     json.dump(info, f, indent=4)
 
         url = None
         abr = 0
@@ -280,14 +267,12 @@ class Music(commands.Cog):
         # Wait if playback was interrupted
         await self._playback_enabled.wait()
 
-        # Continue onto next track if it exists
         if len(self.queue) > 0:
             await self.play_next(ctx)
         else:
             self.idle = True
             await self.start_timeout_timer()
 
-        # Reset control flags
         self.skip_track = 0
 
     async def play_now(self, audio_url):
@@ -480,8 +465,7 @@ class Music(commands.Cog):
         # way to halt one service separately from the other. A temporary workaround
         # is to restart the assistant if it was initially enabled
         assistant_base = self.client.get_cog("Assistant")
-        assistant_base.disable(ctx)
-        assistant_base.enable(ctx)
+        assistant_base.restore(ctx)
 
     @commands.command()
     @is_connected()
