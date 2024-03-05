@@ -1,10 +1,10 @@
 # Bard
 
-A simple Discord bot built on the [discord.py](https://github.com/Rapptz/discord.py) wrapper that offers basic commands for playing music on a server. It is intended for private use only.
+A simple Discord bot built on the [discord.py](https://github.com/Rapptz/discord.py) wrapper that offers basic commands for playing music on a server. Bard also uses an experimental extension that allows it to process vocal instructions. It is intended for private use only.
 
 ## How do I run it?
 
-The bot comes with a launcher that allows you to remotely boot up the bot. However, it is not absolutely necessary and is not the only way to start the bot. You may also manually boot up the bot locally on your system as you normally would, if that is what you prefer. 
+The bot comes with a launcher that allows you to remotely boot up the bot. However, it is not absolutely necessary and is not the only way to start the bot. You may also manually boot up the bot locally on your system as you normally would, if that is what you prefer.
 
 ### Without the launcher
 
@@ -20,11 +20,11 @@ Before you begin, an installation of Python v3.8 or above is required.
 pip install -r requirements.txt
 ```
 
-4. [Download](https://ffmpeg.org/download.html) and install FFmpeg. Make sure to also set the PATH environment variable to wherever FFmpeg is installed. This will help the bot locate the binary executables when processing audio. The path is *usually* `C:\ffmpeg\bin`
+4. [Download](https://ffmpeg.org/download.html) and install FFmpeg. Make sure to also set the PATH environment variable to wherever FFmpeg is installed. This will help the bot locate the binary executables when processing audio. The path is _usually_ `C:\ffmpeg\bin`
 
-5. If you do not already have a Discord bot application ready, then [create one](https://discord.com/developers/applications). 
+5. If you do not already have a Discord bot application ready, then [create one](https://discord.com/developers/applications).
 
-6. Save the token generated for your bot. This token essentially acts as a credential for your application to run. 
+6. Save the token generated for your bot. This token essentially acts as a credential for your application to run.
 
 7. In the same directory, create a new file called `.env` and paste the text below in it. Replace the placeholder text with your token as illustrated. and do not forget to remove the "<" and ">" symbols.
 
@@ -42,7 +42,7 @@ You only need to type the last command if you need to start the bot in the futur
 
 ### With the launcher
 
-*This is only a brief guide that assumes you have experience with Docker and Node.*
+_This is only a brief guide that assumes you have experience with Docker and Node._
 
 Firstly, create a `.env` file in the root directory of the repository and paste the following contents
 
@@ -52,14 +52,13 @@ SECRET=<your secret here>
 API_BASE_URL=<host url>
 ```
 
-The bot can only be launched if the secret entered by the user through the browser matches the value of the `SECRET` environment variable. 
+The bot can only be launched if the secret entered by the user through the browser matches the value of the `SECRET` environment variable.
 
 The `API_BASE_URL` should be the URL of your web-app. For example, the `API_BASE_URL` would be `http://localhost:5000` if it was hosted locally on port 5000. This is necessary since the bot will make a POST request to this address whenever it exits.
 
 If your server or host system supports running Docker images, then use the Dockerfile in the repository to create a Docker image. Once the image has been created, run the Docker image and launch the bot from the web-app.
 
 In case there is no Docker support, then you can always run the command `npm start` from the `launcher` subdirectory. For this step to work, you must ensure that you have installed all required dependencies, both JavaScript as well as Python, using the commands `npm install` and `pip install -r requirements.txt`.
-
 
 ## List of available commands
 
@@ -83,9 +82,21 @@ The bot's prefix is `?`. Some commands have aliases which have not been mentione
 
 9.  `disconnect`
 
-10.  `join`
+10. `join`
 
-  
+## Receiving vocal instructions
+
+**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discordpy wrapper. They can break at any time!_
+
+You can instruct Bard by issuing your commands vocally while on a call with her. Usually, this would mean first typing out `?join` while on a call and then just saying your commands out aloud. While on call, Bard will try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/).
+
+To ask Bard to play a song, simply say "Play some music". If Bard correctly heard you, she will reply asking you to name the song that you want to play followed by silence. This silence is your cue to speak. After saying the name of your song, wait patiently since transcription can take time. Once the transcription is a success, Bard will look up your query on YouTube and queue the most relevant result. All of this is essentially the same as typing out the `?play` command but instead done vocally with zero keyboard interaction.
+
+You can get a list of all speech to intent patterns by giving the command `?intents`
+
+_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the voice channel's current session. So to make yourself the priority speaker, just disconnect Bard and invite her to the call yourself using_ `?join`.
+
+Bard also features wake word support, thanks to [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/). This feature is currently disabled though but will work fine if enabled. It can be cumbersome because Bard will receive commands only after you say "OK Bard" every time for each command.
 
 ## Known issues
 

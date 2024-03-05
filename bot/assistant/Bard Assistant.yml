@@ -1,0 +1,38 @@
+context:
+  expressions:
+    play:
+      - "@play [some bangers, a banger, some tunes, some music, a song, music, a
+        track]"
+    skip:
+      - "@skip"
+    disconnect:
+      - "@disconnect"
+    pause:
+      - Pause [this song, the music, it]
+    resume:
+      - Resume [playing, playing the song, the track, the music]
+    loop:
+      - "[Loop, Repeat] [this, the] [song, track, music]"
+    now:
+      - name (the) [song, music, track] playing (now)
+  slots: {}
+  macros:
+    play:
+      - I'd like to listen to
+      - I'd like to hear
+      - I'd like you to play
+      - I want you to play
+      - I want to hear
+      - I want to listen to
+      - Play
+    skip:
+      - Please stop
+      - Stop playing this song
+      - Stop this song
+      - Go to the next song
+      - Skip this song
+      - Skip
+      - Please skip
+    disconnect:
+      - Get out of here
+      - Leave the voice channel

@@ -4,6 +4,7 @@ import time
 import asyncio
 import json
 import random
+import yaml
 
 import resampy
 import logging
@@ -29,6 +30,8 @@ log = logging.getLogger()
 class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after"])
 
+    with open("assistant/Bard Assistant.yml") as stream:
+        INTENTS = yaml.safe_load(stream)
     with open("assistant/dialogs.json") as fp:
         DIALOGS = json.load(fp)
 
@@ -92,6 +95,10 @@ class Assistant(commands.Cog):
         aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
         config = aai.TranscriptionConfig(language_code="en", punctuate=False)
         self._transcriber = aai.Transcriber(config=config)
+
+    @commands.command()
+    async def intents(self, ctx):
+        await ctx.send(f"```{json.dumps(Assistant.INTENTS, indent=2)}```")
 
     def _detect_intent(self, audio_frame):
         """

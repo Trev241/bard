@@ -14,3 +14,4 @@ pvrhino
 resampy
 pyttsx3
 vosk
+pyyaml
