@@ -3,6 +3,7 @@ import array
 import time
 import asyncio
 import json
+import random
 
 import resampy
 import logging
@@ -27,6 +28,9 @@ log = logging.getLogger()
 
 class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after"])
+
+    with open("assistant/dialogs.json") as fp:
+        DIALOGS = json.load(fp)
 
     def __init__(self, client):
         # Bot state
@@ -209,9 +213,7 @@ class Assistant(commands.Cog):
         self._transcription_required = True
 
     async def _process_intent(self):
-        """
-        Starts a repeating coroutine to process intents one at a time.
-        """
+        """A repeating coroutine service to process intents one at a time."""
 
         while True:
             await self._events["INTENT_DETECTED"].wait()
@@ -221,22 +223,20 @@ class Assistant(commands.Cog):
 
             inference = self._intent_queue.popleft()
             command = self.client.get_command(inference.intent)
+            log.info(f"Executing intent: {command}")
 
-            if command:
-                log.info(f"Executing intent: {command}")
-
-                if inference.intent == "play":
-                    # Additional transcription is required
-                    query = await self.transcribe("What would you like to play?")
-                    await command(self._ctx, query=query)
-                else:
-                    # self.say(f"Okay, I will {inference.intent}")
-                    await command(self._ctx)
+            if inference.intent == "play":
+                # Additional transcription is required
+                prompt_dialog = random.choice(
+                    Assistant.DIALOGS["prompts"]["music_selection"]
+                )
+                query = await self.transcribe(prompt_dialog)
+                await command(self._ctx, query=query)
+            else:
+                # self.say(f"Okay, I will {inference.intent}")
+                await command(self._ctx)
 
             self._events["INTENT_DETECTED"].clear()
-
-    def _set_transcription_required(self):
-        self._transcription_required = True
 
     def restore(self, ctx: Context):
         """
@@ -286,7 +286,7 @@ class Assistant(commands.Cog):
                 if not sdata["stopper"]:
                     sdata["stopper"] = self.recognizer.listen_in_background(
                         DiscordSRAudioSource(sdata["buffer"]),
-                        self.get_bg_listener_callback(user),
+                        self._get_bg_listener_callback(user),
                         phrase_time_limit=15,
                     )
             else:
@@ -327,7 +327,10 @@ class Assistant(commands.Cog):
                             self._is_awake = True
 
                             log.info("Detected wake word")
-                            self.say(f"Hi {user.display_name}, how can I help you?")
+                            dialog = random.choice(
+                                Assistant.DIALOGS["prompts"]["general"]
+                            )
+                            self.say(f"Hi {user.display_name}. {dialog}")
 
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
         ctx.voice_client.listen(assistant_sink)
@@ -381,7 +384,7 @@ class Assistant(commands.Cog):
         self._message_queue.clear()
         self._intent_queue.clear()
 
-    def get_bg_listener_callback(self, user: discord.User):
+    def _get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
             if self._query == None:
                 # AssemblyAI
@@ -402,7 +405,7 @@ class Assistant(commands.Cog):
                 )
 
                 self._loop.call_soon_threadsafe(self._events["QUERY_DETECTED"].set)
-                print(f'{user.display_name} said "{self._query}"')
+                log.info(f'{user.display_name} said "{self._query}"')
 
         return callback
 

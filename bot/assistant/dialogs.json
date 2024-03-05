@@ -1,0 +1,21 @@
+{
+  "prompts": {
+    "general": [
+      "How can I help?",
+      "What can I do for you?",
+      "Something you need?",
+      "I'm listening...",
+      "What is it?"
+    ],
+    "music_selection": [
+      "What would you like to play?",
+      "What are you in the mood to listen to?",
+      "What do you want to listen to?",
+      "What can I play for you?",
+      "Sure, just tell me the name of the song.",
+      "What song do you want me to play?",
+      "What song do you want to listen to?",
+      "Tell me the name of a song."
+    ]
+  }
+}
