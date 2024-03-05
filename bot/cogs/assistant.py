@@ -45,11 +45,9 @@ class Assistant(commands.Cog):
             event_type: asyncio.Event()
             for event_type in [
                 "UTTERANCE_REQUIRED",
-                "SPEECH_END",
                 "INTENT_DETECTED",
                 "QUERY_DETECTED",
                 "UTTERANCE_FINISHED",
-                "TRANSCRIPTION_COMPLETE",
             ]
         }
         self._events["UTTERANCE_FINISHED"].set()
