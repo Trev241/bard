@@ -1,6 +1,7 @@
 import discord
 import yt_dlp
 
+import os
 import json
 import time
 import asyncio
@@ -11,6 +12,11 @@ from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from constants import EMBED_COLOR_THEME
+from dotenv import load_dotenv
+
+load_dotenv()
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
 
 
 class Music(commands.Cog):
@@ -21,7 +27,10 @@ class Music(commands.Cog):
         "options": "-vn",
     }
 
-    YDL_OPTIONS = {"format": "bestaudio"}
+    YDL_OPTIONS = {
+        "format": "bestaudio",
+        "cookies": "cookies.txt",
+    }
 
     def __init__(self, client):
         self.client = client
