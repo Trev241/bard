@@ -15,7 +15,8 @@ import pyttsx3
 import pvporcupine
 import pvrhino
 import vosk
-import assemblyai as aai
+
+# import assemblyai as aai
 
 import numpy as np
 import speech_recognition as sr
