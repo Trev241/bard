@@ -50,7 +50,9 @@ module.exports = (socket) => {
       // else python.exit();
 
       if (botStatus) {
-        const scriptExecution = spawn(pythonExe, ["-u", botScript]);
+        const scriptExecution = spawn(pythonExe, ["-u", botScript], {
+          cwd: "./../bot",
+        });
         scriptExecution.stdout.on("data", (data) =>
           socket.emit("stdout", uint8arrayToString(data))
         );
