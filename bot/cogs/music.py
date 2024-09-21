@@ -12,11 +12,6 @@ from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from constants import EMBED_COLOR_THEME
-from dotenv import load_dotenv
-
-load_dotenv()
-USERNAME = os.getenv("USERNAME")
-PASSWORD = os.getenv("PASSWORD")
 
 
 class Music(commands.Cog):
@@ -29,13 +24,27 @@ class Music(commands.Cog):
 
     YDL_OPTIONS = {
         "format": "bestaudio",
-        "cookies": "cookies.txt",
+        "cookiefile": "cookies.txt",
     }
 
     def __init__(self, client):
         self.client = client
         self.ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
         self._playback_enabled = asyncio.Event()
+
+        # Convert newline endings in the cookies file
+        try:
+            with open("cookies.txt", "r") as f:
+                cookies_data = f.read().splitlines()
+                cookies_data = os.linesep.join(cookies_data)
+
+                print(f"COOKIES: {cookies_data}")
+                print(f"Using line separator: {os.linesep}")
+
+            with open("cookies.txt", "w") as f:
+                f.write(cookies_data)
+        except:
+            print("Failed to convert newline endings in cookies")
 
         self.reset()
 
