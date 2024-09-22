@@ -9,7 +9,8 @@ RUN set -xe \
     && apt-get update -y \
     && apt-get install -y ffmpeg \
     && apt-get install -y python3-full \
-    && apt-get install -y python3-pip
+    && apt-get install -y python3-pip \
+    && apt-get install -y espeak-ng
 
 RUN set -xe \
     && python3 -m venv venv
