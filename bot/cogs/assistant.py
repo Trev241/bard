@@ -43,12 +43,13 @@ class Assistant(commands.Cog):
         self.client = client
         self.recognizer = sr.Recognizer()
         self.enabled = False
-        self.always_awake = True
+        self.always_awake = False
 
         self._ctx = None
         self._is_awake = False
         self._query = None
         self._transcription_required = False
+        self._services_available = True
 
         # Events
         self._events = {
@@ -76,12 +77,20 @@ class Assistant(commands.Cog):
             if platform.system() == "Linux"
             else "Okay-Bard_en_windows_v3_0_0.ppn"
         )
-        self.porcupine = pvporcupine.create(
-            access_key=os.getenv("PV_ACCESS_KEY"),
-            keyword_paths=[f"assistant/{porcupine_mdl}"],
-            # keywords=["picovoice", "bumblebee"],
-            # sensitivities=[1.0, 1.0],
-        )
+
+        try:
+            self.porcupine = pvporcupine.create(
+                access_key=os.getenv("PV_ACCESS_KEY"),
+                keyword_paths=[f"assistant/{porcupine_mdl}"],
+                # keywords=["picovoice", "bumblebee"],
+                # sensitivities=[1.0, 1.0],
+            )
+        except Exception as e:
+            self._services_available = False
+            log.error(
+                f"Failed to launch porcupine service. It is possible that the service has exceeded its usage for this month: {e}"
+            )
+            log.error("Wake word services will not be available!")
 
         # TTS
         self._tts_engine = pyttsx3.init()
@@ -98,11 +107,19 @@ class Assistant(commands.Cog):
             if platform.system() == "Linux"
             else "Bard-Assistant_en_windows_v3_0_0.rhn"
         )
-        self.rhino = pvrhino.create(
-            access_key=os.getenv("PV_ACCESS_KEY"),
-            context_path=f"assistant/{rhino_mdl}",
-            # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
-        )
+
+        try:
+            self.rhino = pvrhino.create(
+                access_key=os.getenv("PV_ACCESS_KEY"),
+                context_path=f"assistant/{rhino_mdl}",
+                # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
+            )
+        except Exception as e:
+            self._services_available = False
+            log.error(
+                f"Failed to launch rhino service. It is possible that the service has exceeded its usage for this month: {e}"
+            )
+            log.error("Intent intepretation services will not be available!")
 
         # AssemblyAI
         # aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
@@ -340,7 +357,7 @@ class Assistant(commands.Cog):
                     else:
                         # Listen for wake word
                         result = self.porcupine.process(audio_frame)
-                        log.info(result)
+                        # log.info(result)
 
                         if result >= 0:
                             # Set awake
@@ -360,11 +377,19 @@ class Assistant(commands.Cog):
         Enables the assistant. When in listening mode, the assistant waits
         for the wake word to trigger command mode. In command mode, the
         assistant will interpret the intent of the speaker who woke the assistant
+
+        :returns: True if the service is enabled or false otherwise
         """
+
+        if not self._services_available:
+            log.info(
+                "Assistant cannot be enabled because either rhino or porcupine is unavailable."
+            )
+            return False
 
         if self.enabled:
             log.info("Assistant is already enabled")
-            return
+            return False
 
         self.enabled = True
 
@@ -378,6 +403,7 @@ class Assistant(commands.Cog):
         self._apply_sink(ctx)
 
         log.info("Enabled assistant")
+        return True
 
     def disable(self, ctx: Context):
         """

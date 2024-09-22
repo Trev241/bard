@@ -96,7 +96,15 @@ class Music(commands.Cog):
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
             if not assistant_base.enabled:
-                assistant_base.enable(ctx)
+                assistant_connected = assistant_base.enable(ctx)
+                if not assistant_connected:
+                    await ctx.send(
+                        f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
+                    )
+                else:
+                    await ctx.send(
+                        f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
+                    )
 
             return True
 
