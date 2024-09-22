@@ -5,6 +5,7 @@ import asyncio
 import json
 import random
 import yaml
+import platform
 
 import resampy
 import logging
@@ -14,7 +15,8 @@ import audioop
 import pyttsx3
 import pvporcupine
 import pvrhino
-import vosk
+
+# import vosk
 
 # import assemblyai as aai
 
@@ -69,9 +71,14 @@ class Assistant(commands.Cog):
 
         # Porcupine wake-word
         self._priority_speaker = None
+        porcupine_mdl = (
+            "Okay-Bard_en_linux_v3_0_0.ppn"
+            if platform.system() == "Linux"
+            else "Okay-Bard_en_windows_v3_0_0.ppn"
+        )
         self.porcupine = pvporcupine.create(
             access_key=os.getenv("PV_ACCESS_KEY"),
-            keyword_paths=["assistant/Okay-Bard_en_windows_v3_0_0.ppn"],
+            keyword_paths=[f"assistant/{porcupine_mdl}"],
             # keywords=["picovoice", "bumblebee"],
             # sensitivities=[1.0, 1.0],
         )
@@ -86,9 +93,14 @@ class Assistant(commands.Cog):
         # Rhino speech-to-intent
         self._intent_queue = deque()
         self._loop.create_task(self._process_intent())
+        rhino_mdl = (
+            "Bard-Assistant_en_linux_v3_0_0.rhn"
+            if platform.system() == "Linux"
+            else "Bard-Assistant_en_windows_v3_0_0.rhn"
+        )
         self.rhino = pvrhino.create(
             access_key=os.getenv("PV_ACCESS_KEY"),
-            context_path="assistant/Bard-Assistant_en_windows_v3_0_0.rhn",
+            context_path=f"assistant/{rhino_mdl}",
             # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
         )
 
