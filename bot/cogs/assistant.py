@@ -425,7 +425,7 @@ class DiscordSRAudioSource(sr.AudioSource):
     CHANNELS = 2
     CHUNK = 960
 
-    def __init__(self, buffer: array.array[int]):
+    def __init__(self, buffer: array.array):
         self.buffer = buffer
         self._entered: bool = False
 
