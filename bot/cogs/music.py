@@ -26,16 +26,20 @@ class Music(commands.Cog):
 
     def __init__(self, client):
         # Convert newline endings in the cookies file
-        # try:
-        #     with open("cookies.txt", "r") as f:
-        #         cookies_data = f.read()
+        try:
+            with open("cookies.txt", "r") as f:
+                cookies_data = f.read()
 
-        #     cookies_data = cookies_data.replace("\r\n", "\n").replace("\n", os.linesep)
+            cookies_data = (
+                cookies_data.replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\n", os.linesep)
+            )
 
-        #     with open("cookies.txt", "w") as f:
-        #         f.write(cookies_data)
-        # except Exception as e:
-        #     print(f"Failed to convert newline endings in cookies: {e}")
+            with open("cookies.txt", "w", newline="") as f:
+                f.write(cookies_data)
+        except Exception as e:
+            print(f"Failed to convert newline endings in cookies: {e}")
 
         self.client = client
         self.ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
