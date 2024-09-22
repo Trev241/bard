@@ -93,9 +93,9 @@ class Assistant(commands.Cog):
         )
 
         # AssemblyAI
-        aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
-        config = aai.TranscriptionConfig(language_code="en", punctuate=False)
-        self._transcriber = aai.Transcriber(config=config)
+        # aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
+        # config = aai.TranscriptionConfig(language_code="en", punctuate=False)
+        # self._transcriber = aai.Transcriber(config=config)
 
     @commands.command()
     async def intents(self, ctx):
