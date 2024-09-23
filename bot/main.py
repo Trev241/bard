@@ -14,6 +14,7 @@ import cogs.assistant as assistant
 from discord.ext import commands
 from threading import Thread
 from dotenv import load_dotenv
+from webagent import signin
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
@@ -47,6 +48,8 @@ async def load_extensions():
 
 
 async def main():
+    signin()
+
     discord.utils.setup_logging(
         handler=handler, formatter=formatter, level=logging.INFO, root=True
     )
