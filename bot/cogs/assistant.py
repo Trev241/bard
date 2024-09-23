@@ -16,8 +16,6 @@ import pyttsx3
 import pvporcupine
 import pvrhino
 
-# import vosk
-
 # import assemblyai as aai
 
 import numpy as np
