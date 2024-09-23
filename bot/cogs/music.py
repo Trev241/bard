@@ -42,8 +42,8 @@ class Music(commands.Cog):
             print(f"Failed to convert newline endings in cookies: {e}")
 
         self.client = client
-        self.ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
         self._playback_enabled = asyncio.Event()
+        self._inform_vc_status = False
 
         self.reset()
 
@@ -96,15 +96,20 @@ class Music(commands.Cog):
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
             if not assistant_base.enabled:
+                # Enable the assistant
                 assistant_connected = assistant_base.enable(ctx)
-                if not assistant_connected:
-                    await ctx.send(
-                        f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
-                    )
-                else:
-                    await ctx.send(
-                        f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
-                    )
+
+                if not self._inform_vc_status:
+                    # Let the user know at least once if voice commands are enabled or not
+                    self._inform_vc_status = True
+                    if not assistant_connected:
+                        await ctx.send(
+                            f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
+                        )
+                    else:
+                        await ctx.send(
+                            f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
+                        )
 
             return True
 
@@ -186,16 +191,17 @@ class Music(commands.Cog):
         if not await self.join(ctx):
             return
 
+        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+
         await ctx.send("Searching...")
         try:
             get(query)
         except:
-            info = self.ydl.extract_info(
-                f"ytsearch:{query}", download=False, process=False
-            )
+
+            info = ydl.extract_info(f"ytsearch:{query}", download=False, process=False)
         else:
             # Avoid downloading by setting process=False to prevent blocking execution
-            info = self.ydl.extract_info(query, download=False, process=False)
+            info = ydl.extract_info(query, download=False, process=False)
 
         # Queue entries
         if info.get("_type", None) == "playlist":
@@ -363,10 +369,11 @@ class Music(commands.Cog):
     @is_connected()
     async def play_next(self, ctx):
         try:
-
             track_type = self.queue[0].get("type", None)
             self.current_track = self.queue[0]
             ffmpeg_opts = {}
+
+            ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
             if track_type == "bot_speech":
                 self.current_track = self.queue[0]
@@ -374,14 +381,12 @@ class Music(commands.Cog):
                 # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
                 # Process IE and probe audio
                 if track_type is None:
-                    complete_entry = self.ydl.process_ie_result(
+                    complete_entry = ydl.process_ie_result(
                         self.queue[0], download=False
                     )
 
                     with open("yt-dlp.json", "w") as f:
-                        json.dump(
-                            self.ydl.sanitize_info(complete_entry), fp=f, indent=2
-                        )
+                        json.dump(ydl.sanitize_info(complete_entry), fp=f, indent=2)
 
                     # If the track was already processed, the same result will be returned
                     self.current_track = Music.create_track(complete_entry, ctx.author)

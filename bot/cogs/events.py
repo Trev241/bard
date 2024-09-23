@@ -1,17 +1,21 @@
 import requests
 import urllib.parse
 import discord
+import logging
 
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message
 from bs4 import BeautifulSoup
 from constants import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 
+log = logging.getLogger()
+
 
 class Events(commands.Cog):
     # EMOJIS
     NEXT_PAGE = "➡️"
     PREV_PAGE = "⬅️"
+    COOKIE = "🍪"
 
     def __init__(self, client):
         self.client = client
@@ -76,8 +80,10 @@ class Events(commands.Cog):
     async def on_raw_reaction_add(self, payload: RawReactionActionEvent):
         if (
             payload.user_id != self.client.user.id
+            and self.message
             and payload.message_id == self.message.id
         ):
+            # For handling page transitions
             if str(payload.emoji) == Events.NEXT_PAGE:
                 self.index += 1
             elif str(payload.emoji) == Events.PREV_PAGE:
@@ -91,6 +97,20 @@ class Events(commands.Cog):
 
             embed = self.describe_as_embed()
             await self.message.edit(embed=embed)
+
+        # For updating cookies
+        if str(payload.emoji) == Events.COOKIE:
+            channel = await self.client.fetch_channel(payload.channel_id)
+            message = await channel.fetch_message(payload.message_id)
+
+            try:
+                await message.attachments[0].save("cookies.txt")
+                await channel.send(f"Updated cookies to [this]({message.jump_url})!")
+            except Exception as e:
+                log.error(f"Failed to save uploaded cookies: {e}")
+                await channel.send(
+                    f"Failed to save uploaded cookies. You must upload it as a single text file attachment and add a reaction with the cookie emoji: {e}"
+                )
 
     def process(url):
         """
