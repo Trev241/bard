@@ -14,3 +14,5 @@ pvrhino
 resampy
 pyttsx3
 pyyaml
+selenium
+chromedriver_autoinstaller
