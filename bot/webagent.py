@@ -48,6 +48,8 @@ def signin():
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
         driver.find_element(By.XPATH, '//*[@id="identifierNext"]').click()
+        driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
+        screenshot_idx += 1
 
         # Enter password
         webdriver_wait.until(
