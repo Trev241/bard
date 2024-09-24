@@ -23,7 +23,7 @@ def signin():
 
     # Set up Chrome options
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--headless")  # Run in headless mode
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -96,8 +96,7 @@ def signin():
                 "# This is a generated file!  Do not edit.",
                 "\n",
             ]
-        )
-        cookies += "\n".join("\t".join(cookie_parts) for cookie_parts in result)
+        ) + "\n".join("\t".join(cookie_parts) for cookie_parts in result)
 
         with open("cookies.txt", "w") as f:
             f.write(cookies)
