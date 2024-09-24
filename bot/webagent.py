@@ -1,11 +1,13 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from dotenv import load_dotenv
-
 import os
 import time
 import chromedriver_autoinstaller
+import selenium.webdriver.support.expected_conditions as EC
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.wait import WebDriverWait
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -21,45 +23,41 @@ def signin():
 
     # Set up Chrome options
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode
+    # chrome_options.add_argument("--headless")  # Run in headless mode
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
     # Set up the WebDriver
     driver = webdriver.Chrome(options=chrome_options)
+    webdriver_wait = WebDriverWait(driver, 20)
 
     try:
-        # Open YouTube
         driver.get("https://www.youtube.com")
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
 
-        login_button = driver.find_element(By.LINK_TEXT, "Sign in")
-        login_button.click()
-
-        time.sleep(3)
+        webdriver_wait.until(
+            EC.element_to_be_clickable((By.LINK_TEXT, "Sign in"))
+        ).click()
 
         # Enter email
-        email_input = driver.find_element(By.XPATH, '//*[@type="email"]')
-        email_input.send_keys(email)
+        webdriver_wait.until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@type="email"]'))
+        ).send_keys(email)
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
         driver.find_element(By.XPATH, '//*[@id="identifierNext"]').click()
 
-        # Wait for password page to load
-        time.sleep(3)
-
         # Enter password
-        password_input = driver.find_element(By.XPATH, '//*[@type="password"]')
-        password_input.send_keys(passw)
+        webdriver_wait.until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@type="password"]'))
+        ).send_keys(passw)
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
         driver.find_element(By.XPATH, '//*[@id="passwordNext"]').click()
 
-        # Wait for the main page to load
-        time.sleep(5)
-
+        time.sleep(3)
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
 
@@ -103,6 +101,7 @@ def signin():
 
         with open("cookies.txt", "w") as f:
             f.write(cookies)
-
+    except Exception as e:
+        print(f"Failed to fetch cookies: {e}")
     finally:
         driver.quit()
