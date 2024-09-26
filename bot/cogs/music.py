@@ -9,7 +9,7 @@ import datetime
 import traceback
 
 from requests import get
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 from collections import deque
 from constants import EMBED_COLOR_THEME
 
@@ -84,7 +84,7 @@ class Music(commands.Cog):
         else:
             voice_channel = ctx.author.voice.channel
             if ctx.voice_client is None:
-                await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
+                await voice_channel.connect()
                 # await voice_channel.connect()
             else:
                 await ctx.voice_client.move_to(voice_channel)
