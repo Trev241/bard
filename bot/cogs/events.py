@@ -38,6 +38,9 @@ class Events(commands.Cog):
             await util_base.ping_stop(util_base.ctx)
             await util_base.ctx.send("You're back!")
 
+        wordle_base = self.client.get_cog("Wordle")
+        await wordle_base.guess(message.content)
+
     async def find_anime(self, message: Message):
         """
         Searches for anime that contain the attachment (image) sent using the trace.moe API.

@@ -3,7 +3,6 @@ import requests
 
 from random import randrange
 from PIL import Image, ImageDraw, ImageFont
-from matplotlib import font_manager
 from discord.ext import commands
 
 
@@ -14,6 +13,7 @@ class Wordle(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.running = False
+        self.ctx = None
 
         # Updating champion data
         try:
@@ -34,16 +34,17 @@ class Wordle(commands.Cog):
     @commands.command()
     async def yordle(self, ctx):
         self.running = True
+        self.ctx = ctx
         self.word = self.word_bank[randrange(0, len(self.word_bank))]
         self.size = len(self.word)
         self.last_guess = "?" * self.size
 
-        await self.display(ctx)
+        await self.display()
 
-    async def display(self, ctx):
+    async def display(self):
         self.image_for_hidden_word()
         file = discord.File(fp=Wordle.HIDDEN_WORD_IMAGE_FILENAME)
-        await ctx.send(file=file)
+        await self.ctx.send(file=file)
 
     def image_for_hidden_word(self):
         padding = 5
@@ -52,10 +53,7 @@ class Wordle(commands.Cog):
             size=(Wordle.LETTER_SIZE * self.size, Wordle.LETTER_SIZE),
             color=(0, 0, 0, 0),
         )
-
-        font = font_manager.FontProperties(family="monospace")
-        file = font_manager.findfont(font)
-        font = ImageFont.truetype(file, 45)
+        font = ImageFont.truetype("./fonts/DroidSansMono.ttf", 45)
         draw = ImageDraw.Draw(image)
 
         letters = {}
@@ -79,21 +77,19 @@ class Wordle(commands.Cog):
                 fill=bg,
             )
             draw.text(position, c, font=font, fill=fg)
-
             position[0] += Wordle.LETTER_SIZE
 
         image.save(Wordle.HIDDEN_WORD_IMAGE_FILENAME)
 
-    @commands.command()
-    async def guess(self, ctx, guess: str):
+    async def guess(self, guess: str):
         guess = guess.upper()
 
         if self.running and len(guess) == self.size and guess in self.word_bank:
             self.last_guess = guess
-            await self.display(ctx)
+            await self.display()
 
             if guess == self.word:
-                await ctx.send(f"{ctx.author.display_name} guessed the name!")
+                await self.ctx.send(f"{self.ctx.author.display_name} guessed the name!")
                 self.running = False
 
 
