@@ -51,6 +51,12 @@ def signin():
         driver.save_screenshot(f"{SCREENSHOT_PATH}/signin-{screenshot_idx}.png")
         screenshot_idx += 1
 
+        # Captcha?
+        # time.sleep(3)
+        # input_elements = driver.find_elements(By.TAG_NAME, "input")
+        # if len(input_elements) > 1:
+        #     webdriver_wait.
+
         # Enter password
         webdriver_wait.until(
             EC.element_to_be_clickable((By.XPATH, '//*[@type="password"]'))

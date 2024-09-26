@@ -12,9 +12,7 @@ import cogs.wordle as wordle
 import cogs.assistant as assistant
 
 from discord.ext import commands
-from threading import Thread
 from dotenv import load_dotenv
-from webagent import signin
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
@@ -48,8 +46,6 @@ async def load_extensions():
 
 
 async def main():
-    signin()
-
     discord.utils.setup_logging(
         handler=handler, formatter=formatter, level=logging.INFO, root=True
     )
@@ -57,14 +53,6 @@ async def main():
     async with client:
         await load_extensions()
         await client.start(token=TOKEN)
-
-
-def launch():
-    t = Thread(target=asyncio.run, args=(main(),))
-    t.start()
-
-    # Main thread should end only after thread jumpstarter completes
-    t.join()
 
 
 if __name__ == "__main__":

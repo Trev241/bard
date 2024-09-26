@@ -17,8 +17,6 @@ import pvporcupine
 import pvrhino
 
 # import assemblyai as aai
-
-import numpy as np
 import speech_recognition as sr
 
 from discord.ext import commands, voice_recv
