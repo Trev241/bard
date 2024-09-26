@@ -4,3 +4,4 @@ Pillow
 python-dotenv
 Requests
 yt_dlp
+PyNaCl
