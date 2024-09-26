@@ -12,3 +12,4 @@ resampy
 selenium
 SpeechRecognition
 yt_dlp
+PyNaCl
