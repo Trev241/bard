@@ -93,32 +93,12 @@ class Music(commands.Cog):
             self._ctx = ctx
             await self.start_timeout_timer()
 
-            # Prepare assistant
-            assistant_base = self.client.get_cog("Assistant")
-            if not assistant_base.enabled:
-                # Enable the assistant
-                assistant_connected = assistant_base.enable(ctx)
-
-                if not self._inform_vc_status:
-                    # Let the user know at least once if voice commands are enabled or not
-                    self._inform_vc_status = True
-                    if not assistant_connected:
-                        await ctx.send(
-                            f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
-                        )
-                    else:
-                        await ctx.send(
-                            f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
-                        )
-
             return True
 
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx):
         ctx.voice_client.stop()
-        assistant_base = self.client.get_cog("Assistant")
-        assistant_base.disable(ctx)
         self.reset()
 
         # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
@@ -489,13 +469,6 @@ class Music(commands.Cog):
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
         ctx.voice_client.stop()
-
-        # Experimental feature in VoiceRecvClient, calling stop() will
-        # halt both listening and playback services. There is currently no
-        # way to halt one service separately from the other. A temporary workaround
-        # is to restart the assistant if it was initially enabled
-        assistant_base = self.client.get_cog("Assistant")
-        assistant_base.restore(ctx)
 
     @commands.command()
     @is_connected()

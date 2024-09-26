@@ -9,12 +9,9 @@ import cogs.music as music
 import cogs.utils as utils
 import cogs.events as events
 import cogs.wordle as wordle
-import cogs.assistant as assistant
 
 from discord.ext import commands
-from threading import Thread
 from dotenv import load_dotenv
-from webagent import signin
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
@@ -32,7 +29,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 # ADDING COGS TO BOT
-cogs = [music, utils, events, wordle, assistant]
+cogs = [music, utils, events, wordle]
 
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix="?", intents=discord.Intents.all())
@@ -48,8 +45,6 @@ async def load_extensions():
 
 
 async def main():
-    signin()
-
     discord.utils.setup_logging(
         handler=handler, formatter=formatter, level=logging.INFO, root=True
     )
@@ -59,15 +54,5 @@ async def main():
         await client.start(token=TOKEN)
 
 
-def launch():
-    t = Thread(target=asyncio.run, args=(main(),))
-    t.start()
-
-    # Main thread should end only after thread jumpstarter completes
-    t.join()
-
-
 if __name__ == "__main__":
-    # print(f'[{os.getcwd()}] Script was triggered.')
-    # launch()
     asyncio.run(main())
