@@ -7,7 +7,8 @@ import random
 import yaml
 import platform
 
-import resampy
+import numpy as np
+import librosa
 import logging
 import discord
 import audioop
@@ -27,7 +28,7 @@ log = logging.getLogger()
 
 
 class Assistant(commands.Cog):
-    Utterance = namedtuple("Utterance", ["content", "after"])
+    Utterance = namedtuple("Utterance", ["content", "after", "quiet_after"])
 
     with open("assistant/Bard Assistant.yml") as stream:
         INTENTS = yaml.safe_load(stream)
@@ -139,13 +140,14 @@ class Assistant(commands.Cog):
 
             if inference.is_understood:
                 self._is_awake = False
+                self._resampled_stream = []
 
                 # Add intent to queue and set event for processing
                 log.info(inference.intent)
                 self._intent_queue.append(inference)
                 self._loop.call_soon_threadsafe(self._events["INTENT_DETECTED"].set)
 
-    def say(self, message, after=None):
+    def say(self, message, quiet_after, after=None):
         """
         Adds a message to the assistant's message queue which will be
         played over the bot's voice client connection using TTS along with
@@ -159,7 +161,7 @@ class Assistant(commands.Cog):
         should be enabled for the assistant to broadcast messages.
         """
 
-        utterance = Assistant.Utterance(message, after)
+        utterance = Assistant.Utterance(message, after, quiet_after)
         self._message_queue.append(utterance)
 
         # Modify the event from another thread using call_soon_threadsafe
@@ -191,16 +193,23 @@ class Assistant(commands.Cog):
                 await self._ctx.send(utterance.content)
                 self._voice_client.play(
                     audio,
-                    after=lambda _: self._process_message_queue_cb(utterance.after),
+                    after=lambda _: self._process_message_queue_cb(
+                        utterance.quiet_after, utterance.after
+                    ),
                 )
 
             self._events["UTTERANCE_REQUIRED"].clear()
 
-    def _process_message_queue_cb(self, callback=None):
+    def _process_message_queue_cb(self, quiet_after=False, callback=None):
         if callback:
             callback()
 
         self._events["UTTERANCE_FINISHED"].set()
+
+        if quiet_after:
+            return
+
+        # Resume music if no silence is required after the message
         music_base = self.client.get_cog("Music")
         self._loop.create_task(music_base.resume(self._ctx))
 
@@ -311,6 +320,8 @@ class Assistant(commands.Cog):
             https://stackoverflow.com/questions/32128206/what-does-interleaved-stereo-pcm-linear-int16-big-endian-audio-look-like
             """
 
+            log.debug(len(self._resampled_stream))
+
             if self._transcription_required:
                 # Additional speech transcription is required
                 sdata = self._stream_data[user.id]
@@ -328,12 +339,12 @@ class Assistant(commands.Cog):
 
                 # The PCM stream from Discord arrives in bytes in Little Endian format
                 values = np.frombuffer(data.pcm, dtype=np.int16)
-                value_matrix = np.array((values[::2], values[1::2]))
+                value_matrix = np.array((values[::2], values[1::2])).astype(np.float32)
 
                 # Downsample the audio stream from 48kHz to 16kHz
-                resampled_values = resampy.resample(
-                    value_matrix, 48_000, 16_000
-                ).astype(value_matrix.dtype)
+                resampled_values = librosa.resample(
+                    value_matrix, orig_sr=48_000, target_sr=16_000
+                ).astype(np.int16)
 
                 # Extend the buffer with the samples for the current user collected
                 # at this instance and choose the left channel only
@@ -358,12 +369,15 @@ class Assistant(commands.Cog):
                         if result >= 0:
                             # Set awake
                             self._is_awake = True
+                            self._resampled_stream = []
 
                             log.info("Detected wake word")
                             dialog = random.choice(
                                 Assistant.DIALOGS["prompts"]["general"]
                             )
-                            self.say(f"Hi {user.display_name}. {dialog}")
+                            self.say(
+                                f"Hi {user.display_name}. {dialog}", quiet_after=True
+                            )
 
         assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
         ctx.voice_client.listen(assistant_sink)
