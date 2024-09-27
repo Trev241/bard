@@ -8,7 +8,6 @@ import yaml
 import platform
 
 import numpy as np
-import librosa
 import logging
 import discord
 import audioop
@@ -20,6 +19,7 @@ import pvrhino
 # import assemblyai as aai
 import speech_recognition as sr
 
+from resampy.core import resample
 from discord.ext import commands, voice_recv
 from discord.ext.commands import Context
 from collections import defaultdict, deque, namedtuple
@@ -339,12 +339,12 @@ class Assistant(commands.Cog):
 
                 # The PCM stream from Discord arrives in bytes in Little Endian format
                 values = np.frombuffer(data.pcm, dtype=np.int16)
-                value_matrix = np.array((values[::2], values[1::2])).astype(np.float32)
+                value_matrix = np.array((values[::2], values[1::2]))
 
                 # Downsample the audio stream from 48kHz to 16kHz
-                resampled_values = librosa.resample(
-                    value_matrix, orig_sr=48_000, target_sr=16_000
-                ).astype(np.int16)
+                resampled_values = resample(value_matrix, 48_000, 16_000).astype(
+                    np.int16
+                )
 
                 # Extend the buffer with the samples for the current user collected
                 # at this instance and choose the left channel only

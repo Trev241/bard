@@ -14,3 +14,4 @@ SpeechRecognition
 yt_dlp
 PyNaCl
 numpy
+resampy
