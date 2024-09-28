@@ -78,8 +78,6 @@ class Assistant(commands.Cog):
             self.porcupine = pvporcupine.create(
                 access_key=os.getenv("PV_ACCESS_KEY"),
                 keyword_paths=[f"assistant/{porcupine_mdl}"],
-                # keywords=["picovoice", "bumblebee"],
-                # sensitivities=[1.0, 1.0],
             )
         except Exception as e:
             self._services_available = False
