@@ -194,7 +194,6 @@ class Music(commands.Cog):
         try:
             get(query)
         except:
-
             info = ydl.extract_info(f"ytsearch:{query}", download=False, process=False)
         else:
             # Avoid downloading by setting process=False to prevent blocking execution
