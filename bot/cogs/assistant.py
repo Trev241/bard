@@ -117,11 +117,6 @@ class Assistant(commands.Cog):
             )
             log.error("Intent intepretation services will not be available!")
 
-        # AssemblyAI
-        # aai.settings.api_key = os.getenv("AA_ACCESS_KEY")
-        # config = aai.TranscriptionConfig(language_code="en", punctuate=False)
-        # self._transcriber = aai.Transcriber(config=config)
-
     @commands.command()
     async def intents(self, ctx):
         await ctx.send(f"```{json.dumps(Assistant.INTENTS, indent=2)}```")

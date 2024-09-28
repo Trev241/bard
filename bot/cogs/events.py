@@ -1,6 +1,5 @@
 import requests
 import urllib.parse
-import discord
 import logging
 
 from discord.ext import commands
@@ -33,7 +32,6 @@ class Events(commands.Cog):
 
         # await self.find_anime(message)
         util_base = self.client.get_cog("Utils")
-
         if util_base.is_pinging and util_base.who.id == message.author.id:
             await util_base.ping_stop(util_base.ctx)
             await util_base.ctx.send("You're back!")
