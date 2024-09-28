@@ -22,7 +22,7 @@ class Music(commands.Cog):
         "options": "-vn",
     }
 
-    YDL_OPTIONS = {"format": "bestaudio", "cookiefile": "cookies.txt", "verbose": True}
+    YDL_OPTIONS = {"format": "bestaudio", "cookiefile": "cookies.txt", "verbose": False}
 
     def __init__(self, client):
         # Convert newline endings in the cookies file
