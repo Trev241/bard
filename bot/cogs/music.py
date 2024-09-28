@@ -15,7 +15,7 @@ from constants import EMBED_COLOR_THEME
 
 
 class Music(commands.Cog):
-    IDLE_TIMEOUT_INTERVAL = 300
+    IDLE_TIMEOUT_INTERVAL = 600
 
     FFMPEG_OPTIONS = {
         "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
