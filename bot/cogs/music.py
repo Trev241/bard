@@ -43,7 +43,6 @@ class Music(commands.Cog):
 
         self.client = client
         self._playback_enabled = asyncio.Event()
-        self._inform_vc_status = False
 
         self.reset()
 
@@ -99,17 +98,15 @@ class Music(commands.Cog):
                 # Enable the assistant
                 assistant_connected = assistant_base.enable(ctx)
 
-                if not self._inform_vc_status:
-                    # Let the user know at least once if voice commands are enabled or not
-                    self._inform_vc_status = True
-                    if not assistant_connected:
-                        await ctx.send(
-                            f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
-                        )
-                    else:
-                        await ctx.send(
-                            f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
-                        )
+                # Let the user know at least once if voice commands are enabled or not
+                if not assistant_connected:
+                    await ctx.send(
+                        f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
+                    )
+                else:
+                    await ctx.send(
+                        f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
+                    )
 
             return True
 
@@ -485,6 +482,8 @@ class Music(commands.Cog):
     @is_connected()
     async def skip(self, ctx, count: int = 1):
         self.skip_track = count
+        assistant_base = self.client.get_cog("Assistant")
+        restart_assistant = assistant_base.enabled
 
         # Stops the player. Since a callback has already been registered for the current track, there is no need
         # to do anything else. The queue will continue playing as expected.
@@ -494,8 +493,9 @@ class Music(commands.Cog):
         # halt both listening and playback services. There is currently no
         # way to halt one service separately from the other. A temporary workaround
         # is to restart the assistant if it was initially enabled
-        assistant_base = self.client.get_cog("Assistant")
-        assistant_base.restore(ctx)
+        if restart_assistant:
+            # Only restart the assistant if it was initially enabled
+            assistant_base.restore(ctx)
 
     @commands.command()
     @is_connected()

@@ -16,7 +16,6 @@ import pyttsx3
 import pvporcupine
 import pvrhino
 
-# import assemblyai as aai
 import speech_recognition as sr
 
 from resampy.core import resample
