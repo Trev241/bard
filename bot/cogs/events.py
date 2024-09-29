@@ -24,6 +24,9 @@ class Events(commands.Cog):
         self.matches = None
         self.index = 0
 
+        self._last_message = None
+        self._repetitions = 0
+
     @commands.Cog.listener()
     async def on_message(self, message: Message):
         # Ignore messages sent by the bot
@@ -32,12 +35,26 @@ class Events(commands.Cog):
 
         # await self.find_anime(message)
         util_base = self.client.get_cog("Utils")
-        if util_base.is_pinging and util_base.who.id == message.author.id:
-            await util_base.ping_stop(util_base.ctx)
-            await util_base.ctx.send("You're back!")
+        if util_base.is_pinging and message.author in util_base.who:
+            # await util_base.ping_stop(util_base.ctx)
+            util_base.who.remove(message.author)
+            await util_base.channel.send("You're back!")
 
         wordle_base = self.client.get_cog("Wordle")
         await wordle_base.guess(message.content)
+
+        # Automatic trigger for ping utility
+        if self._last_message and set(self._last_message.mentions) == set(
+            message.mentions
+        ):
+            self._repetitions += 1
+
+            if self._repetitions >= 3:
+                await message.channel.send("Let me help you ping.")
+                await util_base.ping(message.channel, message.mentions)
+                self._repetitions = 0
+
+        self._last_message = message
 
     async def find_anime(self, message: Message):
         """
