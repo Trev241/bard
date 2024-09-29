@@ -1,3 +1,4 @@
+import discord
 import asyncio
 import sys
 import os
@@ -15,7 +16,7 @@ class Utils(commands.Cog):
         self.channel = None
 
     @commands.command(name="ping")
-    async def issue_ping(self, ctx, who, limit: int = 100):
+    async def issue_ping(self, ctx, who: discord.Member, limit: int = 100):
         await self.ping(ctx.message.channel, who, limit)
 
     async def ping(self, channel, who, limit: int = 100):
