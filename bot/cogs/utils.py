@@ -16,7 +16,7 @@ class Utils(commands.Cog):
 
     @commands.command(name="ping")
     async def issue_ping(self, ctx, who, limit: int = 100):
-        self.ping(ctx.message.channel, who, limit)
+        await self.ping(ctx.message.channel, who, limit)
 
     async def ping(self, channel, who, limit: int = 100):
         if self.is_pinging:
