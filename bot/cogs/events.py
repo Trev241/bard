@@ -53,7 +53,7 @@ class Events(commands.Cog):
 
             if self._repetitions >= 3:
                 await message.channel.send("Let me help you ping.")
-                await util_base.ping(message.channel, message.mentions)
+                await util_base.ping(message.channel, message.mentions, 25)
                 self._repetitions = 0
 
         self._last_message = message
