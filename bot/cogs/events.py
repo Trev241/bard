@@ -46,7 +46,7 @@ class Events(commands.Cog):
         # Automatic trigger for ping utility
         if (
             self._last_message
-            and len(self.message.mentions) > 0
+            and len(message.mentions) > 0
             and set(self._last_message.mentions) == set(message.mentions)
         ):
             self._repetitions += 1
