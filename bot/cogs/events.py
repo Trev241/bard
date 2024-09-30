@@ -44,8 +44,10 @@ class Events(commands.Cog):
         await wordle_base.guess(message.content)
 
         # Automatic trigger for ping utility
-        if self._last_message and set(self._last_message.mentions) == set(
-            message.mentions
+        if (
+            self._last_message
+            and len(message.mentions) > 0
+            and set(self._last_message.mentions) == set(message.mentions)
         ):
             self._repetitions += 1
 
