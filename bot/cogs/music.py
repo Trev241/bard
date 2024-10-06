@@ -85,28 +85,28 @@ class Music(commands.Cog):
             if ctx.voice_client is None:
                 await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
                 # await voice_channel.connect()
+
+                # Prepare assistant
+                assistant_base = self.client.get_cog("Assistant")
+                if not assistant_base.enabled:
+                    # Enable the assistant
+                    assistant_connected = assistant_base.enable(ctx)
+
+                    # Let the user know at least once if voice commands are enabled or not
+                    if not assistant_connected:
+                        await ctx.send(
+                            f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
+                        )
+                    else:
+                        await ctx.send(
+                            f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
+                        )
             else:
                 await ctx.voice_client.move_to(voice_channel)
 
             # Cache context
             self._ctx = ctx
             await self.start_timeout_timer()
-
-            # Prepare assistant
-            assistant_base = self.client.get_cog("Assistant")
-            if not assistant_base.enabled:
-                # Enable the assistant
-                assistant_connected = assistant_base.enable(ctx)
-
-                # Let the user know at least once if voice commands are enabled or not
-                if not assistant_connected:
-                    await ctx.send(
-                        f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
-                    )
-                else:
-                    await ctx.send(
-                        f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
-                    )
 
             return True
 
