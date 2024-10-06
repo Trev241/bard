@@ -6,6 +6,7 @@ import requests
 import logging
 
 from discord.ext import commands
+from datetime import datetime
 
 log = logging.getLogger()
 
@@ -50,6 +51,10 @@ class Utils(commands.Cog):
             await asyncio.sleep(Utils.PING_DELAY)
             self.ping_count += 1
         self.is_pinging = False
+
+    @commands.command()
+    async def logs(self, ctx):
+        await ctx.send(file=discord.File(f"logs/{datetime.date(datetime.now())}.txt"))
 
     @commands.command()
     async def shutdown(self, ctx):

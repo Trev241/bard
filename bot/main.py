@@ -13,6 +13,8 @@ import cogs.assistant as assistant
 
 from discord.ext import commands
 from dotenv import load_dotenv
+from datetime import datetime
+from pathlib import Path
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
@@ -22,12 +24,20 @@ TOKEN = os.getenv("TOKEN")
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
 
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-handler.setFormatter(formatter)
-root.addHandler(handler)
+Path("logs").mkdir(parents=True, exist_ok=True)
+
+# Handlers
+strm_handler = logging.StreamHandler(sys.stdout)
+strm_handler.setLevel(logging.DEBUG)
+strm_handler.setFormatter(formatter)
+file_handler = logging.FileHandler(f"logs/{datetime.date(datetime.now())}.txt")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+root.addHandler(strm_handler)
+root.addHandler(file_handler)
 
 # ADDING COGS TO BOT
 cogs = [music, utils, events, wordle, assistant]
@@ -47,7 +57,7 @@ async def load_extensions():
 
 async def main():
     discord.utils.setup_logging(
-        handler=handler, formatter=formatter, level=logging.INFO, root=True
+        handler=strm_handler, formatter=formatter, level=logging.INFO, root=True
     )
 
     async with client:
@@ -56,6 +66,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # print(f'[{os.getcwd()}] Script was triggered.')
-    # launch()
     asyncio.run(main())
