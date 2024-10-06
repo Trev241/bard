@@ -16,6 +16,8 @@ class Events(commands.Cog):
     PREV_PAGE = "⬅️"
     COOKIE = "🍪"
 
+    AUTO_PING_THRESHOLD = 2
+
     def __init__(self, client):
         self.client = client
 
@@ -35,9 +37,9 @@ class Events(commands.Cog):
 
         # await self.find_anime(message)
         util_base = self.client.get_cog("Utils")
-        if util_base.is_pinging and message.author in util_base.who:
+        if util_base.is_pinging and util_base.ping_who.get(message.author, 0) > 0:
             # await util_base.ping_stop(util_base.ctx)
-            util_base.who.remove(message.author)
+            util_base.ping_who[message.author] = 0
             await util_base.channel.send("You're back!")
 
         wordle_base = self.client.get_cog("Wordle")
@@ -51,10 +53,11 @@ class Events(commands.Cog):
         ):
             self._repetitions += 1
 
-            if self._repetitions >= 3:
-                await message.channel.send("Let me help you ping.")
+            if self._repetitions >= Events.AUTO_PING_THRESHOLD:
                 await util_base.ping(message.channel, message.mentions, 25)
                 self._repetitions = 0
+        else:
+            self._repetitions = 0
 
         self._last_message = message
 

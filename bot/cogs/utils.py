@@ -12,29 +12,33 @@ log = logging.getLogger()
 
 
 class Utils(commands.Cog):
-    PING_DELAY = 1
+    PING_DELAY = 2.0
 
     def __init__(self, client):
         self.client = client
         self.is_pinging = False
         self.channel = None
+        self.ping_who = {}
 
     @commands.command(name="ping")
     async def issue_ping(self, ctx, who: discord.Member, limit: int = 100):
-        await self.ping(ctx.message.channel, who, limit)
+        await self.ping(ctx.message.channel, [who], limit)
 
     async def ping(self, channel, who, limit: int = 100):
-        if self.is_pinging:
-            await channel.send(f"Waiting for old pinging routine to end...")
-            await self.ping_stop(channel)
+        # Set a ping limit for all new members to be pinged
+        for member in who:
+            if member not in self.ping_who:
+                self.ping_who[member] = limit
 
-        self.who = who if type(who) == list else [who]
-        self.ping_limit = limit
+        # Find out who will be pinged last
+        self.ping_limit = max(self.ping_who.values())
         self.ping_count = 0
         self.channel = channel
 
-        el = asyncio.get_event_loop()
-        el.create_task(self.pinging(channel))
+        # Start a new pinging task if it does not already exist
+        if not self.is_pinging:
+            el = asyncio.get_event_loop()
+            el.create_task(self.pinging(channel))
 
     @commands.command()
     async def ping_stop(self, ctx):
@@ -43,14 +47,22 @@ class Utils(commands.Cog):
     async def pinging(self, channel):
         self.is_pinging = True
         while (
-            self.is_pinging and self.ping_count < self.ping_limit and len(self.who) > 0
+            self.is_pinging
+            and self.ping_count <= self.ping_limit
+            and len(self.ping_who) > 0
         ):
-            await channel.send(
-                f"{' '.join([member.mention for member in self.who])} ({self.ping_count + 1}/{self.ping_limit})"
-            )
+            ping_message = ""
+            for member, count in self.ping_who.items():
+                if count > 0:
+                    ping_message += f"{member.mention} ({count}) "
+                    self.ping_who[member] -= 1
+
+            await channel.send(ping_message)
             await asyncio.sleep(Utils.PING_DELAY)
             self.ping_count += 1
+
         self.is_pinging = False
+        self.ping_who = {}
 
     @commands.command()
     async def logs(self, ctx):
