@@ -3,8 +3,11 @@ import asyncio
 import sys
 import os
 import requests
+import logging
 
 from discord.ext import commands
+
+log = logging.getLogger()
 
 
 class Utils(commands.Cog):
@@ -60,7 +63,7 @@ class Utils(commands.Cog):
                 f'{os.getenv("API_BASE_URL")}/notify', json=payload, headers=headers
             )
         except:
-            print(f"Request failed with code {res.status_code}. Exiting anyways.")
+            log.error(f"Request failed with code {res.status_code}. Exiting anyways.")
         finally:
             sys.exit(0)
 

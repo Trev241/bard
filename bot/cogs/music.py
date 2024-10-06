@@ -7,11 +7,14 @@ import time
 import asyncio
 import datetime
 import traceback
+import logging
 
 from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from constants import EMBED_COLOR_THEME
+
+log = logging.getLogger()
 
 
 class Music(commands.Cog):
@@ -39,7 +42,7 @@ class Music(commands.Cog):
             with open("cookies.txt", "w", newline="") as f:
                 f.write(cookies_data)
         except Exception as e:
-            print(f"Failed to convert newline endings in cookies: {e}")
+            log.error(f"Failed to convert newline endings in cookies: {e}")
 
         self.client = client
         self._playback_enabled = asyncio.Event()

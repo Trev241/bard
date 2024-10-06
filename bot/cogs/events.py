@@ -68,7 +68,6 @@ class Events(commands.Cog):
         # For now, only processing the first attachment
         if len(message.attachments) > 0:
             attachment = message.attachments[0]
-            # print(attachment.content_type)
             url = attachment.url if attachment.content_type[:5] == "image" else None
         else:
             try:

@@ -1,9 +1,12 @@
 import discord
 import requests
+import logging
 
 from random import randrange
 from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
+
+log = logging.getLogger()
 
 
 class Wordle(commands.Cog):
@@ -29,7 +32,7 @@ class Wordle(commands.Cog):
 
             self.word_bank = [champion.upper() for champion in champion_data.keys()]
         except Exception as e:
-            print(f"An error occured while trying to update champion data: {e}")
+            log.error(f"An error occured while trying to update champion data: {e}")
 
     @commands.command()
     async def yordle(self, ctx):
