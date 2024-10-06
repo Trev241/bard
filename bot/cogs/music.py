@@ -98,6 +98,7 @@ class Music(commands.Cog):
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx):
+        self.looping_video = False
         ctx.voice_client.stop()
         self.reset()
 
