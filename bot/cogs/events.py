@@ -36,9 +36,9 @@ class Events(commands.Cog):
             return
 
         # await self.find_anime(message)
+
         util_base = self.client.get_cog("Utils")
         if util_base.is_pinging and util_base.ping_who.get(message.author, 0) > 0:
-            # await util_base.ping_stop(util_base.ctx)
             util_base.ping_who[message.author] = 0
             await util_base.channel.send("You're back!")
 

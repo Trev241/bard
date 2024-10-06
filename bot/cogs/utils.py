@@ -57,6 +57,10 @@ class Utils(commands.Cog):
                     ping_message += f"{member.mention} ({count}) "
                     self.ping_who[member] -= 1
 
+            # It's possible that everyone might reply leaving the ping string empty
+            if ping_message == "":
+                break
+
             await channel.send(ping_message)
             await asyncio.sleep(Utils.PING_DELAY)
             self.ping_count += 1
