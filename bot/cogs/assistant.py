@@ -412,6 +412,9 @@ class Assistant(commands.Cog):
         Disables the assistant and cancels any connections and related tasks
         """
 
+        if not self._services_available:
+            return
+
         self.enabled = False
         self._ctx = ctx
         ctx.voice_client.stop_listening()
