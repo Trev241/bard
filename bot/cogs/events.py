@@ -203,6 +203,18 @@ class Events(commands.Cog):
         ):
             await self.client.get_cog("Music").start_timeout_timer()
 
+        if before.channel is None and len(after.channel.members) == 1:
+            # Join the call automatically when someone is in the voice channel
+            # The Music cog needs a command context in order to run normally.
+            # As a workaround, we will use the bot to send a message and use
+            # that context instead.
+            # The only difference is that we must specify the voice channel
+            # and the author explicitly. Everything else works the same.
+
+            wlcm_msg = await after.channel.send("I'm here too!")
+            ctx = await self.client.get_context(wlcm_msg)
+            await self.client.get_cog("Music").join_vc(ctx, after.channel, member)
+
 
 async def setup(client):
     await client.add_cog(Events(client))
