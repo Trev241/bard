@@ -4,6 +4,7 @@ import yt_dlp
 import os
 import json
 import time
+import random
 import asyncio
 import datetime
 import traceback
@@ -47,6 +48,16 @@ class Music(commands.Cog):
         self.client = client
         self._playback_enabled = asyncio.Event()
 
+        # Loading auto-play tracks
+        AUTO_PLAYLIST = (
+            "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
+        )
+        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+        info = ydl.extract_info(AUTO_PLAYLIST, download=False, process=False)
+        self.auto_play_tracks = []
+        for entry in info["entries"]:
+            self.auto_play_tracks.append(entry)
+
         self.reset()
 
     def reset(self):
@@ -58,6 +69,7 @@ class Music(commands.Cog):
         self.skip_track = False
         self.looping_video = False
         self.looping_queue = False
+        self.auto_play = True
 
         self.current_track = None
         self._timeout_task = None
@@ -150,6 +162,11 @@ class Music(commands.Cog):
 
             track = self.current_track
             requester = track["requester"]
+            footer_text = (
+                f"Played automatically by me. This song will be skipped as soon as you play something else!"
+                if track["requester"] == self.client.user
+                else f"Song requested by {requester.display_name}"
+            )
 
             embed = discord.Embed.from_dict(
                 {
@@ -185,7 +202,7 @@ class Music(commands.Cog):
                         },
                     ],
                     "footer": {
-                        "text": f"Song requested by {requester.display_name}",
+                        "text": footer_text,
                         "icon_url": requester.display_avatar.url,
                     },
                 }
@@ -217,11 +234,13 @@ class Music(commands.Cog):
             count = 0
 
             for entry in info["entries"]:
+                entry["requester"] = ctx.author
                 await self.queue_entry(entry, ctx)
                 count += 1
 
             await ctx.send(f"Queued {count} video(s).")
         else:
+            info["requester"] = ctx.author
             await self.queue_entry(info, ctx)
             await ctx.send(f'Queued {info["title"]}.')
 
@@ -230,36 +249,48 @@ class Music(commands.Cog):
     async def queue_entry(self, entry, ctx):
         self.queue.append(entry)
 
-        # Start playing if bot is idle
+        # Start playing if bot is idle or if playing auto-play tracks
         if self.idle:
             self.idle = False
             await self.play_next(ctx)
+        elif self.current_track.get("elevator_music", False):
+            await self.skip(ctx)
 
-    def create_track(info, requester):
-        """Returns a dict containing a subset of the track's original attributes."""
+    def create_track(self, info):
+        """
+        Processes the incomplete entry and returns a dict containing a subset of
+        the track's original attributes and some other properties set by the cog.
+        """
+
+        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+        processed_entry = ydl.process_ie_result(info, download=False)
+        with open("yt-dlp.json", "w") as f:
+            json.dump(ydl.sanitize_info(processed_entry), fp=f, indent=2)
 
         url = None
         abr = 0
 
-        for format in info["formats"]:
+        for format in processed_entry["formats"]:
             if float(format.get("abr", 0) or 0) > abr:
                 # Save the URL with the highest audio bit rate
                 url = format["url"]
 
-        if type(info["duration"]) is not str:
-            info["duration"] = str(datetime.timedelta(seconds=info["duration"]))
+        track = {}
+        for k, v in processed_entry.items():
+            track[k] = v
 
-        return {
-            "type": "processed_music",
-            "title": info["title"],
-            "url": url,
-            "duration": info["duration"],
-            "thumbnail": info["thumbnails"][0]["url"],
-            "webpage_url": info["webpage_url"],
-            "requester": requester,
-            # Retaining specific properties
-            "start_from": info.get("start_from", 0),
-        }
+        track["type"] = "processed_music"
+        track["title"] = processed_entry["title"]
+        track["url"] = url
+        track["duration"] = str(datetime.timedelta(seconds=int(info["duration"])))
+        track["thumbnail"] = processed_entry["thumbnails"][0]["url"]
+        track["webpage_url"] = processed_entry["webpage_url"]
+        track["requester"] = info.get("requester", self.client.user)
+        # Retaining specific properties
+        track["start_from"] = info.get("start_from", 0)
+        track["elevator_music"] = info.get("elevator_music", False)
+
+        return track
 
     async def on_track_complete(self, ctx):
         """
@@ -306,6 +337,11 @@ class Music(commands.Cog):
 
         # Wait if playback was interrupted
         await self._playback_enabled.wait()
+
+        if self.auto_play and len(self.queue) == 0:
+            track = random.choice(self.auto_play_tracks)
+            track["elevator_music"] = True
+            self.queue.append(track)
 
         if len(self.queue) > 0:
             await self.play_next(ctx)
@@ -382,23 +418,14 @@ class Music(commands.Cog):
             self.current_track = self.queue[0]
             ffmpeg_opts = {}
 
-            ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
-
             if track_type == "bot_speech":
                 self.current_track = self.queue[0]
             else:
                 # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
                 # Process IE and probe audio
                 if track_type is None:
-                    complete_entry = ydl.process_ie_result(
-                        self.queue[0], download=False
-                    )
-
-                    with open("yt-dlp.json", "w") as f:
-                        json.dump(ydl.sanitize_info(complete_entry), fp=f, indent=2)
-
                     # If the track was already processed, the same result will be returned
-                    self.current_track = Music.create_track(complete_entry, ctx.author)
+                    self.current_track = self.create_track(self.queue[0])
 
                 # Adjust FFmpeg options to start
                 start_from = self.current_track.get("start_from", 0)
