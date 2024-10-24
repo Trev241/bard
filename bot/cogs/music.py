@@ -137,11 +137,11 @@ class Music(commands.Cog):
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx):
-        self.looping_video = False
+        # Temporarily disable some flags to allow the bot to exit
+        self.looping_video = self.auto_play = False
         ctx.voice_client.stop()
         assistant_base = self.client.get_cog("Assistant")
         assistant_base.disable(ctx)
-        self.reset()
 
         # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
         # TODO: Resolve sound if bot is launched from main.py
@@ -153,6 +153,8 @@ class Music(commands.Cog):
         ctx.voice_client.play(
             source, after=lambda error: el.create_task(ctx.voice_client.disconnect())
         )
+
+        self.reset()
 
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
