@@ -139,6 +139,7 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         # Temporarily disable some flags to allow the bot to exit
         self.looping_video = self.auto_play = False
+
         ctx.voice_client.stop()
         assistant_base = self.client.get_cog("Assistant")
         assistant_base.disable(ctx)
@@ -250,6 +251,11 @@ class Music(commands.Cog):
 
     async def queue_entry(self, entry, ctx):
         self.queue.append(entry)
+
+        # Submit analytics data
+        self.client.get_cog("Analytics").submit_track(
+            entry["title"], entry["requester"].id
+        )
 
         # Start playing if bot is idle or if playing auto-play tracks
         if self.idle:

@@ -10,6 +10,7 @@ import cogs.utils as utils
 import cogs.events as events
 import cogs.wordle as wordle
 import cogs.assistant as assistant
+import cogs.analytics as analytics
 
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -40,7 +41,7 @@ root.addHandler(strm_handler)
 root.addHandler(file_handler)
 
 # ADDING COGS TO BOT
-cogs = [music, utils, events, wordle, assistant]
+cogs = [music, utils, events, wordle, assistant, analytics]
 
 # INITIALIZING CLIENT
 client = commands.Bot(command_prefix="?", intents=discord.Intents.all())
