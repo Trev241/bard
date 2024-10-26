@@ -3,7 +3,7 @@ import urllib.parse
 import logging
 
 from discord.ext import commands
-from discord import Embed, RawReactionActionEvent, Message
+from discord import Embed, RawReactionActionEvent, Message, MessageType
 from bs4 import BeautifulSoup
 from constants import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 
@@ -17,6 +17,7 @@ class Events(commands.Cog):
     COOKIE = "🍪"
 
     AUTO_PING_THRESHOLD = 2
+    AUTO_PING_MAX_INTEVAL = 5
 
     def __init__(self, client):
         self.client = client
@@ -50,6 +51,9 @@ class Events(commands.Cog):
             self._last_message
             and len(message.mentions) > 0
             and set(self._last_message.mentions) == set(message.mentions)
+            and message.type == MessageType.default
+            and (message.created_at - self._last_message.created_at).total_seconds()
+            < Events.AUTO_PING_MAX_INTEVAL
         ):
             self._repetitions += 1
 
