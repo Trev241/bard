@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import discord
 
 from discord.ext import commands
 
@@ -34,7 +35,10 @@ class Analytics(commands.Cog):
     @commands.command()
     async def analytics(self, ctx):
         analytics_data = self.get_tracks()
-        await ctx.send(json.dumps(analytics_data, indent=2))
+        with open("stats.json", "w") as fp:
+            json.dump(analytics_data, fp, indent=2)
+        with open("stats.json") as fp:
+            await ctx.send(discord.File(fp))
 
 
 async def setup(client):
