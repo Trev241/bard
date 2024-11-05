@@ -32,9 +32,9 @@ class Analytics(commands.Cog):
         return self.cursor.fetchall()
 
     @commands.command()
-    def analytics(self, ctx):
+    async def analytics(self, ctx):
         analytics_data = self.get_tracks()
-        ctx.send(json.dumps(analytics_data, indent=2))
+        await ctx.send(json.dumps(analytics_data, indent=2))
 
 
 async def setup(client):
