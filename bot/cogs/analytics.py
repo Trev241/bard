@@ -38,7 +38,7 @@ class Analytics(commands.Cog):
         with open("stats.json", "w") as fp:
             json.dump(analytics_data, fp, indent=2)
         with open("stats.json") as fp:
-            await ctx.send(discord.File(fp))
+            await ctx.send(file=discord.File(fp))
 
 
 async def setup(client):
