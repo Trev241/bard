@@ -48,16 +48,6 @@ class Music(commands.Cog):
         self.client = client
         self._playback_enabled = asyncio.Event()
 
-        # Loading auto-play tracks
-        AUTO_PLAYLIST = (
-            "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
-        )
-        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
-        info = ydl.extract_info(AUTO_PLAYLIST, download=False, process=False)
-        self.auto_play_tracks = []
-        for entry in info["entries"]:
-            self.auto_play_tracks.append(entry)
-
         self.reset()
 
     def reset(self):
@@ -70,6 +60,7 @@ class Music(commands.Cog):
         self.looping_video = False
         self.looping_queue = False
         self.auto_play = True
+        self.auto_play_tracks = []
 
         self.current_track = None
         self._timeout_task = None
@@ -104,6 +95,16 @@ class Music(commands.Cog):
         Instructs the bot to join the voice channel. If voice_channel and author
         are not provided, they will be taken from the context instead.
         """
+
+        # Load auto-play tracks when the bot connects
+        AUTO_PLAYLIST = (
+            "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
+        )
+        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+        info = ydl.extract_info(AUTO_PLAYLIST, download=False, process=False)
+        self.auto_play_tracks = []
+        for entry in info["entries"]:
+            self.auto_play_tracks.append(entry)
 
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author

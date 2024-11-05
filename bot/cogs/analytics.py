@@ -1,4 +1,5 @@
 import sqlite3
+import json
 
 from discord.ext import commands
 
@@ -29,6 +30,11 @@ class Analytics(commands.Cog):
     def get_tracks(self):
         self.cursor.execute("SELECT * FROM tracks")
         return self.cursor.fetchall()
+
+    @commands.command()
+    def analytics(self, ctx):
+        analytics_data = self.get_tracks()
+        ctx.send(json.dumps(analytics_data, indent=2))
 
 
 async def setup(client):
