@@ -27,6 +27,9 @@ class Music(commands.Cog):
     }
 
     YDL_OPTIONS = {"format": "bestaudio", "cookiefile": "cookies.txt", "verbose": False}
+    AUTO_PLAYLIST = (
+        "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
+    )
 
     def __init__(self, client):
         # Convert newline endings in the cookies file
@@ -90,6 +93,21 @@ class Music(commands.Cog):
         await self.join_vc(ctx)
         return True
 
+    @staticmethod
+    def gen_auto_playlist():
+        """
+        Returns a shuffled playlist of tracks to play automatically when the bot is idle
+        """
+
+        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+        info = ydl.extract_info(Music.AUTO_PLAYLIST, download=False, process=False)
+        auto_play_tracks = deque()
+        for entry in info["entries"]:
+            auto_play_tracks.append(entry)
+        random.shuffle(auto_play_tracks)
+
+        return auto_play_tracks
+
     async def join_vc(self, ctx, voice_channel=None, author=None):
         """
         Instructs the bot to join the voice channel. If voice_channel and author
@@ -97,14 +115,7 @@ class Music(commands.Cog):
         """
 
         # Load auto-play tracks when the bot connects
-        AUTO_PLAYLIST = (
-            "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
-        )
-        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
-        info = ydl.extract_info(AUTO_PLAYLIST, download=False, process=False)
-        self.auto_play_tracks = []
-        for entry in info["entries"]:
-            self.auto_play_tracks.append(entry)
+        self.auto_play_tracks = Music.gen_auto_playlist()
 
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author
@@ -348,7 +359,11 @@ class Music(commands.Cog):
         await self._playback_enabled.wait()
 
         if self.auto_play and len(self.queue) == 0:
-            track = random.choice(self.auto_play_tracks)
+            if len(self.auto_play_tracks) == 0:
+                # If all tracks in the playlist are exhausted
+                self.auto_play_tracks = Music.gen_auto_playlist()
+
+            track = self.auto_play_tracks.popleft()
             track["elevator_music"] = True
             self.queue.append(track)
 
