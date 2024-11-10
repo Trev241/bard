@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 
+const port = process.env.PORT || 5000;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -16,4 +18,4 @@ const io = require("socket.io")(server);
 
 app.use(require("./routes")(io));
 
-server.listen(process.env.PORT || 5000);
+server.listen(port, () => console.log(`Listening on port ${port}`));

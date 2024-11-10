@@ -13,7 +13,7 @@ import logging
 from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
-from constants import EMBED_COLOR_THEME
+from bot import EMBED_COLOR_THEME
 
 log = logging.getLogger()
 
@@ -26,7 +26,19 @@ class Music(commands.Cog):
         "options": "-vn",
     }
 
-    YDL_OPTIONS = {"format": "bestaudio", "cookiefile": "cookies.txt", "verbose": False}
+    YDL_LOGGER = logging.getLogger("yt-dlp")
+    YDL_LOGGER.setLevel(logging.DEBUG)
+    YDL_LOG_HANDLER = logging.StreamHandler()
+    YDL_LOGGER.addHandler(YDL_LOG_HANDLER)
+
+    YDL_OPTIONS = {
+        "format": "bestaudio",
+        "cookiefile": "cookies.txt",
+        "verbose": False,
+        "quiet": False,
+        "logger": YDL_LOGGER,
+    }
+
     AUTO_PLAYLIST = (
         "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
     )
@@ -34,7 +46,7 @@ class Music(commands.Cog):
     def __init__(self, client):
         # Convert newline endings in the cookies file
         try:
-            with open("cookies.txt", "r") as f:
+            with open("bot/cookies.txt", "r") as f:
                 cookies_data = f.read()
 
             cookies_data = (
@@ -43,7 +55,7 @@ class Music(commands.Cog):
                 .replace("\n", os.linesep)
             )
 
-            with open("cookies.txt", "w", newline="") as f:
+            with open("bot/cookies.txt", "w", newline="") as f:
                 f.write(cookies_data)
         except Exception as e:
             log.error(f"Failed to convert newline endings in cookies: {e}")
@@ -64,6 +76,7 @@ class Music(commands.Cog):
         self.looping_queue = False
         self.auto_play = True
         self.auto_play_tracks = []
+        self.voice_channel = None
 
         self.current_track = None
         self._timeout_task = None
@@ -144,6 +157,7 @@ class Music(commands.Cog):
 
         # Cache context
         self._ctx = ctx
+        self.voice_channel = voice_channel
         await self.start_timeout_timer()
 
     @commands.command(aliases=["leave", "quit", "bye"])
@@ -284,7 +298,7 @@ class Music(commands.Cog):
 
         ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
         processed_entry = ydl.process_ie_result(info, download=False)
-        with open("yt-dlp.json", "w") as f:
+        with open("bot/yt-dlp.json", "w") as f:
             json.dump(ydl.sanitize_info(processed_entry), fp=f, indent=2)
 
         url = None
@@ -622,6 +636,9 @@ class Music(commands.Cog):
 
         # Resume playback by setting flag
         self._playback_enabled.set()
+
+    def is_playback_paused(self):
+        return not self._playback_enabled.is_set()
 
 
 async def setup(client):

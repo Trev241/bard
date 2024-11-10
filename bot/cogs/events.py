@@ -5,7 +5,7 @@ import logging
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
 from bs4 import BeautifulSoup
-from constants import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
+from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 
 log = logging.getLogger()
 

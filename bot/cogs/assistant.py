@@ -29,9 +29,9 @@ log = logging.getLogger()
 class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after", "quiet_after"])
 
-    with open("assistant/Bard Assistant.yml") as stream:
+    with open("bot/assistant/Bard Assistant.yml") as stream:
         INTENTS = yaml.safe_load(stream)
-    with open("assistant/dialogs.json") as fp:
+    with open("bot/assistant/dialogs.json") as fp:
         DIALOGS = json.load(fp)
 
     def __init__(self, client):
@@ -77,7 +77,7 @@ class Assistant(commands.Cog):
         try:
             self.porcupine = pvporcupine.create(
                 access_key=os.getenv("PV_ACCESS_KEY"),
-                keyword_paths=[f"assistant/{porcupine_mdl}"],
+                keyword_paths=[f"bot/assistant/{porcupine_mdl}"],
             )
         except Exception as e:
             self._services_available = False
@@ -105,7 +105,7 @@ class Assistant(commands.Cog):
         try:
             self.rhino = pvrhino.create(
                 access_key=os.getenv("PV_ACCESS_KEY"),
-                context_path=f"assistant/{rhino_mdl}",
+                context_path=f"bot/assistant/{rhino_mdl}",
                 # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
             )
         except Exception as e:
@@ -439,7 +439,7 @@ class Assistant(commands.Cog):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
             if self._query == None:
                 # AssemblyAI
-                audio_path = "assistant/incoming.wav"
+                audio_path = "bot/assistant/incoming.wav"
                 with open(audio_path, "wb") as fp:
                     fp.write(audio.get_wav_data())
 
