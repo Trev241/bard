@@ -2,7 +2,7 @@ import json
 import logging
 
 from bot import client, app, socketio
-from flask import render_template, request
+from flask import render_template, request, jsonify
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,8 @@ def index():
 def update():
     payload = request.get_json()
     logger.info(f"Received payload from webhook: {json.dumps(payload)}")
+
+    return jsonify({"status": "success"}), 200
 
 
 def run_flask(debug=True):
