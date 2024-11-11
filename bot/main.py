@@ -65,4 +65,6 @@ if __name__ == "__main__":
         restart_event.wait()
         restart_event.clear()
 
-        os.execv(sys.executable, ["python"] + sys.argv)
+        script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        os.chdir(script_dir)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
