@@ -57,14 +57,11 @@ def start():
 
 if __name__ == "__main__":
     # Create worker thread for the bot application
-    bot_thread = threading.Thread(target=start, daemon=True)
-    bot_thread.start()
+    threading.Thread(target=start, daemon=True).start()
 
     while True:
         restart_event.wait()
         restart_event.clear()
-
-        bot_thread.join()
 
         # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         # os.chdir(script_dir)

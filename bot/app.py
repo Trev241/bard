@@ -45,9 +45,18 @@ def update():
         json.dump(payload["head_commit"], fp)
 
     # Restart the app
-    Timer(1.0, lambda: restart_event.set()).start()
+    Timer(5.0, shutdown_server).start()
+    Timer(10.0, lambda: restart_event.set()).start()
 
     return jsonify({"status": "success"}), 200
+
+
+def shutdown_server():
+    func = request.environ.get("werkzeug.server.shutdown")
+    if func:
+        func()
+    else:
+        raise RuntimeError("Not running with the Werkzeug Server")
 
 
 def verify_signature(payload_body, signature):
