@@ -1,10 +1,17 @@
 import json
 import logging
+import hmac
+import hashlib
+import os
 
 from bot import client, app, socketio
-from flask import render_template, request, jsonify
+from flask import render_template, request, jsonify, abort
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 
 @app.route("/")
@@ -23,10 +30,23 @@ def index():
 
 @app.route("/update", methods=["POST"])
 def update():
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not signature or not verify_signature(request.data, signature):
+        abort(403)  # Forbidden if no signature is present or if it's invalid
+
     payload = request.get_json()
     logger.info(f"Received payload from webhook: {json.dumps(payload)}")
+    with open("bot/head-commit.json", "w") as fp:
+        json.dump(payload.head_commit, fp)
 
     return jsonify({"status": "success"}), 200
+
+
+def verify_signature(payload_body, signature):
+    mac = hmac.new(WEBHOOK_SECRET.encode(), payload_body, hashlib.sha256)
+    expected_signature = "sha256=" + mac.hexdigest()
+
+    return hmac.compare_digest(expected_signature, signature)
 
 
 def run_flask(debug=True):
