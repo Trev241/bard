@@ -37,7 +37,7 @@ def update():
     payload = request.get_json()
     logger.info(f"Received payload from webhook: {json.dumps(payload)}")
     with open("bot/head-commit.json", "w") as fp:
-        json.dump(payload.head_commit, fp)
+        json.dump(payload["head_commit"], fp)
 
     return jsonify({"status": "success"}), 200
 
