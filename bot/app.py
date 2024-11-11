@@ -45,8 +45,8 @@ def update():
         json.dump(payload["head_commit"], fp)
 
     # Restart the app
-    Timer(5.0, shutdown_server).start()
     Timer(10.0, lambda: restart_event.set()).start()
+    shutdown_server()
 
     return jsonify({"status": "success"}), 200
 
