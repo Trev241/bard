@@ -67,4 +67,4 @@ if __name__ == "__main__":
 
         script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         os.chdir(script_dir)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        os.execv(sys.executable, [sys.executable, "-m", "bot.main"] + sys.argv[1:])
