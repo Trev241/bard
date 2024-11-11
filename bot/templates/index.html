@@ -17,29 +17,34 @@
       <section class="mb-8">
         <div class="flex flex-col flex-wrap items-center mb-4">
           <h1 class="text-5xl font-semibold">Bard</h1>
-          <h2>git #xxxxxx</h2>
+          <h2>git #{{ head_commit.id[:7] }}</h2>
         </div>
       </section>
 
       <section>
         <h1 class="text-3xl font-bold mb-4">Changelog</h1>
+        <h2 class="text-lg">{{ head_commit.message }}</h2>
       </section>
 
       <section class="mb-8">
         <h1 class="text-3xl font-bold mb-4">Entertainment</h1>
         <div class="grid grid-cols-12 gap-8">
           <div class="col-span-2">
-            <h2 class="text-xl font-bold mb-4">On a call</h2>
+            <h2 class="text-xl font-bold mb-4">Voice call</h2>
             <ul id="callMemberList">
-              {% for member in client_dtls.voice_channel.members[:3] %}
+              {% if client_dtls.voice_channel != None %} {% for member in
+              client_dtls.voice_channel.members[:3] %}
               <li class="flex items-center mb-2">
                 <img class="rounded-full w-12" src="{{ member.avatar.url }}" />
                 <h3 class="ms-4">{{ member.display_name }}</h3>
               </li>
-              {% endfor %} {% if client_dtls.voice_channel.members|length > 3 %}
+              {% endfor %} {% endif %} {% if
+              client_dtls.voice_channel.members|length > 3 %}
               <li class="italic">
                 and {{ client_dtls.voice_channel.members|length - 3 }} more
               </li>
+              {% endif %} {% if client_dtls.voice_channel == None %}
+              <li>No one on call</li>
               {% endif %}
             </ul>
           </div>
@@ -49,7 +54,7 @@
               <img
                 id="nowPlayingImg"
                 class="object-fill w-full rounded-xl shadow-xl"
-                src="{{client_dtls.current_track.thumbnails[-1].url}}"
+                src="{{ client_dtls.current_track.thumbnails[-1].url if client_dtls.current_track != None else url_for('static', filename='placeholder.png') }}"
               />
             </div>
 
@@ -115,13 +120,15 @@
                   href="{{client_dtls.current_track.webpage_url}}"
                   class="text-md font-bold text-center overflow-hidden hover:underline"
                 >
-                  {{client_dtls.current_track.title}}
+                  {{client_dtls.current_track.title if client_dtls.current_track
+                  != None else 'There is nothing playing right now'}}
                 </a>
                 <p class="font-light">
-                  Playing on
+                  {{ 'Playing on' if client_dtls.current_track else '' }}
                   <span id="nowPlayingReq"
-                    >{{client_dtls.current_track.requester.display_name}}</span
-                  >'s request
+                    >{{client_dtls.current_track.requester.display_name if
+                    client_dtls.current_track else ''}}</span
+                  >{{ '\'s request' if client_dtls.current_track else '' }}
                 </p>
               </div>
             </div>
@@ -148,7 +155,7 @@
                   and {{ client_dtls.queue|length - 4 }} more.
                 </p>
               </li>
-              {% endif %} {% if client_dtls.queue|length == 1 %}
+              {% endif %} {% if client_dtls.queue|length <= 1 %}
               <p>Wow, looks like nothing else is queued.</p>
               {% endif %}
             </ul>

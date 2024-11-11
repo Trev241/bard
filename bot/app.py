@@ -3,10 +3,12 @@ import logging
 import hmac
 import hashlib
 import os
+import sys
 
 from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
 from dotenv import load_dotenv
+from threading import Timer
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,8 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 @app.route("/")
 @app.route("/index")
 def index():
+    with open("bot/head-commit.json") as fp:
+        head_commit = json.load(fp)
     music = client.get_cog("Music")
     client_dtls = {
         "current_track": music.current_track,
@@ -25,7 +29,9 @@ def index():
         "voice_channel": music.voice_channel,
     }
 
-    return render_template("index.html", client_dtls=client_dtls)
+    return render_template(
+        "index.html", client_dtls=client_dtls, head_commit=head_commit
+    )
 
 
 @app.route("/update", methods=["POST"])
@@ -38,6 +44,9 @@ def update():
     logger.info(f"Received payload from webhook: {json.dumps(payload)}")
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
+
+    # Restart the app
+    Timer(1.0, lambda: os.execv(sys.argv[0], sys.argv)).start()
 
     return jsonify({"status": "success"}), 200
 
