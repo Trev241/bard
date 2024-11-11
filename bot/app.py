@@ -46,17 +46,9 @@ def update():
 
     # Restart the app
     Timer(10.0, lambda: restart_event.set()).start()
-    shutdown_server()
+    exit(0)
 
     return jsonify({"status": "success"}), 200
-
-
-def shutdown_server():
-    func = request.environ.get("werkzeug.server.shutdown")
-    if func:
-        func()
-    else:
-        raise RuntimeError("Not running with the Werkzeug Server")
 
 
 def verify_signature(payload_body, signature):
