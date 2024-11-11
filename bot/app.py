@@ -5,7 +5,7 @@ import hashlib
 import os
 import sys
 
-from bot import client, app, socketio
+from bot import client, app, socketio, restart_event
 from flask import render_template, request, jsonify, abort
 from dotenv import load_dotenv
 from threading import Timer
@@ -46,7 +46,7 @@ def update():
         json.dump(payload["head_commit"], fp)
 
     # Restart the app
-    Timer(1.0, lambda: os.execv(sys.argv[0], sys.argv)).start()
+    Timer(1.0, lambda: restart_event.set()).start()
 
     return jsonify({"status": "success"}), 200
 
