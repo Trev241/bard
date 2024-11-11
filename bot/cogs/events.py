@@ -5,7 +5,7 @@ import logging
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
 from bs4 import BeautifulSoup
-from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
+from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL, socketio
 
 log = logging.getLogger()
 
@@ -218,6 +218,24 @@ class Events(commands.Cog):
             wlcm_msg = await after.channel.send("I'm here too!")
             ctx = await self.client.get_context(wlcm_msg)
             await self.client.get_cog("Music").join_vc(ctx, after.channel, member)
+
+        if (
+            after.channel != None and self.client.user in after.channel.members
+        ) or self.client.user in before.channel.members:
+            # Notify dashboard of updated call list
+            channel = before.channel if after.channel == None else after.channel
+            socketio.emit(
+                "call_list_update",
+                {
+                    "members": [
+                        {
+                            "avatar": member.avatar.url,
+                            "display_name": member.display_name,
+                        }
+                        for member in channel.members
+                    ]
+                },
+            )
 
 
 async def setup(client):

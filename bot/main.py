@@ -43,7 +43,7 @@ async def main():
     async with client:
         await load_extensions()
         # Launch the Flask service first
-        flask_thread = threading.Thread(target=run_flask, args=(client,))
+        flask_thread = threading.Thread(target=run_flask, args=(client,), daemon=True)
         flask_thread.start()
 
         await client.start(token=TOKEN)

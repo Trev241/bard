@@ -13,7 +13,7 @@ import logging
 from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
-from bot import EMBED_COLOR_THEME
+from bot import EMBED_COLOR_THEME, socketio
 
 log = logging.getLogger()
 
@@ -283,12 +283,28 @@ class Music(commands.Cog):
             entry["title"], entry["requester"].id
         )
 
-        # Start playing if bot is idle or if playing auto-play tracks
         if self.idle:
+            # Start playing if bot is idle or if playing auto-play tracks
             self.idle = False
             await self.play_next(ctx)
         elif self.current_track.get("elevator_music", False):
+            # Skip the auto play track and immediately play what is requested
             await self.skip(ctx)
+
+        socketio.emit(
+            "playlist_update",
+            {"queue": Music.simplify_queue(list(self.queue))},
+        )
+
+    @staticmethod
+    def simplify_queue(queue):
+        return [
+            {
+                "title": track["title"],
+                "thumbnail": track["thumbnails"][-1]["url"],
+            }
+            for track in queue
+        ]
 
     def create_track(self, info):
         """
@@ -488,6 +504,16 @@ class Music(commands.Cog):
             start_from = self.current_track.get("start_from", 0)
             self._track_start_time = time.time() - start_from
 
+            socketio.emit(
+                "playing_track",
+                {
+                    "title": self.current_track["title"],
+                    "thumbnail": self.current_track["thumbnails"][-1]["url"],
+                    "requester": self.current_track["requester"].display_name,
+                    "webpage_url": self.current_track["webpage_url"],
+                    "queue": Music.simplify_queue(list(self.queue)),
+                },
+            )
             await self.now(ctx)
         except yt_dlp.DownloadError as e:
             traceback.print_exc()
