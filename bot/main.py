@@ -65,6 +65,7 @@ if __name__ == "__main__":
         restart_event.wait()
         restart_event.clear()
 
-        script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        os.chdir(script_dir)
-        os.execv(sys.executable, [sys.executable, "-m", "bot.main"] + sys.argv[1:])
+        # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        # os.chdir(script_dir)
+        # os.execv(sys.executable, [sys.executable, "-m", "bot.main"] + sys.argv[1:])
+        os.execv(sys.argv[0], ["-m", "bot.main"] + sys.argv[1:])
