@@ -47,9 +47,7 @@ async def main():
         flask_thread = threading.Thread(target=run_flask, args=(client,), daemon=True)
         flask_thread.start()
 
-        print("before start")
         await client.start(token=TOKEN)
-        print("after start")
         flask_thread.join()
 
 
