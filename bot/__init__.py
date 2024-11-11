@@ -1,6 +1,7 @@
 import sys
 import discord
 import logging
+import threading
 
 from discord.ext import commands
 from datetime import datetime
@@ -15,6 +16,8 @@ socketio = SocketIO(app)
 # Constants
 EMBED_COLOR_THEME = 15844367
 BOT_SPAM_CHANNEL = 423774455332864011
+
+restart_event = threading.Event()
 
 
 class StdoutHandler:

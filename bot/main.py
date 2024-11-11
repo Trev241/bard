@@ -2,6 +2,7 @@ import discord
 import asyncio
 import logging
 import os
+import sys
 import threading
 
 # Importing cogs
@@ -13,7 +14,7 @@ import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
 
 from dotenv import load_dotenv
-from bot import client, log_handlers, log_formatter
+from bot import client, log_handlers, log_formatter, restart_event
 from bot.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES
@@ -42,11 +43,13 @@ async def main():
 
     async with client:
         await load_extensions()
-        # Launch the Flask service first
+        # Create worker thread for the flask application
         flask_thread = threading.Thread(target=run_flask, args=(client,), daemon=True)
         flask_thread.start()
 
+        print("before start")
         await client.start(token=TOKEN)
+        print("after start")
         flask_thread.join()
 
 
@@ -55,4 +58,11 @@ def start():
 
 
 if __name__ == "__main__":
-    start()
+    # Create worker thread for the bot application
+    threading.Thread(target=start).start()
+
+    while True:
+        restart_event.wait()
+        restart_event.clear()
+
+        os.execv(sys.executable, ["python"] + sys.argv)

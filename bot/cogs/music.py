@@ -170,10 +170,8 @@ class Music(commands.Cog):
         assistant_base = self.client.get_cog("Assistant")
         assistant_base.disable(ctx)
 
-        # source = await discord.FFmpegOpusAudio.from_probe('./../sounds/bard.disconnect.ogg')
-        # TODO: Resolve sound if bot is launched from main.py
         source = await discord.FFmpegOpusAudio.from_probe(
-            "./../bot/sounds/bard.disconnect.ogg"
+            "bot/sounds/bard.disconnect.ogg"
         )
 
         el = asyncio.get_running_loop()

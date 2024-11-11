@@ -595,6 +595,10 @@ video {
   margin-inline-start: 1rem;
 }
 
+.mb-1 {
+  margin-bottom: 0.25rem;
+}
+
 .line-clamp-2 {
   overflow: hidden;
   display: -webkit-box;
