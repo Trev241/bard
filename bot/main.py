@@ -59,7 +59,7 @@ def start():
 
 if __name__ == "__main__":
     # Create worker thread for the bot application
-    threading.Thread(target=start).start()
+    threading.Thread(target=start, daemon=True).start()
 
     while True:
         restart_event.wait()
