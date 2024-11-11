@@ -124,11 +124,13 @@
                   != None else 'There is nothing playing right now'}}
                 </a>
                 <p class="font-light">
-                  {{ 'Playing on' if client_dtls.current_track else '' }}
+                  {{ 'Playing on' if client_dtls.current_track != None else ''
+                  }}
                   <span id="nowPlayingReq"
                     >{{client_dtls.current_track.requester.display_name if
                     client_dtls.current_track else ''}}</span
-                  >{{ '\'s request' if client_dtls.current_track else '' }}
+                  >{{ '\'s request' if client_dtls.current_track != None else ''
+                  }}
                 </p>
               </div>
             </div>
