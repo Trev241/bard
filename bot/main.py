@@ -44,7 +44,7 @@ async def main():
     async with client:
         await load_extensions()
         # Create worker thread for the flask application
-        flask_thread = threading.Thread(target=run_flask, args=(client,))
+        flask_thread = threading.Thread(target=run_flask, args=(client,), daemon=True)
         flask_thread.start()
 
         await client.start(token=TOKEN)
@@ -57,11 +57,14 @@ def start():
 
 if __name__ == "__main__":
     # Create worker thread for the bot application
-    threading.Thread(target=start).start()
+    bot_thread = threading.Thread(target=start, daemon=True)
+    bot_thread.start()
 
     while True:
         restart_event.wait()
         restart_event.clear()
+
+        bot_thread.join()
 
         # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         # os.chdir(script_dir)
