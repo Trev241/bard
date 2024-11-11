@@ -3,7 +3,6 @@ import logging
 import hmac
 import hashlib
 import os
-import sys
 
 from bot import client, app, socketio, restart_event
 from flask import render_template, request, jsonify, abort
