@@ -42,6 +42,7 @@ def update():
     payload = request.get_json()
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
+    logger.info("Successfully saved head commit.")
 
     # Forcefully kill the entire process along with all its threads.
     # TODO: Maybe find a better way
