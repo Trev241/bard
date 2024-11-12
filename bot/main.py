@@ -34,7 +34,12 @@ async def load_extensions():
         await cogs[i].setup(client)
 
 
+event_loop = None
+
+
 async def main():
+    global event_loop
+    event_loop = asyncio.get_event_loop()
     discord.utils.setup_logging(
         handler=log_handlers["strm"],
         formatter=log_formatter,
@@ -50,13 +55,8 @@ async def main():
         flask_thread.join()
 
 
-event_loop = None
-
-
 def start():
-    global event_loop
     asyncio.run(main())
-    event_loop = asyncio.get_event_loop()
 
 
 if __name__ == "__main__":
