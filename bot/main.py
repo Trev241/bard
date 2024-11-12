@@ -50,7 +50,7 @@ async def main():
         flask_thread.join()
 
 
-event_loop
+event_loop = None
 
 
 def start():
@@ -60,7 +60,6 @@ def start():
 
 
 if __name__ == "__main__":
-    global event_loop
     # Create worker thread for the bot application
     threading.Thread(target=start, daemon=True).start()
     flask_thread = threading.Thread(target=run_flask, daemon=True)
