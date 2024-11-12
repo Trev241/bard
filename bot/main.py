@@ -21,6 +21,7 @@ from bot.app import run_flask
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
+logger = logging.getLogger(__name__)
 
 # ADDING COGS TO BOT
 cogs = [music, utils, events, wordle, assistant, analytics]
@@ -69,8 +70,13 @@ if __name__ == "__main__":
         restart_event.wait()
         restart_event.clear()
 
+        logger.info("Restart event was set. Commencing procedure to restart.")
+        logger.info("Stopping bot event loop...")
         event_loop.stop()
+        logger.info("Success! Bot event loop closed.")
+        logger.info("Waiting for Flask to shutdown...")
         flask_thread.join()
+        logger.info("Success! Flask shutdown successfully.")
 
         # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         # os.chdir(script_dir)
