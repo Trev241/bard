@@ -1,6 +1,6 @@
 beautifulsoup4
-chromedriver_autoinstaller
 git+https://github.com/Rapptz/discord.py.git
+discord-ext-voice-recv
 Pillow
 pvporcupine
 pvrhino
@@ -8,7 +8,6 @@ python-dotenv
 pyttsx3
 PyYAML
 Requests
-selenium
 SpeechRecognition
 yt_dlp
 PyNaCl
