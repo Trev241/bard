@@ -43,6 +43,8 @@ def update():
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
 
+    # Forcefully kill the entire process along with all its threads.
+    # TODO: Maybe find a better way
     Timer(3.0, lambda: os._exit(0)).start()
 
     return jsonify({"status": "success"}), 200

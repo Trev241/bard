@@ -8,10 +8,13 @@ python-dotenv
 pyttsx3
 PyYAML
 Requests
-resampy
 selenium
 SpeechRecognition
 yt_dlp
 PyNaCl
 numpy
 resampy
+Flask
+Flask_SocketIO
+watchdog
+
