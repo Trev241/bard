@@ -3,7 +3,6 @@ import logging
 import hmac
 import hashlib
 import os
-import sys
 
 from bot import client, app, socketio, restart_event
 from flask import render_template, request, jsonify, abort
@@ -48,7 +47,8 @@ def update():
     # Restart the app
     Timer(3.0, lambda: restart_event.set()).start()
     logger.info("Shutting down...")
-    sys.exit(0)
+    # sys.exit(0)
+    os._exit(0)
     logger.info("Exit command issued internally in Flask.")
 
     return jsonify({"status": "success"}), 200
