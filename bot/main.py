@@ -73,9 +73,6 @@ if __name__ == "__main__":
         logger.info("Stopping bot event loop...")
         event_loop.stop()
         logger.info("Success! Bot event loop closed.")
-        logger.info("Waiting for Flask to shutdown...")
-        flask_thread.join()
-        logger.info("Success! Flask shutdown successfully.")
 
         # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         # os.chdir(script_dir)

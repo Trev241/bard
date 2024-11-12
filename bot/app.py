@@ -46,9 +46,6 @@ def update():
 
     # Restart the app
     Timer(3.0, lambda: restart_event.set()).start()
-    logger.info("Shutting down...")
-    os._exit(0)
-    logger.info("Exit command issued internally in Flask.")
 
     return jsonify({"status": "success"}), 200
 
