@@ -14,7 +14,7 @@ import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
 
 from dotenv import load_dotenv
-from bot import client, log_handlers, log_formatter, restart_event
+from bot import client, log_handlers, log_formatter
 from bot.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES
@@ -49,10 +49,7 @@ async def main():
 
     async with client:
         await load_extensions()
-        # Create worker thread for the flask application
-
         await client.start(token=TOKEN)
-        flask_thread.join()
 
 
 def start():
@@ -62,19 +59,4 @@ def start():
 if __name__ == "__main__":
     # Create worker thread for the bot application
     threading.Thread(target=start, daemon=True).start()
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    while True:
-        restart_event.wait()
-        restart_event.clear()
-
-        logger.info("Restart event was set. Commencing procedure to restart.")
-        logger.info("Stopping bot event loop...")
-        event_loop.stop()
-        logger.info("Success! Bot event loop closed.")
-
-        # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        # os.chdir(script_dir)
-        # os.execv(sys.executable, [sys.executable, "-m", "bot.main"] + sys.argv[1:])
-        os.execv(sys.executable, ["python", "-m", "bot.main"] + sys.argv[1:])
+    run_flask()

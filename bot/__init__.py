@@ -17,8 +17,6 @@ socketio = SocketIO(app)
 EMBED_COLOR_THEME = 15844367
 BOT_SPAM_CHANNEL = 423774455332864011
 
-restart_event = threading.Event()
-
 
 class StdoutHandler:
     def __init__(self):
