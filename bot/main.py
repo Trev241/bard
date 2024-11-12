@@ -49,11 +49,17 @@ async def main():
         flask_thread.join()
 
 
+event_loop
+
+
 def start():
+    global event_loop
     asyncio.run(main())
+    event_loop = asyncio.get_event_loop()
 
 
 if __name__ == "__main__":
+    global event_loop
     # Create worker thread for the bot application
     threading.Thread(target=start, daemon=True).start()
     flask_thread = threading.Thread(target=run_flask, daemon=True)
@@ -62,6 +68,9 @@ if __name__ == "__main__":
     while True:
         restart_event.wait()
         restart_event.clear()
+
+        event_loop.stop()
+        flask_thread.join()
 
         # script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         # os.chdir(script_dir)

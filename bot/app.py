@@ -3,11 +3,11 @@ import logging
 import hmac
 import hashlib
 import os
+import sys
 
-from bot import client, app, socketio, restart_event
+from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
 from dotenv import load_dotenv
-from threading import Timer
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,8 @@ def update():
         json.dump(payload["head_commit"], fp)
 
     # Restart the app
-    Timer(3.0, lambda: restart_event.set()).start()
+    # Timer(3.0, lambda: restart_event.set()).start()
+    sys.exit(0)
 
     return jsonify({"status": "success"}), 200
 

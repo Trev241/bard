@@ -46,12 +46,12 @@ const updatePlaylist = (data) => {
 const updatePlayingNow = (data) => {
   const imgElement = document.getElementById("nowPlayingImg");
   const ttlElement = document.getElementById("nowPlayingTtl");
-  const spnElement = document.getElementById("nowPlayingReq");
+  const spnElement = document.getElementById("requestedBy");
 
   imgElement.setAttribute("src", data.thumbnail);
   ttlElement.setAttribute("href", data.webpage_url);
   ttlElement.textContent = data.title;
-  spnElement.textContent = data.requester;
+  spnElement.innerHTML = `Playing on ${data.requester}'s request`;
 
   updatePlaylist(data);
 };
