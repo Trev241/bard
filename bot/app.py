@@ -42,6 +42,8 @@ def update():
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
 
+    os._exit(0)
+
     return jsonify({"status": "success"}), 200
 
 

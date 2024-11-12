@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -9,6 +10,7 @@ class RestartHandler(FileSystemEventHandler):
         self.command = command
         self.target_file = target_file
         self.process = None
+        self.last_modified = 0
         self.start_process()
 
     def start_process(self):
@@ -20,13 +22,20 @@ class RestartHandler(FileSystemEventHandler):
         if self.process:
             self.process.terminate()
             self.process.wait()
+
         self.start_process()
 
     def on_modified(self, event):
         """Handle file modification events by restarting the app if the target file is modified."""
-        if event.src_path == os.path.abspath(self.target_file):
-            print(f"Detected change in {event.src_path}, restarting process...")
-            self.restart_process()
+        if event.src_path == os.path.relpath(self.target_file):
+            current_time = time.time()
+
+            if current_time - self.last_modified > 1:  # 1-second threshold
+                print(
+                    f"Detected modification in {event.src_path}, restarting Flask app."
+                )
+                self.restart_process()
+                self.last_modified = current_time
 
 
 if __name__ == "__main__":
