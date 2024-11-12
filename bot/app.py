@@ -7,6 +7,7 @@ import os
 from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
 from dotenv import load_dotenv
+from threading import Timer
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def update():
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
 
-    os._exit(0)
+    Timer(3.0, lambda: os._exit(0)).start()
 
     return jsonify({"status": "success"}), 200
 
