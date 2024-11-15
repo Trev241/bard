@@ -27,8 +27,10 @@ class RestartHandler(FileSystemEventHandler):
             self.process.wait()
 
             # Wait for the process to fully exit and then pull changes
-            time.sleep(5)
+            time.sleep(10)
+            print("Pulling changes...")
             self.repo.remotes.origin.pull()
+            print("Success! Pulled changes.")
 
         self.start_process()
 

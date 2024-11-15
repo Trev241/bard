@@ -47,7 +47,7 @@ def update():
     # Forcefully kill the entire process along with all its threads.
     # TODO: Maybe find a better way
     logger.info("Exiting process in 5 seconds...")
-    Timer(5.0, lambda: os._exit(0)).start()
+    Timer(10.0, os._exit, args=(0,)).start()
 
     return jsonify({"status": "success"}), 200
 
