@@ -48,6 +48,8 @@ def update():
     # TODO: Maybe find a better way
     logger.info("Exiting process in 5 seconds...")
     Timer(10.0, os._exit, args=(0,)).start()
+    logger.info("Returning response to webhook request.")
+    logging.shutdown()
 
     return jsonify({"status": "success"}), 200
 
