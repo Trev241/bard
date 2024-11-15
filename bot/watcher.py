@@ -26,12 +26,6 @@ class RestartHandler(FileSystemEventHandler):
             self.process.terminate()
             self.process.wait()
 
-            # Wait for the process to fully exit and then pull changes
-            time.sleep(10)
-            print("Pulling changes...")
-            self.repo.remotes.origin.pull()
-            print("Success! Pulled changes.")
-
         self.start_process()
 
     def on_modified(self, event):
@@ -43,6 +37,9 @@ class RestartHandler(FileSystemEventHandler):
                 print(
                     f"Detected modification in {event.src_path}, restarting Flask app."
                 )
+                print("Pulling changes...")
+                self.repo.remotes.origin.pull()
+                print("Success! Changes were pulled.")
                 self.restart_process()
                 self.last_modified = current_time
 
