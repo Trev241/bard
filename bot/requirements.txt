@@ -16,4 +16,4 @@ resampy
 Flask
 Flask_SocketIO
 watchdog
-
+GitPython
