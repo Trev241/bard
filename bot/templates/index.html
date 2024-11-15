@@ -12,25 +12,27 @@
       href="{{url_for('static',filename='dist/css/output.css')}}"
     />
   </head>
-  <body class="bg-gray-900 text-white">
+  <body class="bg-[#0f0c0d] text-gray-100">
     <div class="max-w-screen-xl p-4 mx-auto mb-8">
-      <section class="mb-8">
+      <section class="my-8">
         <div class="flex flex-col flex-wrap items-center mb-4">
-          <h1 class="text-5xl font-semibold mb-1">Bard</h1>
-          <h2>git #{{ head_commit.id[:7] }}</h2>
+          <h1 class="text-5xl font-semibold mb-1 text-[#db9e3d] tracking-wide">
+            Bard
+          </h1>
+          <h2 class="text-[#d8c6ad]">git #{{ head_commit.id[:7] }}</h2>
         </div>
       </section>
 
       <section class="mb-8">
-        <h1 class="text-3xl font-bold mb-4">Changelog</h1>
+        <h1 class="text-3xl font-bold mb-4 text-[#db9e3d]">Changelog</h1>
         <h2 class="text-lg">{{ head_commit.message }}</h2>
       </section>
 
       <section class="mb-8">
-        <h1 class="text-3xl font-bold mb-4">Entertainment</h1>
-        <div class="grid grid-cols-12 gap-8">
-          <div class="col-span-2">
-            <h2 class="text-xl font-bold mb-4">Voice call</h2>
+        <h1 class="text-3xl font-bold mb-4 text-[#db9e3d]">Entertainment</h1>
+        <div class="grid grid-cols-12 gap-4">
+          <div class="col-span-2 bg-[#252223] pt-4 rounded-lg">
+            <h2 class="text-xl font-bold mb-4 px-4">Voice Call</h2>
             <ul id="callMemberList">
               {% if client_dtls.voice_channel != None %} {% for member in
               client_dtls.voice_channel.members[:3] %}
@@ -43,22 +45,22 @@
               <li class="italic">
                 and {{ client_dtls.voice_channel.members|length - 3 }} more
               </li>
-              {% endif %} {% if client_dtls.voice_channel == None %}
-              <li>No one on call</li>
               {% endif %}
             </ul>
           </div>
 
-          <div class="flex flex-col col-span-6 justify-center items-center">
-            <div class="relative mb-4">
+          <div
+            class="flex flex-col col-span-6 justify-center bg-[#252223] items-center rounded-lg"
+          >
+            <div class="w-full mb-4">
               <img
                 id="nowPlayingImg"
-                class="object-fill w-full rounded-xl shadow-xl"
+                class="w-full rounded-t-lg"
                 src="{{ client_dtls.current_track.thumbnails[-1].url if client_dtls.current_track != None else url_for('static', filename='placeholder.png') }}"
               />
             </div>
 
-            <div class="flex flex-wrap w-full justify-between items-center">
+            <div class="flex flex-wrap p-4 w-full justify-between items-center">
               <div class="flex grow w-1/4 items-center mb-4">
                 <div class="w-12 fill-white hover:opacity-80">
                   {% if client_dtls.playback_paused %}
@@ -121,7 +123,7 @@
                   class="text-md font-bold text-center overflow-hidden hover:underline"
                 >
                   {{client_dtls.current_track.title if client_dtls.current_track
-                  != None else 'There is nothing playing right now'}}
+                  != None else ''}}
                 </a>
                 <p id="requestedBy" class="font-light">
                   {{ 'Playing on' if client_dtls.current_track != None else ''
@@ -136,9 +138,9 @@
             </div>
           </div>
 
-          <div class="flex flex-col col-span-4 rounded-xl">
-            <h2 class="text-xl mb-4 font-bold">Next up</h2>
-            <ul id="nextUp">
+          <div class="flex flex-col col-span-4 bg-[#252223] pt-4 rounded-lg">
+            <h2 class="text-xl mb-4 font-bold px-4">Next up</h2>
+            <ul id="nextUp" class="bg-[#393637] h-full p-4 rounded-b-lg">
               {% for track in client_dtls.queue[1:4] %}
               <li class="mb-2">
                 <div class="h-24 flex items-center">
@@ -157,8 +159,6 @@
                   and {{ client_dtls.queue|length - 4 }} more.
                 </p>
               </li>
-              {% endif %} {% if client_dtls.queue|length <= 1 %}
-              <p>Wow, looks like nothing else is queued.</p>
               {% endif %}
             </ul>
           </div>
@@ -166,10 +166,10 @@
       </section>
 
       <section class="mb-8">
-        <h1 class="text-3xl font-bold mb-4">Logs</h1>
+        <h1 class="text-3xl font-bold mb-4 text-[#db9e3d]">Logs</h1>
         <div
           id="logContainer"
-          class="h-96 overflow-y-auto border-2 font-mono border-gray-800 bg-black p-4 rounded"
+          class="h-96 overflow-y-auto border-2 text-gray-100 font-mono border-gray-800 bg-black p-4 rounded"
         ></div>
       </section>
     </div>
