@@ -22,6 +22,7 @@ class RestartHandler(FileSystemEventHandler):
         if self.process:
             self.process.terminate()
             self.process.wait()
+            time.sleep(20)
 
         self.start_process()
 
