@@ -1,6 +1,8 @@
 import os
 import subprocess
 import time
+import git
+
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -11,6 +13,7 @@ class RestartHandler(FileSystemEventHandler):
         self.target_file = target_file
         self.process = None
         self.last_modified = 0
+        self.repo = git.Repo()
         self.start_process()
 
     def start_process(self):
@@ -22,7 +25,10 @@ class RestartHandler(FileSystemEventHandler):
         if self.process:
             self.process.terminate()
             self.process.wait()
-            time.sleep(20)
+
+            # Wait for the process to fully exit and then pull changes
+            time.sleep(5)
+            self.repo.remotes.origin.pull()
 
         self.start_process()
 

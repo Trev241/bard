@@ -33,7 +33,7 @@
         <div class="grid grid-cols-12 gap-4">
           <div class="col-span-2 bg-[#252223] pt-4 rounded-lg">
             <h2 class="text-xl font-bold mb-4 px-4">Voice Call</h2>
-            <ul id="callMemberList">
+            <ul id="callMemberList" class="px-2">
               {% if client_dtls.voice_channel != None %} {% for member in
               client_dtls.voice_channel.members[:3] %}
               <li class="flex items-center mb-2">
@@ -60,7 +60,9 @@
               />
             </div>
 
-            <div class="flex flex-wrap p-4 w-full justify-between items-center">
+            <div
+              class="flex flex-wrap px-4 py-1 w-full justify-between items-center"
+            >
               <div class="flex grow w-1/4 items-center mb-4">
                 <div class="w-12 fill-white hover:opacity-80">
                   {% if client_dtls.playback_paused %}
