@@ -39,19 +39,17 @@ def update():
     if not signature or not verify_signature(request.data, signature):
         abort(403)  # Forbidden if no signature is present or if it's invalid
 
+    # Trigger process restart after a delay of 5 seconds by updating commit info
     payload = request.get_json()
+    Timer(5.0, _save_commit, args=(payload,)).start()
+
+    return jsonify({"status": "success"}), 200
+
+
+def _save_commit(payload):
     with open("bot/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
     logger.info("Successfully saved head commit.")
-
-    # Forcefully kill the entire process along with all its threads.
-    # TODO: Maybe find a better way
-    logger.info("Exiting process in 5 seconds...")
-    # Timer(10.0, os._exit, args=(0,)).start()
-    logger.info("Returning response to webhook request.")
-    logging.shutdown()
-
-    return jsonify({"status": "success"}), 200
 
 
 def verify_signature(payload_body, signature):
