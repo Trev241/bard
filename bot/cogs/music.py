@@ -106,7 +106,8 @@ class Music(commands.Cog):
         await self.join_vc(ctx)
 
         response = get("http://localhost:4040/api/tunnels")
-        public_url = response.json()
+        public_url = response.json()["public_url"]
+        log.info(json.dumps(response.json(), indent=2))
         ctx.send(f"Visit {public_url}/dashboard to manage me!")
 
         return True
