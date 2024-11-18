@@ -8,6 +8,7 @@ from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
 from dotenv import load_dotenv
 from threading import Timer
+from bot.cogs.music import Music
 
 logger = logging.getLogger(__name__)
 
@@ -18,19 +19,27 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 @app.route("/")
 @app.route("/index")
 def index():
+    return render_template("index.html")
+
+
+@app.route("/dashboard")
+def dashboard():
     with open("bot/head-commit.json") as fp:
         head_commit = json.load(fp)
     music = client.get_cog("Music")
     client_dtls = {
         "current_track": music.current_track,
-        "queue": list(music.queue),
+        "queue": Music.simplify_queue(music.queue),
         "playback_paused": music.is_playback_paused(),
         "voice_channel": music.voice_channel,
     }
 
-    return render_template(
-        "index.html", client_dtls=client_dtls, head_commit=head_commit
-    )
+    if client_dtls["current_track"]:
+        return render_template(
+            "dashboard.html", client_dtls=client_dtls, head_commit=head_commit
+        )
+    else:
+        return render_template("banner.html")
 
 
 @app.route("/update", methods=["POST"])

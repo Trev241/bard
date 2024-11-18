@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="relative flex justify-center items-center h-screen overflow-hidden">
+  <div class="relative z-30">
+    <h1 class="text-6xl mb-2">Listen to music with Bard</h1>
+    <div
+      class="text-3xl md:text-4xl [text-wrap:balance] bg-clip-text bg-gradient-to-r from-slate-200/60 to-50% to-slate-200">
+      ?play <span
+        class="text-[#D8C6AD] inline-flex flex-col h-[calc(theme(fontSize.3xl)*theme(lineHeight.tight))] md:h-[calc(theme(fontSize.4xl)*theme(lineHeight.tight))] overflow-hidden">
+        <ul class="block animate-text-slide text-left leading-tight [&_li]:block">
+          <li>PSY Gangnam Style</li>
+          <li>Internation Love</li>
+          <li>Lean on</li>
+          <li>I'm good I'm feeling alright</li>
+          <li aria-hidden="true">PSY Gangnam Style</li>
+        </ul>
+      </span>
+    </div>
+  </div>
+  <video id="bannerVideo" autoplay loop muted
+    class="absolute z-10 w-auto min-w-full min-h-full max-w-none brightness-[25%]">
+    <source src="{{ url_for('static', filename='banner.mov')}}" type="video/mp4" />
+    Your browser does not support the video tag.
+  </video>
+</div>
+{% endblock %}

@@ -104,6 +104,11 @@ class Music(commands.Cog):
             return False
 
         await self.join_vc(ctx)
+
+        response = get("http://localhost:4040/api/tunnels")
+        public_url = response.json()
+        ctx.send(f"Visit {public_url}/dashboard to manage me!")
+
         return True
 
     @staticmethod
@@ -180,6 +185,7 @@ class Music(commands.Cog):
         )
 
         self.reset()
+        socketio.emit("playback_stop")
 
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
@@ -300,6 +306,7 @@ class Music(commands.Cog):
             {
                 "title": track["title"],
                 "thumbnail": track["thumbnails"][-1]["url"],
+                "duration": str(datetime.timedelta(seconds=int(track["duration"]))),
             }
             for track in queue
         ]
