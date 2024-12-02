@@ -24,6 +24,24 @@ module.exports = {
             transform: "translateY(-80%)",
           },
         },
+        "title-zoom": {
+          "0%": {
+            scale: 0,
+            opacity: 0,
+          },
+          "100%": {
+            scale: 1,
+            opacity: 1,
+          },
+        },
+        "fade-in": {
+          "0%": {
+            opacity: 0,
+          },
+          "100%": {
+            opacity: 1,
+          },
+        },
       },
       animation: {
         "text-slide":

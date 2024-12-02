@@ -1,18 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="">
-  <div id="backgroundImg" style="
+<div class="relative min-h-screen">
+  <div id="backgroundImg" class="absolute inset-0 bg-cover bg-center bg-fixed" style="
       background-image: url('{{ client_dtls.current_track.thumbnails[-1].url }}'); 
       filter: blur(24px) brightness(25%); 
-      height: 100vh; 
-      background-position: center;
-      background-repeat: no-repeat;
-      background-size: cover;
+      background-attachment: fixed;
   ">
   </div>
+  <!-- <div id="backgroundImg" style="
+      background-image: url('{{ client_dtls.current_track.thumbnails[-1].url }}'); 
+      filter: blur(24px) brightness(25%); 
+      height: 100vh;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      background-size: cover;
+  ">
+  </div> -->
 
-  <section class="absolute inset-0 mb-8">
+  <section class="relative z-10">
     <!-- <h1 class="text-3xl font-bold mb-4 text-[#db9e3d]">Entertainment</h1> -->
     <div class="max-w-screen-lg mx-auto py-8">
       <!-- <div class="col-span-2 bg-[#252223] pt-4 rounded">
@@ -122,7 +129,7 @@
             </tr>
           </thead>
           <tbody id="nextUp">
-            {% for track in client_dtls.queue[1:4] %}
+            {% for track in client_dtls.queue[1:] %}
             <tr class="mb-6">
               <td class="pe-4 py-4 hidden md:table-cell">{{ loop.index }}.</td>
               <td class="pb-4">

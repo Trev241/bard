@@ -16,6 +16,15 @@ load_dotenv()
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 
+@app.context_processor
+def inject_client_info():
+    with open("bot/head-commit.json") as fp:
+        head_commit = json.load(fp)
+
+    client_avatar = client.user.avatar.url
+    return {"client_avatar": client_avatar, "head_commit": head_commit}
+
+
 @app.route("/")
 @app.route("/index")
 def index():
@@ -24,9 +33,8 @@ def index():
 
 @app.route("/dashboard")
 def dashboard():
-    with open("bot/head-commit.json") as fp:
-        head_commit = json.load(fp)
     music = client.get_cog("Music")
+
     client_dtls = {
         "current_track": music.current_track,
         "queue": Music.simplify_queue(music.queue),
@@ -35,9 +43,7 @@ def dashboard():
     }
 
     if client_dtls["current_track"]:
-        return render_template(
-            "dashboard.html", client_dtls=client_dtls, head_commit=head_commit
-        )
+        return render_template("dashboard.html", client_dtls=client_dtls)
     else:
         return render_template("banner.html")
 
@@ -53,6 +59,21 @@ def update():
     Timer(5.0, _save_commit, args=(payload,)).start()
 
     return jsonify({"status": "success"}), 200
+
+
+@app.route("/analytics")
+def analytics():
+    analytics_base = client.get_cog("Analytics")
+    data = analytics_base.get_track_playcount()
+    top_players = analytics_base.get_top_requesters()
+    if len(top_players) > 0:
+        print(top_players[0][0])
+        player = client.get_user(int(top_players[0][0]))
+        top_players = {"display_name": player.display_name, "avatar": player.avatar.url}
+    else:
+        top_players = "No one yet..."
+
+    return render_template("analytics.html", data=data, top_players=top_players)
 
 
 def _save_commit(payload):

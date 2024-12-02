@@ -10,7 +10,7 @@ class Analytics(commands.Cog):
         self.client = client
 
         # Setting up SQLite
-        self.conn = sqlite3.connect("stats.db")
+        self.conn = sqlite3.connect("stats.db", check_same_thread=False)
         table = """
             CREATE TABLE IF NOT EXISTS tracks (
                 title VARCHAR(255) NOT NULL, 
@@ -30,6 +30,18 @@ class Analytics(commands.Cog):
 
     def get_tracks(self):
         self.cursor.execute("SELECT * FROM tracks")
+        return self.cursor.fetchall()
+
+    def get_track_playcount(self):
+        self.cursor.execute(
+            "SELECT title, COUNT(*) AS count FROM tracks GROUP BY title ORDER BY count DESC"
+        )
+        return self.cursor.fetchall()
+
+    def get_top_requesters(self):
+        self.cursor.execute(
+            "SELECT requester_id, COUNT(*) as count FROM tracks GROUP BY requester_id ORDER BY count DESC"
+        )
         return self.cursor.fetchall()
 
     @commands.command()
