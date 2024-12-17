@@ -109,9 +109,6 @@ class Music(commands.Cog):
                 self.pause(self._ctx)
             else:
                 self.resume(self._ctx)
-
-            # Notify the client of the bot's current state
-            socketio.emit("playback_state", {"playing": not is_playing})
             on_handle_complete()
 
         @socketio.on("playback_instruct_skip")
@@ -123,11 +120,11 @@ class Music(commands.Cog):
         @socketio.on("playback_instruct_loop")
         def handle_loop(json=None):
             # Create an async task to loop the current track
-            task = el.create_task(self.loop(self._ctx))
-            task.add_done_callback(on_handle_complete)
+            self.loop()
+            on_handle_complete({"is_looping": self.looping_video})
 
-        def on_handle_complete(task=None):
-            socketio.emit("playback_instruct_done")
+        def on_handle_complete(data=None):
+            socketio.emit("playback_instruct_done", data)
 
     @commands.command(aliases=["connect"])
     async def join(self, ctx):
@@ -581,10 +578,13 @@ class Music(commands.Cog):
             f"There was an error while trying to process your request. Error: {error}"
         )
 
-    @commands.group(invoke_without_command=True)
-    @is_connected()
-    async def loop(self, ctx):
+    def loop(self):
         self.looping_video = not self.looping_video
+
+    @commands.group(name="loop", invoke_without_command=True)
+    @is_connected()
+    async def _loop(self, ctx):
+        self.loop()
         await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}')
 
     @loop.command(name="queue", aliases=["all"])
@@ -672,6 +672,7 @@ class Music(commands.Cog):
         """
 
         ctx.voice_client.pause()
+        socketio.emit("playback_state", {"playing": ctx.voice_client.is_playing()})
 
     @commands.command(name="pause")
     @is_connected()
@@ -720,6 +721,7 @@ class Music(commands.Cog):
 
     def resume(self, ctx):
         ctx.voice_client.resume()
+        socketio.emit("playback_state", {"playing": ctx.voice_client.is_playing()})
 
     @commands.command(name="resume")
     @is_connected()

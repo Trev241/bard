@@ -129,6 +129,12 @@ const setPlaybackCtrlsEnabled = (flag) => {
   }
 };
 
+const setLooping = (flag) => {
+  const btnLoop = document.getElementById("buttonLoop");
+  btnLoop.classList.toggle("opacity-100", flag);
+  btnLoop.classList.toggle("opacity-75", !flag);
+};
+
 const updatePlaybackState = (playing) => {
   const btnPlay = document.getElementById("buttonPlay");
   btnPlay.innerHTML = playing ? PAUSE_SVG : PLAY_SVG;
