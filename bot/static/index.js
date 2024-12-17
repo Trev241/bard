@@ -145,9 +145,10 @@ document.getElementById("buttonSkip").addEventListener("click", () => {
   setPlaybackCtrlsEnabled(false);
 });
 
-document.getElementById("buttonLoop").addEventListener("click", () => {
+document.getElementById("buttonLoop").addEventListener("click", (data) => {
   socket.emit("playback_instruct_loop");
   setPlaybackCtrlsEnabled(false);
+  setLooping(data.is_looping);
 });
 
 document.getElementById("buttonPlay").addEventListener("click", () => {
