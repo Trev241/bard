@@ -14,7 +14,7 @@ import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
 
 from dotenv import load_dotenv
-from bot import client, log_handlers, log_formatter
+from bot import client, log_handlers, log_formatter, socketio
 from bot.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES
@@ -34,12 +34,7 @@ async def load_extensions():
         await cogs[i].setup(client)
 
 
-event_loop = None
-
-
 async def main():
-    global event_loop
-    event_loop = asyncio.get_event_loop()
     discord.utils.setup_logging(
         handler=log_handlers["strm"],
         formatter=log_formatter,

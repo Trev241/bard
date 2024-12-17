@@ -63,6 +63,7 @@ class Music(commands.Cog):
         self.client = client
         self._playback_enabled = asyncio.Event()
 
+        self.load_handlers()
         self.reset()
 
     def reset(self):
@@ -96,6 +97,37 @@ class Music(commands.Cog):
             return connected
 
         return commands.check(predicate)
+
+    def load_handlers(self):
+        el = asyncio.get_event_loop()
+
+        @socketio.on("playback_instruct_play")
+        def handle_play(json=None):
+            # Create an async task to play/pause the current track
+            is_playing = self._ctx.voice_client.is_playing()
+            if is_playing:
+                self.pause(self._ctx)
+            else:
+                self.resume(self._ctx)
+
+            # Notify the client of the bot's current state
+            socketio.emit("playback_state", {"playing": not is_playing})
+            on_handle_complete()
+
+        @socketio.on("playback_instruct_skip")
+        def handle_skip(json=None):
+            # Create an async task to skip the current track
+            self.skip(self._ctx)
+            on_handle_complete()
+
+        @socketio.on("playback_instruct_loop")
+        def handle_loop(json=None):
+            # Create an async task to loop the current track
+            task = el.create_task(self.loop(self._ctx))
+            task.add_done_callback(on_handle_complete)
+
+        def on_handle_complete(task=None):
+            socketio.emit("playback_instruct_done")
 
     @commands.command(aliases=["connect"])
     async def join(self, ctx):
@@ -299,7 +331,7 @@ class Music(commands.Cog):
             await self.play_next(ctx)
         elif self.current_track.get("elevator_music", False):
             # Skip the auto play track and immediately play what is requested
-            await self.skip(ctx)
+            self.skip(ctx)
 
         socketio.emit(
             "playlist_update",
@@ -312,7 +344,11 @@ class Music(commands.Cog):
             {
                 "title": track["title"],
                 "thumbnail": track["thumbnails"][-1]["url"],
-                "duration": str(datetime.timedelta(seconds=int(track["duration"]))),
+                "duration": (
+                    str(datetime.timedelta(seconds=int(track["duration"])))
+                    if type(track["duration"]) is str and ":" not in track["duration"]
+                    else track["duration"]
+                ),
             }
             for track in queue
         ]
@@ -441,7 +477,7 @@ class Music(commands.Cog):
             self.queue.appendleft(interrupting_track)
             self.queue.appendleft(current_track)
 
-            await self.skip(self._ctx)
+            self.skip(self._ctx)
 
     async def start_timeout_timer(self):
         if self._timeout_task:
@@ -592,9 +628,7 @@ class Music(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    @commands.command()
-    @is_connected()
-    async def skip(self, ctx, count: int = 1):
+    def skip(self, ctx, count):
         self.skip_track = count
         assistant_base = self.client.get_cog("Assistant")
         restart_assistant = assistant_base.enabled
@@ -611,6 +645,11 @@ class Music(commands.Cog):
             # Only restart the assistant if it was initially enabled
             assistant_base.restore(ctx)
 
+    @commands.command(name="skip")
+    @is_connected()
+    async def _skip(self, ctx, count: int = 1):
+        self.skip(ctx, count)
+
     @commands.command()
     @is_connected()
     async def remove(self, ctx, index):
@@ -618,7 +657,7 @@ class Music(commands.Cog):
 
         if 0 <= index and index < len(self.queue):
             if index == 0:
-                await self.skip(ctx)
+                self.skip(ctx)
             else:
                 track = self.queue[index]
                 del self.queue[index]
@@ -626,12 +665,27 @@ class Music(commands.Cog):
         else:
             await ctx.send(f"There is no track with that index")
 
-    @commands.command()
+    def pause(self, ctx):
+        """
+        Pause playback normally. You cannot play anything else until
+        the ongoing track has completed
+        """
+
+        ctx.voice_client.pause()
+
+    @commands.command(name="pause")
     @is_connected()
-    async def pause(self, ctx):
+    async def _pause(self, ctx):
+        self.pause(ctx)
+
+    async def suspend(self, ctx):
         """
         Pauses playback by suspending the music playback cycle
         until a command to resume has been given.
+
+        This is different from a regular pause. Use this if you
+        want to play a different track while also allowing you
+        to resume from the old track once you are finished.
         """
 
         if len(self.queue) == 0 or not self._playback_enabled.is_set():
@@ -662,16 +716,25 @@ class Music(commands.Cog):
         self.queue.appendleft(curr_track_orig)
 
         self._playback_enabled.clear()
-        await self.skip(ctx)
+        self.skip(ctx)
 
-    @commands.command()
+    def resume(self, ctx):
+        ctx.voice_client.resume()
+
+    @commands.command(name="resume")
     @is_connected()
-    async def resume(self, ctx):
+    async def _resume(self, ctx):
         """
         Resumes playback
         """
 
-        # Resume playback by setting flag
+        self.resume(ctx)
+
+    def remove_suspension(self):
+        """
+        Resume playback of a suspended track
+        Not to be confused with resume
+        """
         self._playback_enabled.set()
 
     def is_playback_paused(self):

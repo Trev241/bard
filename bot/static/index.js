@@ -1,5 +1,21 @@
 const socket = io();
 
+const PLAY_SVG = `
+  <?xml version="1.0" encoding="utf-8"?>
+  <svg class="w-12 fill-white" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <title>Play</title>
+    <path
+      d="M133,440a35.37,35.37,0,0,1-17.5-4.67c-12-6.8-19.46-20-19.46-34.33V111c0-14.37,7.46-27.53,19.46-34.33a35.13,35.13,0,0,1,35.77.45L399.12,225.48a36,36,0,0,1,0,61L151.23,434.88A35.5,35.5,0,0,1,133,440Z" />
+  </svg>
+`;
+const PAUSE_SVG = `
+  <?xml version="1.0" encoding="utf-8"?>
+  <svg class="w-12 fill-white" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>Pause</title>
+    <path d="M5.92 24.096q0 0.832 0.576 1.408t1.44 0.608h4.032q0.832 0 1.44-0.608t0.576-1.408v-16.16q0-0.832-0.576-1.44t-1.44-0.576h-4.032q-0.832 0-1.44 0.576t-0.576 1.44v16.16zM18.016 24.096q0 0.832 0.608 1.408t1.408 0.608h4.032q0.832 0 1.44-0.608t0.576-1.408v-16.16q0-0.832-0.576-1.44t-1.44-0.576h-4.032q-0.832 0-1.408 0.576t-0.608 1.44v16.16z"></path>
+  </svg>
+`;
+
 const log = (data) => {
   const logContainer = document.getElementById("logContainer");
   const messageElement = document.createElement("p");
@@ -54,12 +70,15 @@ const updatePlayingNow = (data) => {
   const ttlElement = document.getElementById("nowPlayingTtl");
   const spnElement = document.getElementById("requestedBy");
   const divElement = document.getElementById("backgroundImg");
+  const pctElement = document.getElementById("pcNowPlaying");
 
   imgElement.setAttribute("src", data.thumbnail);
   ttlElement.setAttribute("href", data.webpage_url);
   ttlElement.textContent = data.title;
+  pctElement.textContent = data.title;
   spnElement.innerHTML = `on ${data.requester}'s request`;
   divElement.style.backgroundImage = `url('${data.thumbnail}')`;
+  btnPlay = PAUSE_SVG;
 
   updatePlaylist(data);
 };
@@ -91,9 +110,50 @@ const updateCallMembers = (data) => {
   }
 };
 
+const setPlaybackCtrlsEnabled = (flag) => {
+  const playbackControls = [
+    document.getElementById("buttonPlay"),
+    document.getElementById("buttonSkip"),
+    document.getElementById("buttonLoop"),
+  ];
+
+  for (const control of playbackControls) {
+    control.classList.toggle("hover:opacity-75", flag);
+    control.classList.toggle("cursor-not-allowed", !flag);
+    control.classList.toggle("opacity-75", !flag);
+
+    if (!flag) control.setAttribute("disabled", "true");
+    else control.removeAttribute("disabled");
+    // control.classList.toggle("opacity", !flag);
+  }
+};
+
+const updatePlaybackState = (playing) => {
+  const btnPlay = document.getElementById("buttonPlay");
+  btnPlay.innerHTML = playing ? PAUSE_SVG : PLAY_SVG;
+};
+
+document.getElementById("buttonSkip").addEventListener("click", () => {
+  socket.emit("playback_instruct_skip");
+  setPlaybackCtrlsEnabled(false);
+});
+
+document.getElementById("buttonLoop").addEventListener("click", () => {
+  socket.emit("playback_instruct_loop");
+  setPlaybackCtrlsEnabled(false);
+});
+
+document.getElementById("buttonPlay").addEventListener("click", () => {
+  socket.emit("playback_instruct_play");
+  setPlaybackCtrlsEnabled(false);
+});
+
+// Register socket listeners
 // socket.on("stdout_message", log);
 // socket.on("stderr_message", log);
 socket.on("playing_track", updatePlayingNow);
 socket.on("playlist_update", updatePlaylist);
 socket.on("playback_stop", () => window.location.reload());
+socket.on("playback_instruct_done", () => setPlaybackCtrlsEnabled(true));
+socket.on("playback_state", (state) => updatePlaybackState(state.playing));
 // socket.on("call_list_update", updateCallMembers);

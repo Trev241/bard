@@ -180,7 +180,7 @@ class Assistant(commands.Cog):
                 utterance: Assistant.Utterance = self._message_queue.popleft()
                 music_base = self.client.get_cog("Music")
                 audio = await self.get_audio_from_text(utterance.content)
-                await music_base.pause(self._ctx)
+                await music_base.suspend(self._ctx)
                 log.info("Playback from music cog paused.")
                 await self._ctx.send(utterance.content)
                 self._voice_client.play(
@@ -203,7 +203,7 @@ class Assistant(commands.Cog):
 
         # Resume music if no silence is required after the message
         music_base = self.client.get_cog("Music")
-        self._loop.create_task(music_base.resume(self._ctx))
+        self._loop.create_task(music_base.remove_suspension())
 
         log.info(f"Success. Utterance transmitted successfully.")
 
@@ -219,7 +219,7 @@ class Assistant(commands.Cog):
         self._events["QUERY_DETECTED"].clear()
 
         music_base = self.client.get_cog("Music")
-        await music_base.pause(self._ctx)
+        await music_base.suspend(self._ctx)
         audio = await self.get_audio_from_text(prompt)
         prompt_msg: discord.Message = await self._ctx.send(prompt)
         self._voice_client.play(audio, after=lambda _: self._transcribe_cb())
@@ -232,7 +232,7 @@ class Assistant(commands.Cog):
         stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
         stopper_cb(False)
 
-        await music_base.resume(self._ctx)
+        await music_base.remove_suspension()
         await prompt_msg.edit(content=f'{prompt} "*{self._query.strip()}*"')
 
         log.info("Returning transcription.")
