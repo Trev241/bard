@@ -120,32 +120,20 @@ const setPlaybackCtrlsEnabled = (flag) => {
 
   for (const control of playbackControls) {
     control.classList.toggle("hover:opacity-75", flag);
-    control.classList.toggle("cursor-not-allowed", !flag);
     control.classList.toggle("opacity-75", !flag);
+    control.classList.toggle("cursor-not-allowed", !flag);
 
     if (!flag) control.setAttribute("disabled", "true");
     else control.removeAttribute("disabled");
-    // control.classList.toggle("opacity", !flag);
   }
 };
 
 const setLooping = (flag) => {
   const btnLoop = document.getElementById("buttonLoop");
-  btnLoop.innerHTML = `
-    <?xml version="1.0" encoding="utf-8"?>
-    <svg class="w-8 fill-white ${
-      flag ? "opacity-100" : "opacity-75"
-    }" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
-      enable-background="new 0 0 100 100" xml:space="preserve">
-      <title>Loop</title>
-      <path d="M76.5,58.3c0,0.1,0,0.2-0.1,0.2c-0.3,1.1-0.7,2.2-1.1,3.3c-0.5,1.2-1,2.3-1.6,3.4c-1.2,2.2-2.7,4.2-4.5,6
-c-1.7,1.8-3.7,3.4-5.9,4.7c-2.2,1.3-4.5,2.3-7,3c-2.5,0.7-5.1,1.1-7.7,1.1C32.8,80,20,67.2,20,51.3s12.8-28.6,28.6-28.6
-c5.3,0,10.3,1.5,14.6,4c0,0,0,0,0.1,0c2.1,1.2,4,2.7,5.6,4.4c0.5,0.4,0.8,0.7,1.2,1.2c0.9,0.8,1.6,0.3,1.6-0.9V22c0-1.1,0.9-2,2-2h4
-c1.1,0,2,0.9,2.2,2v24.5c0,0.9-0.8,1.8-1.8,1.8H53.6c-1.1,0-1.9-0.8-1.9-1.9v-4.2c0-1.1,0.9-2,2-2h9.4c0.8,0,1.4-0.2,1.7-0.7
-c-3.6-5-9.6-8.3-16.2-8.3c-11.1,0-20.1,9-20.1,20.1s9,20.1,20.1,20.1c8.7,0,16.1-5.5,18.9-13.3c0,0,0.3-1.8,1.7-1.8
-c1.4,0,4.8,0,5.7,0c0.8,0,1.6,0.6,1.6,1.5C76.5,58,76.5,58.1,76.5,58.3z" />
-    </svg>
-  `;
+  btnLoop.classList.toggle("opacity-20", !flag);
+  btnLoop.classList.toggle("opacity-100", flag);
+  btnLoop.classList.toggle("hover:opacity-30", !flag);
+  btnLoop.classList.toggle("hover:opacity-75", flag);
 };
 
 const updatePlaybackState = (playing) => {
@@ -158,10 +146,9 @@ document.getElementById("buttonSkip").addEventListener("click", () => {
   setPlaybackCtrlsEnabled(false);
 });
 
-document.getElementById("buttonLoop").addEventListener("click", (data) => {
+document.getElementById("buttonLoop").addEventListener("click", () => {
   socket.emit("playback_instruct_loop");
   setPlaybackCtrlsEnabled(false);
-  setLooping(data.is_looping);
 });
 
 document.getElementById("buttonPlay").addEventListener("click", () => {
@@ -175,6 +162,9 @@ document.getElementById("buttonPlay").addEventListener("click", () => {
 socket.on("playing_track", updatePlayingNow);
 socket.on("playlist_update", updatePlaylist);
 socket.on("playback_stop", () => window.location.reload());
-socket.on("playback_instruct_done", () => setPlaybackCtrlsEnabled(true));
+socket.on("playback_instruct_done", (data) => {
+  setPlaybackCtrlsEnabled(true);
+  setLooping(data?.is_looping);
+});
 socket.on("playback_state", (state) => updatePlaybackState(state.playing));
 // socket.on("call_list_update", updateCallMembers);
