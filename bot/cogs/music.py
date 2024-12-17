@@ -587,7 +587,7 @@ class Music(commands.Cog):
         self.loop()
         await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}')
 
-    @loop.command(name="queue", aliases=["all"])
+    @_loop.command(name="queue", aliases=["all"])
     @is_connected()
     async def loop_queue(self, ctx):
         self.looping_queue = not self.looping_queue
