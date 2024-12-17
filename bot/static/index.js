@@ -64,6 +64,7 @@ const updatePlaylist = (data) => {
 const updatePlayingNow = (data) => {
   if (document.getElementById("bannerVideo") || !data) {
     window.location.reload();
+    return;
   }
 
   const imgElement = document.getElementById("nowPlayingImg");
