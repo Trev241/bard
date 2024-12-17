@@ -628,7 +628,7 @@ class Music(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    def skip(self, ctx, count):
+    def skip(self, ctx, count=1):
         self.skip_track = count
         assistant_base = self.client.get_cog("Assistant")
         restart_assistant = assistant_base.enabled
