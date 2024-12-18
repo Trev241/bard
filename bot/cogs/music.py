@@ -101,6 +101,11 @@ class Music(commands.Cog):
     def load_handlers(self):
         el = asyncio.get_event_loop()
 
+        @socketio.on("playback_track_request")
+        def handle_track_request(json=None):
+            task = el.create_task(self.play(json["query"]))
+            task.add_done_callback(lambda _: on_handle_complete())
+
         @socketio.on("playback_instruct_play")
         def handle_play(json=None):
             # Create an async task to play/pause the current track
@@ -128,6 +133,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=["connect"])
     async def join(self, ctx):
+        self._ctx = ctx
         if ctx.author.voice is None:
             await ctx.send("Please join a voice channel!")
             return False
@@ -280,15 +286,14 @@ class Music(commands.Cog):
         except:
             pass
 
-    @commands.command()
-    async def play(self, ctx, *, query):
-        # Abort if not in voice channel
-        if not await self.join(ctx):
+    async def play(self, query):
+        ctx = self._ctx
+        if self._ctx is None or self._ctx.author.voice is None:
+            log.error("Failed to play track. Bot must be on a call.")
             return
 
         ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
-        await ctx.send("Searching...")
         try:
             get(query)
         except:
@@ -312,7 +317,16 @@ class Music(commands.Cog):
             await self.queue_entry(info, ctx)
             await ctx.send(f'Queued {info["title"]}.')
 
+    @commands.command(name="play")
+    async def _play(self, ctx, *, query):
         self._ctx = ctx
+
+        # Abort if not in voice channel
+        if not await self.join(ctx):
+            return
+
+        await ctx.send("Searching...")
+        await self.play(query)
 
     async def queue_entry(self, entry, ctx):
         self.queue.append(entry)
@@ -342,9 +356,9 @@ class Music(commands.Cog):
                 "title": track["title"],
                 "thumbnail": track["thumbnails"][-1]["url"],
                 "duration": (
-                    str(datetime.timedelta(seconds=int(track["duration"])))
-                    if type(track["duration"]) is str and ":" not in track["duration"]
-                    else track["duration"]
+                    track["duration"]
+                    if type(track["duration"]) is str and ":" in track["duration"]
+                    else str(datetime.timedelta(seconds=int(track["duration"])))
                 ),
             }
             for track in queue
@@ -572,7 +586,7 @@ class Music(commands.Cog):
 
             self.reset()
 
-    @play.error
+    @_play.error
     async def play_error(self, ctx, error):
         await ctx.send(
             f"There was an error while trying to process your request. Error: {error}"
@@ -580,6 +594,7 @@ class Music(commands.Cog):
 
     def loop(self):
         self.looping_video = not self.looping_video
+        socketio.emit("playback_state", {"looping": self.looping_video})
 
     @commands.group(name="loop", invoke_without_command=True)
     @is_connected()

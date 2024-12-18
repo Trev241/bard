@@ -62,11 +62,6 @@ const updatePlaylist = (data) => {
 };
 
 const updatePlayingNow = (data) => {
-  if (document.getElementById("bannerVideo") || !data) {
-    window.location.reload();
-    return;
-  }
-
   const imgElement = document.getElementById("nowPlayingImg");
   const ttlElement = document.getElementById("nowPlayingTtl");
   const spnElement = document.getElementById("requestedBy");
@@ -129,6 +124,7 @@ const setPlaybackCtrlsEnabled = (flag) => {
 };
 
 const setLooping = (flag) => {
+  console.log("Looping? ", flag);
   const btnLoop = document.getElementById("buttonLoop");
   btnLoop.classList.toggle("opacity-20", !flag);
   btnLoop.classList.toggle("opacity-100", flag);
@@ -136,7 +132,7 @@ const setLooping = (flag) => {
   btnLoop.classList.toggle("hover:opacity-75", flag);
 };
 
-const updatePlaybackState = (playing) => {
+const setPlaying = (playing) => {
   const btnPlay = document.getElementById("buttonPlay");
   btnPlay.innerHTML = playing ? PAUSE_SVG : PLAY_SVG;
 };
@@ -156,15 +152,29 @@ document.getElementById("buttonPlay").addEventListener("click", () => {
   setPlaybackCtrlsEnabled(false);
 });
 
+document.getElementById("searchForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const dataObjt = Object.fromEntries(formData.entries());
+  e.target.elements["searchInput"].value = "";
+  socket.emit("playback_track_request", { query: dataObjt.searchInput });
+});
+
 // Register socket listeners
 // socket.on("stdout_message", log);
 // socket.on("stderr_message", log);
+
 socket.on("playing_track", updatePlayingNow);
 socket.on("playlist_update", updatePlaylist);
 socket.on("playback_stop", () => window.location.reload());
 socket.on("playback_instruct_done", (data) => {
   setPlaybackCtrlsEnabled(true);
-  setLooping(data?.is_looping);
+  if (data) setLooping(data.is_looping);
 });
-socket.on("playback_state", (state) => updatePlaybackState(state.playing));
+socket.on("playback_state", (state) => {
+  console.log(state);
+  if (state.hasOwnProperty("playing")) setPlaying(state.playing);
+  if (state.hasOwnProperty("looping")) setLooping(state.looping);
+});
+
 // socket.on("call_list_update", updateCallMembers);

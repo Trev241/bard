@@ -203,16 +203,16 @@ class Assistant(commands.Cog):
 
         # Resume music if no silence is required after the message
         music_base = self.client.get_cog("Music")
-        self._loop.create_task(music_base.remove_suspension())
+        music_base.remove_suspension()
 
         log.info(f"Success. Utterance transmitted successfully.")
 
     async def get_audio_from_text(self, message):
         """Converts and returns an Opus-ready audio source from the given message"""
 
-        self._tts_engine.save_to_file(message, "assistant/reply.wav")
+        self._tts_engine.save_to_file(message, "bot/assistant/reply.wav")
         self._tts_engine.runAndWait()
-        return await discord.FFmpegOpusAudio.from_probe("assistant/reply.wav")
+        return await discord.FFmpegOpusAudio.from_probe("bot/assistant/reply.wav")
 
     async def transcribe(self, prompt):
         """Enables the transcription service and returns the transcription of the shortest phrase captured"""
@@ -232,7 +232,7 @@ class Assistant(commands.Cog):
         stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
         stopper_cb(False)
 
-        await music_base.remove_suspension()
+        music_base.remove_suspension()
         await prompt_msg.edit(content=f'{prompt} "*{self._query.strip()}*"')
 
         log.info("Returning transcription.")
