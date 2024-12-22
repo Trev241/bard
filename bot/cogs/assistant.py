@@ -23,7 +23,7 @@ from discord.ext import commands, voice_recv
 from discord.ext.commands import Context
 from collections import defaultdict, deque, namedtuple
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class Assistant(commands.Cog):

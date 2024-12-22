@@ -7,7 +7,7 @@ from discord import Embed, RawReactionActionEvent, Message, MessageType
 from bs4 import BeautifulSoup
 from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL, socketio
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class Events(commands.Cog):

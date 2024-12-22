@@ -53,8 +53,8 @@ class StderrHandler:
 
 
 # Intercepting stdout
-stdout_handler = StdoutHandler()
-stderr_handler = StderrHandler()
+# stdout_handler = StdoutHandler()
+# stderr_handler = StderrHandler()
 
 # Setting up logging
 logger = logging.getLogger()

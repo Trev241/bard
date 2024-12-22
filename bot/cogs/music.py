@@ -15,7 +15,7 @@ from discord.ext import commands, voice_recv
 from collections import deque
 from bot import EMBED_COLOR_THEME, socketio
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class Music(commands.Cog):
@@ -33,7 +33,7 @@ class Music(commands.Cog):
 
     YDL_OPTIONS = {
         "format": "bestaudio",
-        "cookiefile": "cookies.txt",
+        "cookiefile": "bot/cookies.txt",
         "verbose": False,
         "quiet": False,
         "logger": YDL_LOGGER,
@@ -333,7 +333,12 @@ class Music(commands.Cog):
 
         # Submit analytics data
         self.client.get_cog("Analytics").submit_track(
-            entry["title"], entry["requester"].id
+            ctx.message.id,
+            ctx.channel.id,
+            ctx.guild.id,
+            entry["title"],
+            entry["requester"].id,
+            ctx.message.created_at,
         )
 
         if self.idle:

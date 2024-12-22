@@ -1,8 +1,17 @@
 import sqlite3
 import json
 import discord
+import re
+import yt_dlp
+import logging
 
+from sqlite3 import IntegrityError
+from requests import get
 from discord.ext import commands
+from bot import logger
+from bot.cogs.music import Music
+
+logger = logging.getLogger(__name__)
 
 
 class Analytics(commands.Cog):
@@ -10,10 +19,13 @@ class Analytics(commands.Cog):
         self.client = client
 
         # Setting up SQLite
-        self.conn = sqlite3.connect("stats.db", check_same_thread=False)
+        self.conn = sqlite3.connect("bot/stats.db", check_same_thread=False)
         table = """
             CREATE TABLE IF NOT EXISTS tracks (
-                title VARCHAR(255) NOT NULL, 
+                message_id VARCHAR(255) PRIMARY KEY,
+                channel_id VARCHAR(255) NOT NULL,
+                guild_id VARCHAR(255) NOT NULL,
+                title VARCHAR(255) NOT NULL,
                 requester_id VARCHAR(255) NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -21,12 +33,30 @@ class Analytics(commands.Cog):
         self.cursor = self.conn.cursor()
         self.cursor.execute(table)
 
-    def submit_track(self, title, requester_id):
+    def submit_track(
+        self,
+        message_id,
+        channel_id,
+        guild_id,
+        title,
+        requester_id,
+        timestamp,
+    ):
+        try:
+            self.cursor.execute(
+                f"INSERT INTO tracks (message_id, channel_id, guild_id, title, requester_id, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                ((message_id, channel_id, guild_id, title, requester_id, timestamp)),
+            )
+            self.conn.commit()
+        except IntegrityError as e:
+            logger.warning(f"Failed to add track: {e}")
+
+    def latest_in_channel(self, channel_id):
         self.cursor.execute(
-            f"INSERT INTO tracks (title, requester_id) VALUES (?, ?)",
-            ((title, requester_id)),
+            f"SELECT timestamp FROM tracks WHERE channel_id = (?) ORDER BY timestamp DESC LIMIT 1",
+            (str(channel_id),),
         )
-        self.conn.commit()
+        return self.cursor.fetchall()
 
     def get_tracks(self):
         self.cursor.execute("SELECT * FROM tracks")
@@ -43,6 +73,87 @@ class Analytics(commands.Cog):
             "SELECT requester_id, COUNT(*) as count FROM tracks GROUP BY requester_id ORDER BY count DESC"
         )
         return self.cursor.fetchall()
+
+    @commands.command()
+    async def analyze(self, ctx, complete: bool = False):
+        """
+        Analyzes the current text channel in which the command was issued and
+        updates the track database
+        """
+
+        PLAY_COMMAND_REGEX = r"^([^\s]+)play\s(.*)"
+        logger.info(f"Analyzing history of channel {ctx.channel.name}")
+        record = self.latest_in_channel(ctx.channel.id)
+        if len(record) > 0 and not complete:
+            after = record[0][0]
+            logger.info(f"Only scanning for messages after {after}")
+            messages = ctx.channel.history(limit=None, oldest_first=True, after=after)
+        else:
+            logger.info("Scanning the entire channel")
+            messages = ctx.channel.history(limit=None, oldest_first=True)
+        count = 0
+
+        # Scan all messages
+        async for message in messages:
+            match = re.search(PLAY_COMMAND_REGEX, message.content)
+            if match is None:
+                print("No music command. Skipping...")
+                continue
+
+            query = match.group(2)
+            ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+
+            # Determine if query is a link or not
+            is_link = True
+            try:
+                get(query)
+            except:
+                is_link = False
+
+            # Attempt to retrieve information about the query
+            try:
+                if is_link:
+                    info = ydl.extract_info(query, download=False, process=False)
+                else:
+                    info = ydl.extract_info(
+                        f"ytsearch:{query}", download=False, process=False
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"An error occurred while trying to qualify the query '{query}': {e}"
+                )
+
+            try:
+                if not (info.get("_type", None) == "playlist"):
+                    info["entries"] = [info]
+
+                for entry in info["entries"]:
+                    entry["requester"] = ctx.author
+                    self.submit_track(
+                        message.id,
+                        message.channel.id,
+                        message.guild.id,
+                        entry["title"],
+                        entry["requester"].id,
+                        message.created_at,
+                    )
+                    count += 1
+                    logger.info(f"Saved entry for track {entry['title']}")
+            except Exception as e:
+                logger.warning(
+                    f"An error occurred while trying to qualifying the query '{query}': {e}"
+                )
+
+        await ctx.send(
+            f"Scan for text channel {ctx.channel.name} complete. Updated {count} record(s)"
+        )
+
+    @analyze.error
+    async def analyze_error(self, ctx, error):
+        logger.error(error)
+        await ctx.send(
+            f"There was an error while attempting to analyze this channel. Error: {error}"
+        )
 
     @commands.command()
     async def analytics(self, ctx):

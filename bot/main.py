@@ -14,7 +14,7 @@ import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
 
 from dotenv import load_dotenv
-from bot import client, log_handlers, log_formatter, socketio
+from bot import client, log_handlers, log_formatter
 from bot.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES

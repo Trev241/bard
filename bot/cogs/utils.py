@@ -8,7 +8,7 @@ import logging
 from discord.ext import commands
 from datetime import datetime
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class Utils(commands.Cog):

@@ -6,7 +6,7 @@ from random import randrange
 from PIL import Image, ImageDraw, ImageFont
 from discord.ext import commands
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class Wordle(commands.Cog):
@@ -56,7 +56,7 @@ class Wordle(commands.Cog):
             size=(Wordle.LETTER_SIZE * self.size, Wordle.LETTER_SIZE),
             color=(0, 0, 0, 0),
         )
-        font = ImageFont.truetype("./fonts/DroidSansMono.ttf", 45)
+        font = ImageFont.truetype("bot/fonts/DroidSansMono.ttf", 45)
         draw = ImageDraw.Draw(image)
 
         letters = {}
