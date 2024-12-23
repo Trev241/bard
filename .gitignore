@@ -166,4 +166,5 @@ signin-*.png
 cookies.txt
 logs
 stats.db
+stats.db-journal
 head-commit.json

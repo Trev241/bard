@@ -6,6 +6,7 @@ import yt_dlp
 import logging
 
 from sqlite3 import IntegrityError
+from datetime import datetime
 from requests import get
 from discord.ext import commands
 from bot import logger
@@ -41,19 +42,36 @@ class Analytics(commands.Cog):
         title,
         requester_id,
         timestamp,
+        commit=True,
     ):
+        """Inserts a track into the database"""
         try:
             self.cursor.execute(
-                f"INSERT INTO tracks (message_id, channel_id, guild_id, title, requester_id, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO tracks (message_id, channel_id, guild_id, title, requester_id, timestamp) 
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
                 ((message_id, channel_id, guild_id, title, requester_id, timestamp)),
             )
-            self.conn.commit()
+            if commit:
+                self.conn.commit()
+
         except IntegrityError as e:
             logger.warning(f"Failed to add track: {e}")
 
+    def commit_db(self):
+        """Commits any pending database transactions"""
+        self.conn.commit()
+
     def latest_in_channel(self, channel_id):
         self.cursor.execute(
-            f"SELECT timestamp FROM tracks WHERE channel_id = (?) ORDER BY timestamp DESC LIMIT 1",
+            """
+            SELECT timestamp 
+            FROM tracks 
+            WHERE channel_id = (?) 
+            ORDER BY timestamp DESC 
+            LIMIT 1
+            """,
             (str(channel_id),),
         )
         return self.cursor.fetchall()
@@ -62,15 +80,62 @@ class Analytics(commands.Cog):
         self.cursor.execute("SELECT * FROM tracks")
         return self.cursor.fetchall()
 
+    def get_tracks_by_freq(self, most_frequent=True, limit=100):
+        order = "DESC" if most_frequent else "ASC"
+        self.cursor.execute(
+            f"""
+            SELECT title, COUNT(*) AS count 
+            FROM tracks 
+            GROUP BY title 
+            ORDER BY count {order} LIMIT (?)
+            """,
+            (limit),
+        )
+        return self.cursor.fetchall()
+
+    def get_tracks_by_requester(self, requester_id):
+        self.cursor.execute(
+            """
+            SELECT title, COUNT(*) AS count 
+            FROM tracks 
+            WHERE requester_id = (?) 
+            GROUP BY title 
+            ORDER BY count DESC
+            """,
+            (requester_id,),
+        )
+        return self.cursor.fetchall()
+
+    def get_tracks_by_year(self, year):
+        self.cursor.execute(
+            """
+            SELECT title, COUNT(*) AS count 
+            FROM tracks 
+            WHERE strftime('%Y', s.localdate) = (?)
+            """,
+            (year,),
+        )
+        return self.cursor.fetchall()
+
     def get_track_playcount(self):
         self.cursor.execute(
-            "SELECT title, COUNT(*) AS count FROM tracks GROUP BY title ORDER BY count DESC"
+            """
+            SELECT title, COUNT(*) AS count 
+            FROM tracks 
+            GROUP BY title 
+            ORDER BY count DESC
+            """
         )
         return self.cursor.fetchall()
 
     def get_top_requesters(self):
         self.cursor.execute(
-            "SELECT requester_id, COUNT(*) as count FROM tracks GROUP BY requester_id ORDER BY count DESC"
+            """
+            SELECT requester_id, COUNT(*) as count 
+            FROM tracks 
+            GROUP BY requester_id 
+            ORDER BY count DESC
+            """
         )
         return self.cursor.fetchall()
 
@@ -85,7 +150,7 @@ class Analytics(commands.Cog):
         logger.info(f"Analyzing history of channel {ctx.channel.name}")
         record = self.latest_in_channel(ctx.channel.id)
         if len(record) > 0 and not complete:
-            after = record[0][0]
+            after = datetime.fromisoformat(record[0][0])
             logger.info(f"Only scanning for messages after {after}")
             messages = ctx.channel.history(limit=None, oldest_first=True, after=after)
         else:
@@ -136,6 +201,7 @@ class Analytics(commands.Cog):
                         entry["title"],
                         entry["requester"].id,
                         message.created_at,
+                        commit=False,
                     )
                     count += 1
                     logger.info(f"Saved entry for track {entry['title']}")
@@ -144,15 +210,9 @@ class Analytics(commands.Cog):
                     f"An error occurred while trying to qualifying the query '{query}': {e}"
                 )
 
+        self.commit_db()
         await ctx.send(
             f"Scan for text channel {ctx.channel.name} complete. Updated {count} record(s)"
-        )
-
-    @analyze.error
-    async def analyze_error(self, ctx, error):
-        logger.error(error)
-        await ctx.send(
-            f"There was an error while attempting to analyze this channel. Error: {error}"
         )
 
     @commands.command()

@@ -1,11 +1,15 @@
+import discord.ext.commands
 import requests
 import urllib.parse
 import logging
+import discord
+import traceback
 
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
 from bs4 import BeautifulSoup
 from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL, socketio
+import discord.ext
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +68,14 @@ class Events(commands.Cog):
             self._repetitions = 0
 
         self._last_message = message
+
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error: discord.DiscordException):
+        full_error = traceback.format_exception(error)
+        await ctx.send(
+            f"**An exception has occurred!** (User {ctx.author.display_name} used "
+            f"{ctx.command.qualified_name} with args {ctx.args})\n```py\n{''.join(full_error)}```"
+        )
 
     async def find_anime(self, message: Message):
         """
