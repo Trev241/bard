@@ -14,7 +14,7 @@ from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from bot import EMBED_COLOR_THEME, socketio
-from bot.data import MusicRequest, Source
+from bot.models import MusicRequest, Source
 
 log = logging.getLogger(__name__)
 
@@ -202,11 +202,11 @@ class Music(commands.Cog):
                 # Let the user know at least once if voice commands are enabled or not
                 if not assistant_connected:
                     await ctx.send(
-                        f"Hey {ctx.author.mention}! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
+                        f"Hey! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
                     )
                 else:
                     await ctx.send(
-                        f"Hey {ctx.author.mention}! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
+                        f"Hey! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
                     )
         else:
             await ctx.voice_client.move_to(voice_channel)
