@@ -335,7 +335,7 @@ class Music(commands.Cog):
             count += 1
 
         if count == 1:
-            await ctx.send(f"Queued {entries[0]["title"]}")
+            await ctx.send(f"Queued track")
         else:
             await ctx.send(f"Queued {count} tracks")
 
