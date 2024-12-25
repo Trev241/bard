@@ -87,9 +87,8 @@ class Analytics(commands.Cog):
             SELECT title, COUNT(*) AS count 
             FROM tracks 
             GROUP BY title 
-            ORDER BY count {order} LIMIT (?)
-            """,
-            (limit),
+            ORDER BY count {order} LIMIT {limit}
+            """
         )
         return self.cursor.fetchall()
 
@@ -147,7 +146,9 @@ class Analytics(commands.Cog):
         """
 
         PLAY_COMMAND_REGEX = r"^([^\s]+)play\s(.*)"
-        logger.info(f"Analyzing history of channel {ctx.channel.name}")
+        message = await ctx.send(
+            f"I'm going to check {ctx.channel.name} to update my records. This will take some time..."
+        )
         record = self.latest_in_channel(ctx.channel.id)
         if len(record) > 0 and not complete:
             after = datetime.fromisoformat(record[0][0])
@@ -199,7 +200,7 @@ class Analytics(commands.Cog):
                         message.channel.id,
                         message.guild.id,
                         entry["title"],
-                        entry["requester"].id,
+                        message.author.id,
                         message.created_at,
                         commit=False,
                     )

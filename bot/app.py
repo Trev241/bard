@@ -64,16 +64,13 @@ def update():
 @app.route("/analytics")
 def analytics():
     analytics_base = client.get_cog("Analytics")
-    data = analytics_base.get_track_playcount()
-    top_players = analytics_base.get_top_requesters()
-    if len(top_players) > 0:
-        print(top_players[0][0])
-        player = client.get_user(int(top_players[0][0]))
-        top_players = {"display_name": player.display_name, "avatar": player.avatar.url}
-    else:
-        top_players = "No one yet..."
+    top_tracks = analytics_base.get_tracks_by_freq()
+    bot_tracks = analytics_base.get_tracks_by_freq(most_frequent=False)
 
-    return render_template("analytics.html", data=data, top_players=top_players)
+    print(json.dumps(top_tracks, indent=2))
+    print(json.dumps(bot_tracks, indent=2))
+
+    return render_template("analytics.html")
 
 
 def _save_commit(payload):

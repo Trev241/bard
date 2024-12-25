@@ -14,12 +14,13 @@ from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from bot import EMBED_COLOR_THEME, socketio
+from bot.data import MusicRequest, Source
 
 log = logging.getLogger(__name__)
 
 
 class Music(commands.Cog):
-    IDLE_TIMEOUT_INTERVAL = 600
+    IDLE_TIMEOUT_INTERVAL = 300
 
     FFMPEG_OPTIONS = {
         "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
@@ -78,6 +79,7 @@ class Music(commands.Cog):
         self.auto_play = True
         self.auto_play_tracks = []
         self.voice_channel = None
+        self.public_url = None
 
         self.current_track = None
         self._timeout_task = None
@@ -103,7 +105,16 @@ class Music(commands.Cog):
 
         @socketio.on("playback_track_request")
         def handle_track_request(json=None):
-            task = el.create_task(self.play(json["query"]))
+            task = el.create_task(
+                self.play(
+                    MusicRequest(
+                        query=json["query"],
+                        author=self.client.user,
+                        ctx=self._ctx,
+                        source=Source.WEB,
+                    )
+                )
+            )
             task.add_done_callback(lambda _: on_handle_complete())
 
         @socketio.on("playback_instruct_play")
@@ -142,9 +153,8 @@ class Music(commands.Cog):
 
         try:
             response = get("http://localhost:4040/api/tunnels")
-            # log.info(json.dumps(response.json(), indent=2))
-            public_url = response.json()["tunnels"][0]["public_url"]
-            await ctx.send(f"Visit {public_url}/dashboard to manage me!")
+            self.public_url = response.json()["tunnels"][0]["public_url"]
+            await ctx.send(f"Visit {self.public_url}/dashboard to manage me!")
         except Exception:
             log.error(
                 "There was an error trying to fetch the public URL of ngrok's agent."
@@ -220,10 +230,15 @@ class Music(commands.Cog):
             "bot/sounds/bard.disconnect.ogg"
         )
 
-        el = asyncio.get_running_loop()
-        ctx.voice_client.play(
-            source, after=lambda error: el.create_task(ctx.voice_client.disconnect())
-        )
+        def after_callback(error):
+            coro = ctx.voice_client.disconnect()
+            fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
+            try:
+                fut.result()
+            except:
+                pass
+
+        ctx.voice_client.play(source, after=after_callback)
 
         self.reset()
         socketio.emit("playback_stop")
@@ -286,67 +301,72 @@ class Music(commands.Cog):
         except:
             pass
 
-    async def play(self, query):
-        ctx = self._ctx
-        if self._ctx is None or self._ctx.author.voice is None:
-            log.error("Failed to play track. Bot must be on a call.")
-            return
-
+    async def play(self, request: MusicRequest):
+        ctx = request.ctx
         ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
+        if self._ctx is None or self._ctx.voice_client is None:
+            log.error("Failed to play track, bot must be connected to a voice channel.")
+            return
+
+        # Qualify the message object of the request
+        if request.source == Source.WEB:
+            msg = await ctx.send(f'Received on the web player: "{request.query}".')
+            request.msg = msg
+        else:
+            request.msg = ctx.message
+
         try:
-            get(query)
+            get(request.query)
         except:
-            info = ydl.extract_info(f"ytsearch:{query}", download=False, process=False)
+            info = ydl.extract_info(
+                f"ytsearch:{request.query}", download=False, process=False
+            )
         else:
             # Avoid downloading by setting process=False to prevent blocking execution
-            info = ydl.extract_info(query, download=False, process=False)
+            info = ydl.extract_info(request.query, download=False, process=False)
 
-        # Queue entries
-        if info.get("_type", None) == "playlist":
-            count = 0
+        # If a single track is returned, convert it into a list for consistency in format
+        entries = info["entries"] if info.get("_type", None) == "playlist" else [info]
+        count = 0
+        for entry in entries:
+            entry["requester"] = request.author
+            await self.queue_entry(entry, request)
+            count += 1
 
-            for entry in info["entries"]:
-                entry["requester"] = ctx.author
-                await self.queue_entry(entry, ctx)
-                count += 1
-
-            await ctx.send(f"Queued {count} video(s).")
+        if count == 1:
+            await ctx.send(f"Queued {entries[0]["title"]}")
         else:
-            info["requester"] = ctx.author
-            await self.queue_entry(info, ctx)
-            await ctx.send(f'Queued {info["title"]}.')
+            await ctx.send(f"Queued {count} tracks")
 
     @commands.command(name="play")
     async def _play(self, ctx, *, query):
-        self._ctx = ctx
-
         # Abort if not in voice channel
         if not await self.join(ctx):
             return
 
         await ctx.send("Searching...")
-        await self.play(query)
+        await self.play(MusicRequest(query, ctx.author, ctx, Source.CMD))
 
-    async def queue_entry(self, entry, ctx):
+    async def queue_entry(self, entry, request: MusicRequest):
         self.queue.append(entry)
-
+        ctx = request.ctx
         # Submit analytics data
         self.client.get_cog("Analytics").submit_track(
-            ctx.message.id,
-            ctx.channel.id,
-            ctx.guild.id,
+            request.msg.id,
+            request.msg.channel.id,
+            request.msg.guild.id,
             entry["title"],
-            entry["requester"].id,
-            ctx.message.created_at,
+            request.author.id,
+            request.msg.created_at,
         )
 
         if self.idle:
-            # Start playing if bot is idle or if playing auto-play tracks
+            # Play immediately if the bot is idle or if playing elevator music
             self.idle = False
             await self.play_next(ctx)
         elif self.current_track.get("elevator_music", False):
-            # Skip the auto play track and immediately play what is requested
+            # Skip the current track if it's from the auto-playlist
             self.skip(ctx)
 
         socketio.emit(
@@ -392,7 +412,6 @@ class Music(commands.Cog):
         for k, v in processed_entry.items():
             track[k] = v
 
-        track["type"] = "processed_music"
         track["title"] = processed_entry["title"]
         track["url"] = url
         track["duration"] = str(datetime.timedelta(seconds=int(info["duration"])))
@@ -555,13 +574,17 @@ class Music(commands.Cog):
                 self.current_track["url"], **ffmpeg_opts
             )
 
-            # Fetching Event Loop to create a new task i.e. to play the next song
-            # Courtesy of
-            # https://stackoverflow.com/questions/69786149/pass-a-async-function-as-a-callback-parameter
-            el = asyncio.get_running_loop()
-            ctx.voice_client.play(
-                source, after=lambda error: el.create_task(self.on_track_complete(ctx))
-            )
+            # Reference:
+            # https://discordpy.readthedocs.io/en/stable/faq.html#how-do-i-pass-a-coroutine-to-the-player-s-after-function
+            def after_callback(error):
+                coro = self.on_track_complete(ctx)
+                fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
+                try:
+                    fut.result()
+                except:
+                    pass
+
+            ctx.voice_client.play(source, after=after_callback)
 
             # Set start time to current time minus time seeked ahead
             start_from = self.current_track.get("start_from", 0)

@@ -84,7 +84,9 @@ class Utils(commands.Cog):
                 f'{os.getenv("API_BASE_URL")}/notify', json=payload, headers=headers
             )
         except:
-            log.error(f"Request failed with code {res.status_code}. Exiting anyways.")
+            log.error(
+                f"MusicRequest failed with code {res.status_code}. Exiting anyways."
+            )
         finally:
             sys.exit(0)
 

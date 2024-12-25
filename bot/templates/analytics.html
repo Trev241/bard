@@ -2,33 +2,6 @@
 {% block title %}Analytics{% endblock %}
 {% block content %}
 <div class="max-w-screen-xl mx-auto mt-12 flex flex-col justify-evenly min-h-screen p-4">
-  <div class="mb-6">
-    <h1 class="text-5xl font-semibold mb-6">Your all-time bangers</h1>
-    {% for item in data[:3] %}
-    <div class="line-clamp-1 mb-2">
-      <p>
-        {{ item[0] }}
-      </p>
-    </div>
-    {% endfor %}
-  </div>
-  <div class="mb-6 text-end">
-    <h1 class="text-5xl font-semibold mb-6">Tried it, then never again</h1>
-    {% for item in data[-3:] %}
-    <div class="line-clamp-1 mb-2">
-      <p>
-        {{ item[0] }}
-      </p>
-    </div>
-    {% endfor %}
-  </div>
-  <div class="mb-6">
-    <h1 class="text-5xl font-semibold mb-6">Most frequent song-players</h1>
-    <div class="line-clamp-1 mb-2">
-      <p>
-        {{ top_players.display_name }}
-      </p>
-    </div>
-  </div>
+
 </div>
 {% endblock %}
