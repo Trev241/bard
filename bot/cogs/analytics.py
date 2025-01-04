@@ -80,37 +80,39 @@ class Analytics(commands.Cog):
         self.cursor.execute("SELECT * FROM tracks")
         return self.cursor.fetchall()
 
-    def get_tracks_by_freq(self, most_frequent=True, limit=100):
+    def get_tracks_by_freq(self, year, most_frequent=True, limit=100):
         order = "DESC" if most_frequent else "ASC"
         self.cursor.execute(
             f"""
-            SELECT title, COUNT(*) AS count 
+            SELECT title, timestamp, COUNT(*) AS count 
             FROM tracks 
+            WHERE strftime('%Y', timestamp) = (?)
             GROUP BY title 
             ORDER BY count {order} LIMIT {limit}
-            """
+            """,
+            (year,),
         )
         return self.cursor.fetchall()
 
-    def get_tracks_by_requester(self, requester_id):
+    def get_tracks_by_requester(self, requester_id, year):
         self.cursor.execute(
             """
-            SELECT title, COUNT(*) AS count 
+            SELECT title, timestamp, COUNT(*) AS count 
             FROM tracks 
-            WHERE requester_id = (?) 
+            WHERE requester_id = (?) AND strftime('%Y', timestamp) = (?)
             GROUP BY title 
             ORDER BY count DESC
             """,
-            (requester_id,),
+            (requester_id, year),
         )
         return self.cursor.fetchall()
 
     def get_tracks_by_year(self, year):
         self.cursor.execute(
             """
-            SELECT title, COUNT(*) AS count 
+            SELECT title, timestamp, COUNT(*) AS count 
             FROM tracks 
-            WHERE strftime('%Y', s.localdate) = (?)
+            WHERE strftime('%Y', timestamp) = (?)
             """,
             (year,),
         )

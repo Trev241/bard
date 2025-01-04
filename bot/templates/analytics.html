@@ -1,7 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Analytics{% endblock %}
 {% block content %}
-<div class="max-w-screen-xl mx-auto mt-12 flex flex-col justify-evenly min-h-screen p-4">
-
+<div>
+    <section class="flex flex-col justify-center items-center min-h-screen">
+        <h1 class="text-8xl mb-4">2024</h1>
+        <h2 class="text-3xl text-center">Let's check out this year's bangers</h2>
+    </section>
+    <section class="bg-[#DB9E3D] flex justify-center items-center">
+        <div class="md:w-3/4 mt-12 p-4">
+            <h1 class="text-5xl mb-8 text-center font-bold">Looks like these will never get boring</h1>
+            <div class="flex items-center">
+                <img class="w-1/2 rounded-3xl"
+                    src="{{ data['top_tracks'][0]['info']['entries'][0]['thumbnails'][-1]['url'] }}">
+                <h2 class="text-3xl font-bold line-clamp-2">{{ data['top_tracks'][0]['title'] }}</h2>
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}

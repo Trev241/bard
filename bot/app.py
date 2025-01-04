@@ -3,6 +3,8 @@ import logging
 import hmac
 import hashlib
 import os
+import yt_dlp
+import random
 
 from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
@@ -63,14 +65,39 @@ def update():
 
 @app.route("/analytics")
 def analytics():
-    analytics_base = client.get_cog("Analytics")
-    top_tracks = analytics_base.get_tracks_by_freq()
-    bot_tracks = analytics_base.get_tracks_by_freq(most_frequent=False)
+    # http://localhost:5000/analytics?year=2024&guild_id=423759031157653504
 
-    print(json.dumps(top_tracks, indent=2))
-    print(json.dumps(bot_tracks, indent=2))
+    if "year" in request.args and "guild_id" in request.args:
+        analytics_base = client.get_cog("Analytics")
+        top_tracks = analytics_base.get_tracks_by_freq(
+            year=request.args.get("year"), limit=1
+        )
+        bot_tracks = analytics_base.get_tracks_by_freq(
+            year=request.args.get("year"), most_frequent=False
+        )
 
-    return render_template("analytics.html")
+        ydl = yt_dlp.YoutubeDL()
+        prcsd_top_tracks = []
+        for track in top_tracks:
+            info = ydl.extract_info(f"ytsearch:{track[0]}", download=False)
+            # info = {}
+            prcsd_top_tracks.append(
+                {"title": track[0], "count": track[1], "info": ydl.sanitize_info(info)}
+            )
+        # prcsd_bot_tracks = []
+        # for track in random.sample(bot_tracks, 5):
+        #     prcsd_bot_tracks.append(
+        #         track + (ydl.extract_info(f"ytsearch:{track[0]}", download=False),)
+        #     )
+
+        data = {
+            "top_tracks": prcsd_top_tracks,
+            "bot_tracks": bot_tracks,
+            "year": request.args.get("year"),
+        }
+        return render_template("analytics.html", data=data)
+    else:
+        return render_template("analytics_home.html")
 
 
 def _save_commit(payload):
