@@ -151,14 +151,14 @@ class Music(commands.Cog):
 
         await self.join_vc(ctx)
 
-        try:
-            response = get("http://localhost:4040/api/tunnels")
-            self.public_url = response.json()["tunnels"][0]["public_url"]
-            await ctx.send(f"Visit {self.public_url}/dashboard to manage me!")
-        except Exception:
-            log.error(
-                "There was an error trying to fetch the public URL of ngrok's agent."
-            )
+        # try:
+        #     response = get("http://localhost:4040/api/tunnels")
+        #     self.public_url = response.json()["tunnels"][0]["public_url"]
+        #     await ctx.send(f"Visit {self.public_url}/dashboard to manage me!")
+        # except Exception:
+        #     log.error(
+        #         "There was an error trying to fetch the public URL of ngrok's agent."
+        #     )
 
         return True
 
