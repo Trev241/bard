@@ -84,7 +84,7 @@ class Wordle(commands.Cog):
 
         image.save(Wordle.HIDDEN_WORD_IMAGE_FILENAME)
 
-    async def guess(self, guess: str):
+    async def guess(self, guess: str, author):
         guess = guess.upper()
 
         if self.running and len(guess) == self.size and guess in self.word_bank:
@@ -92,7 +92,7 @@ class Wordle(commands.Cog):
             await self.display()
 
             if guess == self.word:
-                await self.ctx.send(f"{self.ctx.author.display_name} guessed the name!")
+                await self.ctx.send(f"{author.display_name} guessed the name!")
                 self.running = False
 
 

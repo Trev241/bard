@@ -48,7 +48,7 @@ class Events(commands.Cog):
             await util_base.channel.send("You're back!")
 
         wordle_base = self.client.get_cog("Wordle")
-        await wordle_base.guess(message.content)
+        await wordle_base.guess(message.content, message.author)
 
         # Automatic trigger for ping utility
         if (

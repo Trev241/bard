@@ -4,6 +4,7 @@ import discord
 import re
 import yt_dlp
 import logging
+import asyncio
 
 from sqlite3 import IntegrityError
 from datetime import datetime
@@ -139,6 +140,42 @@ class Analytics(commands.Cog):
             """
         )
         return self.cursor.fetchall()
+
+    def get_years(self):
+        self.cursor.execute(
+            """
+            SELECT DISTINCT strftime('%Y', timestamp) AS y
+            FROM tracks
+            """
+        )
+        return self.cursor.fetchall()
+
+    def get_guilds(self):
+        self.cursor.execute(
+            """
+            SELECT DISTINCT guild_id
+            FROM tracks
+            """
+        )
+        guild_ids = self.cursor.fetchall()
+        guilds = []
+
+        for guild_id in guild_ids:
+            coro = self.client.fetch_guild(int(guild_id[0]))
+            fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
+            try:
+                guild = fut.result()
+                guilds.append(
+                    {
+                        "id": guild.id,
+                        "name": guild.name,
+                        "icon": guild.icon.url,
+                    }
+                )
+            except:
+                pass
+
+        return guilds
 
     @commands.command()
     async def analyze(self, ctx, complete: bool = False):

@@ -341,8 +341,8 @@ class Music(commands.Cog):
 
     @commands.command(name="play")
     async def _play(self, ctx, *, query):
-        # Abort if not in voice channel
-        if not await self.join(ctx):
+        # Abort if not in voice channel or query is missing
+        if not await self.join(ctx) or query is None:
             return
 
         await ctx.send("Searching...")

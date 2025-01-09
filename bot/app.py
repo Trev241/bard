@@ -66,11 +66,11 @@ def update():
 @app.route("/analytics")
 def analytics():
     # http://localhost:5000/analytics?year=2024&guild_id=423759031157653504
+    analytics_base = client.get_cog("Analytics")
 
     if "year" in request.args and "guild_id" in request.args:
-        analytics_base = client.get_cog("Analytics")
         top_tracks = analytics_base.get_tracks_by_freq(
-            year=request.args.get("year"), limit=1
+            year=request.args.get("year"), limit=5
         )
         bot_tracks = analytics_base.get_tracks_by_freq(
             year=request.args.get("year"), most_frequent=False
@@ -80,24 +80,28 @@ def analytics():
         prcsd_top_tracks = []
         for track in top_tracks:
             info = ydl.extract_info(f"ytsearch:{track[0]}", download=False)
-            # info = {}
             prcsd_top_tracks.append(
-                {"title": track[0], "count": track[1], "info": ydl.sanitize_info(info)}
+                {"title": track[0], "count": track[2], "info": ydl.sanitize_info(info)}
             )
-        # prcsd_bot_tracks = []
-        # for track in random.sample(bot_tracks, 5):
-        #     prcsd_bot_tracks.append(
-        #         track + (ydl.extract_info(f"ytsearch:{track[0]}", download=False),)
-        #     )
+        prcsd_bot_tracks = []
+        for track in random.sample(bot_tracks, min(len(bot_tracks), 5)):
+            info = ydl.extract_info(f"ytsearch:{track[0]}", download=False)
+            prcsd_bot_tracks.append(
+                {"title": track[0], "count": track[2], "info": ydl.sanitize_info(info)}
+            )
 
         data = {
             "top_tracks": prcsd_top_tracks,
-            "bot_tracks": bot_tracks,
+            "bot_tracks": prcsd_bot_tracks,
             "year": request.args.get("year"),
         }
         return render_template("analytics.html", data=data)
     else:
-        return render_template("analytics_home.html")
+        data = {
+            "years": analytics_base.get_years(),
+            "guilds": analytics_base.get_guilds(),
+        }
+        return render_template("analytics_home.html", data=data)
 
 
 def _save_commit(payload):
