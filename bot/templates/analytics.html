@@ -73,13 +73,13 @@
     <section class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
         <div class="max-w-screen-xl mx-auto">
             <div class="flex flex-col justify-center items-center my-24">
-                <img class="rounded-full mb-4 w-1/2 md:w-2/5" src="{{ data['usr_dtls'][usr]['avatar'] }}">
-                <h1 class="text-4xl md:text-6xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
-                <h2 class="text-xl md:text-2xl">Here's your top picks for the year</h2>
+                <img class="rounded-full mb-4 w-1/2 md:w-1/6" src="{{ data['usr_dtls'][usr]['avatar'] }}">
+                <h1 class="text-2xl md:text-6xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
+                <h2 class="text-lg md:text-2xl">Here's your top picks for the year</h2>
             </div>
             <div class="w-full flex flex-wrap md:justify-evenly md:items-start md:no-wrap md:space-x-1">
                 {% for track in data['usr_tracks'][usr] %}
-                <div class="w-full md:w-2/5 flex flex-col justify-center items-center my-12">
+                <div class="w-full md:w-1/5 flex flex-col justify-center items-center my-12">
                     <img class="rounded-xl mb-4 w-full"
                         src="{{ track['info']['thumbnails'][-1]['url'] }}">
                     <div class="w-full">
