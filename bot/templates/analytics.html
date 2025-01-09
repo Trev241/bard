@@ -73,7 +73,7 @@
     <section class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
         <div class="max-w-screen-xl mx-auto">
             <div class="flex flex-col justify-center items-center my-24">
-                <img class="rounded-full mb-4" src="{{ data['usr_dtls'][usr]['avatar'] }}">
+                <img class="rounded-full mb-4 md:w-1/3" src="{{ data['usr_dtls'][usr]['avatar'] }}">
                 <h1 class="text-4xl md:text-6xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
                 <h2 class="text-xl md:text-2xl">Here's your top picks for the year</h2>
             </div>
