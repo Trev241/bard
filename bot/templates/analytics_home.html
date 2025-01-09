@@ -1,28 +1,39 @@
 {% extends "base.html" %}
 {% block title %}Analytics{% endblock %}
 {% block content %}
-<div>
-    <section class="flex flex-col justify-center items-center min-h-screen">
-        <div class="mb-8 text-center">
-            <h2 class="text-xl md:text-4xl mb-2">Welcome to</h2>
-            <h1 class="text-4xl md:text-8xl"><span class="text-[#DB9E3D]">Bard's</span> Memories</h1>
+<div class="bg-gradient-to-br from-[#55030E] to-[#A76E3A]">
+    <section class="max-w-screen-xl mx-auto flex flex-col min-h-screen justify-center py-24 p-4">
+        <div class="mb-24">
+            <h1 class="text-5xl md:text-8xl mb-2"><span class="text-[#DB9E3D]">Bard's</span> Recollections</h1>
+            <h2 class="text-xl md:text-3xl">Ask for a journey into the past</h2>
         </div>
 
-        <form class="flex" method="get">
-            <select name="year" class="bg-transparent border rounded outline-none py-2 px-4 mx-4">
-                {% for year in data['years'] %}
-                <option value="{{ year[0] }}" class="bg-[#252223]">{{ year[0] }}</option>
-                {% endfor %}
-            </select>
+        <form method="get">
+            <div class="flex flex-wrap items-center md:space-x-8">
+                <div class="w-full md:w-2/5 flex flex-col mb-8">
+                    <p class="text-2xl mb-2">Choose your guild</p>
+                    <select name="guild_id" class="bg-transparent border-b rounded outline-none py-2 pe-4">
+                        {% for guild in data['guilds'] %}
+                        <option value="{{ guild['id'] }}" class="bg-[#252223]">{{ guild['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                    <!-- <p class="text-end">Don't see your guild?</p> -->
+                </div>
 
-            <select name="guild_id" class="bg-transparent border rounded outline-none py-2 px-4 mx-4">
-                {% for guild in data['guilds'] %}
-                <option value="{{ guild['id'] }}" class="bg-[#252223]">{{ guild['name'] }}</option>
-                {% endfor %}
-            </select>
+                <div class="w-full md:w-2/5 flex flex-col mb-8">
+                    <p class="text-2xl mb-2">Choose the year to recall</p>
+                    <select name="year" class="bg-transparent border-b rounded outline-none py-2 pe-4">
+                        {% for year in data['years'] %}
+                        <option value="{{ year[0] }}" class="bg-[#252223]">{{ year[0] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
 
-            <input class="rounded-3xl border bg-transparent hover:bg-white mx-4 hover:text-black px-4" type="submit"
-                value="Search">
+            <div>
+                <input class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4" type="submit"
+                    value="Search">
+            </div>
         </form>
     </section>
 </div>

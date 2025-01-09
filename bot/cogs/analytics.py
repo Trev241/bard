@@ -81,30 +81,34 @@ class Analytics(commands.Cog):
         self.cursor.execute("SELECT * FROM tracks")
         return self.cursor.fetchall()
 
-    def get_tracks_by_freq(self, year, most_frequent=True, limit=100):
+    def get_tracks_by_freq(self, year, guild_id, most_frequent=True, limit=100):
         order = "DESC" if most_frequent else "ASC"
         self.cursor.execute(
             f"""
             SELECT title, timestamp, COUNT(*) AS count 
             FROM tracks 
-            WHERE strftime('%Y', timestamp) = (?)
+            WHERE strftime('%Y', timestamp) = (?) AND guild_id = (?)
             GROUP BY title 
             ORDER BY count {order} LIMIT {limit}
             """,
-            (year,),
+            (year, guild_id),
         )
         return self.cursor.fetchall()
 
-    def get_tracks_by_requester(self, requester_id, year):
+    def get_tracks_by_requester(self, requester_id, guild_id, year, limit=5):
         self.cursor.execute(
-            """
+            f"""
             SELECT title, timestamp, COUNT(*) AS count 
             FROM tracks 
-            WHERE requester_id = (?) AND strftime('%Y', timestamp) = (?)
+            WHERE 
+                requester_id = (?) AND 
+                strftime('%Y', timestamp) = (?) AND
+                guild_id = (?)
             GROUP BY title 
             ORDER BY count DESC
+            LIMIT {limit}
             """,
-            (requester_id, year),
+            (requester_id, year, guild_id),
         )
         return self.cursor.fetchall()
 
@@ -130,14 +134,17 @@ class Analytics(commands.Cog):
         )
         return self.cursor.fetchall()
 
-    def get_top_requesters(self):
+    def get_top_requesters(self, guild_id, limit=3):
         self.cursor.execute(
-            """
+            f"""
             SELECT requester_id, COUNT(*) as count 
-            FROM tracks 
+            FROM tracks
+            WHERE guild_id = (?) 
             GROUP BY requester_id 
             ORDER BY count DESC
-            """
+            LIMIT {limit}
+            """,
+            (guild_id,),
         )
         return self.cursor.fetchall()
 

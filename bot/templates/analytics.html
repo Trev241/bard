@@ -2,11 +2,16 @@
 {% block title %}Analytics{% endblock %}
 {% block content %}
 <div>
-    <section class="flex flex-col justify-center items-center min-h-screen">
-        <h1 class="text-8xl mb-4">{{ data['year'] }}</h1>
-        <h2 class="text-3xl text-center">Let's check out this year's bangers</h2>
+    <section class="flex flex-col justify-center items-center min-h-screen py-24">
+        <div class="w-full flex flex-wrap md:no-wrap justify-center items-center md:space-x-6">
+            <img class="w-1/2 md:w-1/5 rounded-full p-4" src="{{ data['guild']['icon'] }}">
+            <div class="md:text-start text-center">
+                <h2 class="text-xl md:text-2xl mb-1">Let's check out what was it like in</h2>
+                <h1 class="text-5xl md:text-7xl mb-1">{{ data['guild']['name'] }}</h1>
+            </div>
+        </div>
     </section>
-    <section class="bg-[#DB9E3D] flex justify-center items-center">
+    <section class="bg-gradient-to-b from-[#DB9E3D] to-[#A76E3A] flex justify-center items-center">
         <div class="md:w-3/4 p-4">
             <div class="my-24 text-center">
                 <h1 class="text-4xl md:text-6xl font-bold mb-2">Looks like these will never get boring</h1>
@@ -24,7 +29,7 @@
                     </div>
                     <div class="md:w-2/5 flex flex-col justify-center items-center my-12">
                         <img class="rounded-xl mb-4 w-full"
-                            src="{{ track['info']['entries'][0]['thumbnails'][-1]['url'] }}">
+                            src="{{ track['info']['thumbnails'][-1]['url'] }}">
                         <div class="w-full">
                             <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
                             <h3>Requested {{ track['count'] }} times.</h3>
@@ -34,6 +39,7 @@
                 {% endfor %}
             </div>
     </section>
+
     <section class="bg-[#252223] flex justify-center items-center">
         <div class="md:w-3/4 p-4">
             <div class="my-24 text-center">
@@ -52,7 +58,7 @@
                     </div>
                     <div class="md:w-2/5 flex flex-col justify-center items-center my-12">
                         <img class="rounded-xl mb-4 w-full"
-                            src="{{ track['info']['entries'][0]['thumbnails'][-1]['url'] }}">
+                            src="{{ track['info']['thumbnails'][-1]['url'] }}">
                         <div class="w-full">
                             <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
                             <h3>Requested {{ track['count'] }} times.</h3>
@@ -62,5 +68,39 @@
                 {% endfor %}
             </div>
     </section>
+
+    {% for usr in data['usr_dtls'] %}
+    <section class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
+        <div class="max-w-screen-xl mx-auto">
+            <div class="flex flex-col justify-center items-center my-24">
+                <img class="rounded-full mb-4" src="{{ data['usr_dtls'][usr]['avatar'] }}">
+                <h1 class="text-4xl md:text-6xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
+                <h2 class="text-xl md:text-2xl">Here's your top picks for the year</h2>
+            </div>
+            <div class="w-full flex flex-wrap md:justify-evenly md:items-start md:no-wrap md:space-x-1">
+                {% for track in data['usr_tracks'][usr] %}
+                <div class="w-full md:w-2/5 flex flex-col justify-center items-center my-12">
+                    <img class="rounded-xl mb-4 w-full"
+                        src="{{ track['info']['thumbnails'][-1]['url'] }}">
+                    <div class="w-full">
+                        <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
+                        <h3>Requested {{ track['count'] }} times.</h3>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    {% endfor %}
+
+    <section class="flex flex-col justify-center items-center bg-gradient-to-br from-[#55030E] to-[#A76E3A] py-24">
+        <div class="my-6 text-center">
+            <h1 class="text-4xl md:text-6xl font-bold mb-2">That's it!</h1>
+            <h2 class="text-xl md:text-2xl">Ready for another round?</h2>
+        </div>
+        <button id="btn-redirect" class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4">Let's go!</button>
+    </section>
+
+    <script src="{{ url_for('static', filename='analytics.js') }}"></script>
 </div>
 {% endblock %}

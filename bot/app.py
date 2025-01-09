@@ -5,6 +5,7 @@ import hashlib
 import os
 import yt_dlp
 import random
+import asyncio
 
 from bot import client, app, socketio
 from flask import render_template, request, jsonify, abort
@@ -69,31 +70,65 @@ def analytics():
     analytics_base = client.get_cog("Analytics")
 
     if "year" in request.args and "guild_id" in request.args:
-        top_tracks = analytics_base.get_tracks_by_freq(
-            year=request.args.get("year"), limit=5
-        )
-        bot_tracks = analytics_base.get_tracks_by_freq(
-            year=request.args.get("year"), most_frequent=False
-        )
+        year = request.args.get("year")
+        guild_id = request.args.get("guild_id")
+        guild = get_guild_dtls(guild_id)
 
-        ydl = yt_dlp.YoutubeDL()
+        top_tracks = analytics_base.get_tracks_by_freq(year, guild_id, limit=5)
+        bot_tracks = analytics_base.get_tracks_by_freq(year, guild_id, False)
+
         prcsd_top_tracks = []
         for track in top_tracks:
-            info = ydl.extract_info(f"ytsearch:{track[0]}", download=False)
             prcsd_top_tracks.append(
-                {"title": track[0], "count": track[2], "info": ydl.sanitize_info(info)}
+                {
+                    "title": track[0],
+                    "count": track[2],
+                    "info": get_track_dtls(track[0]),
+                }
             )
         prcsd_bot_tracks = []
         for track in random.sample(bot_tracks, min(len(bot_tracks), 5)):
-            info = ydl.extract_info(f"ytsearch:{track[0]}", download=False)
             prcsd_bot_tracks.append(
-                {"title": track[0], "count": track[2], "info": ydl.sanitize_info(info)}
+                {
+                    "title": track[0],
+                    "count": track[2],
+                    "info": get_track_dtls(track[0]),
+                }
             )
+
+        usr_tracks = {}
+        usr_dtls = {}
+
+        top_usrs = analytics_base.get_top_requesters(guild_id)
+        for usr in top_usrs:
+            usr_id = usr[0]
+            tracks = analytics_base.get_tracks_by_requester(usr_id, guild_id, year)
+
+            usr_tracks[usr_id] = [
+                {
+                    "title": track[0],
+                    "count": track[2],
+                    "info": get_track_dtls(track[0]),
+                }
+                for track in tracks
+            ]
+
+            full_usr_dtls = get_usr_dtls(usr_id)
+            usr_dtls[usr_id] = {
+                "name": full_usr_dtls.display_name,
+                "avatar": full_usr_dtls.avatar.url,
+            }
 
         data = {
             "top_tracks": prcsd_top_tracks,
             "bot_tracks": prcsd_bot_tracks,
+            "usr_tracks": usr_tracks,
+            "usr_dtls": usr_dtls,
             "year": request.args.get("year"),
+            "guild": {
+                "name": guild.name,
+                "icon": guild.icon.url,
+            },
         }
         return render_template("analytics.html", data=data)
     else:
@@ -102,6 +137,48 @@ def analytics():
             "guilds": analytics_base.get_guilds(),
         }
         return render_template("analytics_home.html", data=data)
+
+
+def get_track_dtls(title):
+    """Return track details"""
+    ydl = yt_dlp.YoutubeDL(
+        {
+            "extract_flat": True,
+            "quiet": True,
+        }
+    )
+    info = ydl.extract_info(f"ytsearch:{title}", download=False, process=False)
+    # We assume we need only the first entry
+    print(title)
+    extracted_info = yt_dlp.traverse_obj(
+        info,
+        ["entries", ..., {"title": "title", "thumbnails": "thumbnails"}],
+    )[0]
+    return extracted_info
+
+
+def get_guild_dtls(guild_id):
+    """Return guild details synchronously"""
+    coro = client.fetch_guild(int(guild_id))
+    fut = asyncio.run_coroutine_threadsafe(coro, client.loop)
+    try:
+        return fut.result()
+    except:
+        pass
+
+    return None
+
+
+def get_usr_dtls(user_id):
+    """Return user details"""
+    coro = client.fetch_user(int(user_id))
+    fut = asyncio.run_coroutine_threadsafe(coro, client.loop)
+    try:
+        return fut.result()
+    except:
+        pass
+
+    return None
 
 
 def _save_commit(payload):
