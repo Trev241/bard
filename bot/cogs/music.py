@@ -609,10 +609,13 @@ class Music(commands.Cog):
             # End current unplayable track
             await self.on_track_complete(ctx)
         except Exception as e:
-            traceback.print_exc()
-            await ctx.send(f"An error occurred while trying to play the track. {e}")
+            full_error = traceback.format_exception(e)
+            await ctx.send(
+                f"**An exception has occurred!** \n```py\n{''.join(full_error)}```"
+            )
 
-            self.reset()
+            # End current unplayable track
+            await self.on_track_complete(ctx)
 
     @_play.error
     async def play_error(self, ctx, error):

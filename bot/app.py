@@ -99,7 +99,7 @@ def analytics():
         usr_tracks = {}
         usr_dtls = {}
 
-        top_usrs = analytics_base.get_top_requesters(guild_id)
+        top_usrs = analytics_base.get_top_requesters(guild_id, year)
         for usr in top_usrs:
             usr_id = usr[0]
             tracks = analytics_base.get_tracks_by_requester(usr_id, guild_id, year)
@@ -116,7 +116,8 @@ def analytics():
             full_usr_dtls = get_usr_dtls(usr_id)
             usr_dtls[usr_id] = {
                 "name": full_usr_dtls.display_name,
-                "avatar": full_usr_dtls.avatar.url,
+                "avatar": full_usr_dtls.display_avatar.url,
+                "requests": usr[1],
             }
 
         data = {
@@ -147,14 +148,15 @@ def get_track_dtls(title):
             "quiet": True,
         }
     )
-    info = ydl.extract_info(f"ytsearch:{title}", download=False, process=False)
+    info = ydl.extract_info(f"ytsearch1:{title}", download=False, process=False)
+    info["entries"] = list(info.get("entries", []))
     # We assume we need only the first entry
-    print(title)
     extracted_info = yt_dlp.traverse_obj(
         info,
         ["entries", ..., {"title": "title", "thumbnails": "thumbnails"}],
-    )[0]
-    return extracted_info
+    )
+
+    return extracted_info[0] if len(extracted_info) > 0 else None
 
 
 def get_guild_dtls(guild_id):

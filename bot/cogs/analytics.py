@@ -134,17 +134,18 @@ class Analytics(commands.Cog):
         )
         return self.cursor.fetchall()
 
-    def get_top_requesters(self, guild_id, limit=3):
+    def get_top_requesters(self, guild_id, year):
         self.cursor.execute(
             f"""
-            SELECT requester_id, COUNT(*) as count 
+            SELECT requester_id, COUNT(*) as count, timestamp 
             FROM tracks
-            WHERE guild_id = (?) 
+            WHERE 
+                guild_id = (?) AND 
+                strftime('%Y', timestamp) = (?)
             GROUP BY requester_id 
             ORDER BY count DESC
-            LIMIT {limit}
             """,
-            (guild_id,),
+            (guild_id, year),
         )
         return self.cursor.fetchall()
 
