@@ -116,7 +116,7 @@ def analytics():
 
             # full_usr_dtls = get_usr_dtls(usr_id)
             logger.info(usr_id)
-            full_usr_dtls = client.get_user(int(usr_id))
+            full_usr_dtls = get_usr_dtls(int(usr_id))
             usr_dtls[usr_id] = {
                 "name": full_usr_dtls.display_name,
                 "avatar": full_usr_dtls.display_avatar.url,
