@@ -4,7 +4,7 @@
 <div>
     <section class="flex flex-col justify-center items-center min-h-screen py-24">
         <div class="w-full flex flex-wrap md:no-wrap justify-center items-center md:space-x-6">
-            {% if  if data['guild']['icon'] is not none %}
+            {% if data['guild']['icon'] is not none %}
             <img class="w-1/2 md:w-1/5 rounded-full p-4" src="{{ data['guild']['icon'] }}">
             {% else %}
             <img class="w-1/2 md:w-1/5 rounded-full p-4" src="{{ url_for('static', filename='placeholder_icon.png') }}">
