@@ -183,6 +183,7 @@ class Analytics(commands.Cog):
             except:
                 pass
 
+        logger.info(f"Returning guild info: {guilds}")
         return guilds
 
     @commands.command()
