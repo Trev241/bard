@@ -166,22 +166,7 @@ class Analytics(commands.Cog):
             """
         )
         guild_ids = self.cursor.fetchall()
-        guilds = []
-
-        for guild_id in guild_ids:
-            coro = self.client.fetch_guild(int(guild_id[0]))
-            fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
-            try:
-                guild = fut.result()
-                guilds.append(
-                    {
-                        "id": guild.id,
-                        "name": guild.name,
-                        "icon": guild.icon.url,
-                    }
-                )
-            except:
-                pass
+        guilds = [self.client.get_guild(int(guild_id)) for guild_id in guild_ids]
 
         logger.info(f"Returning guild info: {guilds}")
         return guilds

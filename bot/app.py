@@ -72,7 +72,8 @@ def analytics():
     if "year" in request.args and "guild_id" in request.args:
         year = request.args.get("year")
         guild_id = request.args.get("guild_id")
-        guild = get_guild_dtls(guild_id)
+        # guild = get_guild_dtls(guild_id)
+        guild = client.get_guild(guild_id)
 
         top_tracks = analytics_base.get_tracks_by_freq(year, guild_id, limit=5)
         bot_tracks = analytics_base.get_tracks_by_freq(year, guild_id, False)
@@ -113,7 +114,8 @@ def analytics():
                 for track in tracks
             ]
 
-            full_usr_dtls = get_usr_dtls(usr_id)
+            # full_usr_dtls = get_usr_dtls(usr_id)
+            full_usr_dtls = client.get_user(usr_id)
             usr_dtls[usr_id] = {
                 "name": full_usr_dtls.display_name,
                 "avatar": full_usr_dtls.display_avatar.url,
