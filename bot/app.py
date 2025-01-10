@@ -131,7 +131,7 @@ def analytics():
             "year": request.args.get("year"),
             "guild": {
                 "name": guild.name,
-                "icon": guild.icon.url,
+                "icon": guild.icon.url if guild.icon else None,
             },
         }
         return render_template("analytics.html", data=data)

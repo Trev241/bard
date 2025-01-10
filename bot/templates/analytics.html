@@ -4,7 +4,11 @@
 <div>
     <section class="flex flex-col justify-center items-center min-h-screen py-24">
         <div class="w-full flex flex-wrap md:no-wrap justify-center items-center md:space-x-6">
+            {% if  if data['guild']['icon'] is not none %}
             <img class="w-1/2 md:w-1/5 rounded-full p-4" src="{{ data['guild']['icon'] }}">
+            {% else %}
+            <img class="w-1/2 md:w-1/5 rounded-full p-4" src="{{ url_for('static', filename='placeholder_icon.png') }}">
+            {% endif %}
             <div class="md:text-start text-center">
                 <h2 class="text-xl md:text-2xl mb-1">Let's check out what was it like in</h2>
                 <h1 class="text-5xl md:text-7xl mb-1">{{ data['guild']['name'] }}</h1>
