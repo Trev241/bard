@@ -32,8 +32,13 @@
                         <h1 class="text-7xl md:text-9xl font-bold">{{ loop.index }}.</h1>
                     </div>
                     <div class="md:w-2/5 flex flex-col justify-center items-center my-12">
+                        {% if track['info'] is not none %}
                         <img class="rounded-xl mb-4 w-full"
                             src="{{ track['info']['thumbnails'][-1]['url'] }}">
+                        {% else %}
+                        <img class="rounded-xl mb-4 w-full"
+                            src="{{ url_for('static', filename='placeholder.png') }}">
+                        {% endif %}
                         <div class="w-full">
                             <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
                             <h3>Requested {{ track['count'] }} times.</h3>
