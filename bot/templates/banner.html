@@ -1,33 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="relative max-w-screen-xl mx-auto flex items-center h-screen overflow-hidden p-4">
-  <div class="relative z-30">
-    <h1 class="text-5xl md:text-6xl mb-2">Listen to music with Bard
-    </h1>
-    <div
-      class="text-xl md:text-4xl [text-wrap:balance] bg-clip-text bg-gradient-to-r from-slate-200/60 to-50% to-slate-200">
-      ?play <span
-        class="text-[#D8C6AD] inline-flex flex-col h-[calc(theme(fontSize.xl)*theme(lineHeight.tight))] md:h-[calc(theme(fontSize.4xl)*theme(lineHeight.tight))] overflow-hidden">
-        <ul class="block animate-text-slide text-left leading-tight [&_li]:block">
-          <li>PSY Gangnam Style</li>
-          <li>International Love</li>
-          <li>Lean on</li>
-          <li>I'm good I'm feeling alright</li>
-          <li aria-hidden="true">PSY Gangnam Style</li>
-        </ul>
-      </span>
+<div class="bg-gradient-to-br from-[#A76E3A] to-[#F9D866]">
+  <section class="relative max-w-screen-xl mx-auto flex items-center h-screen overflow-hidden p-4 ">
+    <div class="relative z-30">
+      <h1 class="text-5xl md:text-8xl mb-2">Listen to music with Bard
+      </h1>
+      <div
+        class="text-xl md:text-4xl [text-wrap:balance] bg-clip-text bg-gradient-to-r from-slate-200/60 to-50% to-slate-200">
+        ?play <span
+          class="font-bold inline-flex flex-col h-[calc(theme(fontSize.xl)*theme(lineHeight.tight))] md:h-[calc(theme(fontSize.4xl)*theme(lineHeight.tight))] overflow-hidden">
+          <ul class="block animate-text-slide text-left leading-tight [&_li]:block">
+            <li>PSY Gangnam Style</li>
+            <li>International Love</li>
+            <li>Lean on</li>
+            <li>I'm good I'm feeling alright</li>
+            <li aria-hidden="true">PSY Gangnam Style</li>
+          </ul>
+        </span>
+      </div>
     </div>
-  </div>
 
-  <div id="bannerVideo"></div>
-  <!-- <video id="bannerVideo" autoplay loop muted
+    <div id="bannerVideo"></div>
+    <!-- <video id="bannerVideo" autoplay loop muted
     class="absolute z-10 w-auto min-w-full min-h-full max-w-none brightness-[25%]">
     <source src="{{ url_for('static', filename='banner.mp4')}}" type="video/mp4" />
     Your browser does not support the video tag.
   </video> -->
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-  <script src="{{ url_for('static', filename='banner.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='banner.js') }}"></script>
+  </section>
 </div>
 {% endblock %}

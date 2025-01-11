@@ -4,7 +4,7 @@ import discord
 import re
 import yt_dlp
 import logging
-import asyncio
+import validators
 
 from sqlite3 import IntegrityError
 from datetime import datetime
@@ -203,11 +203,7 @@ class Analytics(commands.Cog):
             ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
             # Determine if query is a link or not
-            is_link = True
-            try:
-                get(query)
-            except:
-                is_link = False
+            is_link = validators.url(query)
 
             # Attempt to retrieve information about the query
             try:

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Analytics{% endblock %}
+{% block title %}Recollections{% endblock %}
 {% block content %}
 <div class="bg-gradient-to-br from-[#55030E] to-[#A76E3A]">
-    <section class="max-w-screen-xl mx-auto flex flex-col min-h-screen justify-center py-24 p-4">
+    <section id="main" class="max-w-screen-xl mx-auto flex flex-col min-h-screen justify-center py-24 p-4">
         <div class="mb-24">
             <h1 class="text-5xl md:text-8xl mb-2"><span class="text-[#DB9E3D]">Bard's</span> Recollections</h1>
             <h2 class="text-xl md:text-3xl">Ask for a journey into the past</h2>
         </div>
 
-        <form method="get">
+        <form id="form-recollections" method="get">
             <div class="flex flex-wrap items-center md:space-x-8">
                 <div class="w-full md:w-2/5 flex flex-col mb-8">
                     <p class="text-2xl mb-2">Choose your guild</p>
@@ -31,10 +31,13 @@
             </div>
 
             <div>
-                <input class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4" type="submit"
+                <input id="btn-submit"
+                    class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4" type="submit"
                     value="Search">
             </div>
         </form>
     </section>
+
+    <script src="{{ url_for('static', filename='analytics-home.js') }}"></script>
 </div>
 {% endblock %}
