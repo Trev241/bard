@@ -9,8 +9,9 @@ import asyncio
 import datetime
 import traceback
 import logging
+import validators
+import aiohttp
 
-from requests import get
 from discord.ext import commands, voice_recv
 from collections import deque
 from bot import EMBED_COLOR_THEME, socketio
@@ -150,16 +151,6 @@ class Music(commands.Cog):
             return False
 
         await self.join_vc(ctx)
-
-        # try:
-        #     response = get("http://localhost:4040/api/tunnels")
-        #     self.public_url = response.json()["tunnels"][0]["public_url"]
-        #     await ctx.send(f"Visit {self.public_url}/dashboard to manage me!")
-        # except Exception:
-        #     log.error(
-        #         "There was an error trying to fetch the public URL of ngrok's agent."
-        #     )
-
         return True
 
     @staticmethod
@@ -193,6 +184,15 @@ class Music(commands.Cog):
             await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
             # await voice_channel.connect()
 
+            async with aiohttp.ClientSession() as session:
+                async with session.get("http://localhost:4040/api/tunnels") as r:
+                    if r.status == 200:
+                        js = await r.json()
+                        self.public_url = js["tunnels"][0]["public_url"]
+                        await ctx.send(
+                            f"Visit {self.public_url}/dashboard to manage me!"
+                        )
+
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
             if not assistant_base.enabled:
@@ -200,14 +200,8 @@ class Music(commands.Cog):
                 assistant_connected = assistant_base.enable(ctx)
 
                 # Let the user know at least once if voice commands are enabled or not
-                if not assistant_connected:
-                    await ctx.send(
-                        f"Hey! My hearing is a little bad today so I won't be able to take voice commands from you. As always, you can always type in your instructions instead."
-                    )
-                else:
-                    await ctx.send(
-                        f"Hey! You can also give me commands by just saying it out loud! Type `?intents` if you need help."
-                    )
+                if assistant_connected:
+                    await ctx.send(f"Hey there! I can take voice commands too.")
         else:
             await ctx.voice_client.move_to(voice_channel)
 
@@ -221,6 +215,7 @@ class Music(commands.Cog):
     async def disconnect(self, ctx):
         # Temporarily disable some flags to allow the bot to exit
         self.looping_video = self.auto_play = False
+        self.queue.clear()
 
         ctx.voice_client.stop()
         assistant_base = self.client.get_cog("Assistant")
@@ -316,33 +311,36 @@ class Music(commands.Cog):
         else:
             request.msg = ctx.message
 
-        try:
-            get(request.query)
-        except:
-            info = ydl.extract_info(
-                f"ytsearch:{request.query}", download=False, process=False
+        if request.query:
+            if validators.url(request.query):
+                info = ydl.extract_info(request.query, download=False, process=False)
+            else:
+                # Avoid downloading by setting process=False to prevent blocking execution
+                info = ydl.extract_info(
+                    f"ytsearch:{request.query}", download=False, process=False
+                )
+
+            # If a single track is returned, convert it into a list for consistency in format
+            entries = (
+                info["entries"] if info.get("_type", None) == "playlist" else [info]
             )
-        else:
-            # Avoid downloading by setting process=False to prevent blocking execution
-            info = ydl.extract_info(request.query, download=False, process=False)
+            count = 0
+            for entry in entries:
+                entry["requester"] = request.author
+                await self.queue_entry(entry, request)
+                count += 1
 
-        # If a single track is returned, convert it into a list for consistency in format
-        entries = info["entries"] if info.get("_type", None) == "playlist" else [info]
-        count = 0
-        for entry in entries:
-            entry["requester"] = request.author
-            await self.queue_entry(entry, request)
-            count += 1
-
-        if count == 1:
-            await ctx.send(f"Queued track")
+            if count == 1:
+                await ctx.send(f"Queued track")
+            else:
+                await ctx.send(f"Queued {count} tracks")
         else:
-            await ctx.send(f"Queued {count} tracks")
+            self.add_autoplay_track()
 
     @commands.command(name="play")
-    async def _play(self, ctx, *, query):
+    async def play_command(self, ctx, *, query=None):
         # Abort if not in voice channel or query is missing
-        if not await self.join(ctx) or query is None:
+        if not await self.join(ctx):
             return
 
         await ctx.send("Searching...")
@@ -470,17 +468,10 @@ class Music(commands.Cog):
         # Wait if playback was interrupted
         await self._playback_enabled.wait()
 
-        if self.auto_play and len(self.queue) == 0:
-            if len(self.auto_play_tracks) == 0:
-                # If all tracks in the playlist are exhausted
-                self.auto_play_tracks = Music.gen_auto_playlist()
-
-            track = self.auto_play_tracks.popleft()
-            track["elevator_music"] = True
-            self.queue.append(track)
-
         if len(self.queue) > 0:
             await self.play_next(ctx)
+        elif self.auto_play:
+            self.add_autoplay_track()
         else:
             self.idle = True
             await self.start_timeout_timer()
@@ -513,6 +504,17 @@ class Music(commands.Cog):
             self.queue.appendleft(current_track)
 
             self.skip(self._ctx)
+
+    def add_autoplay_track(self):
+        """Adds a single random auto play track to the queue"""
+
+        if len(self.auto_play_tracks) == 0:
+            # If all tracks in the playlist are exhausted or if it does not exist
+            self.auto_play_tracks = Music.gen_auto_playlist()
+
+        track = self.auto_play_tracks.popleft()
+        track["elevator_music"] = True
+        self.queue.append(track)
 
     async def start_timeout_timer(self):
         if self._timeout_task:
@@ -577,9 +579,19 @@ class Music(commands.Cog):
             # Reference:
             # https://discordpy.readthedocs.io/en/stable/faq.html#how-do-i-pass-a-coroutine-to-the-player-s-after-function
             def after_callback(error):
+                if error:
+                    # Report any errors encountered by the audio player
+                    coro_report = ctx.send(f"**An error occurred!**")
+                    fut_report = asyncio.run_coroutine_threadsafe(
+                        coro_report, self.client.loop
+                    )
+
                 coro = self.on_track_complete(ctx)
                 fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
+
                 try:
+                    if error:
+                        fut_report.result()
                     fut.result()
                 except:
                     pass
@@ -616,12 +628,6 @@ class Music(commands.Cog):
 
             # End current unplayable track
             await self.on_track_complete(ctx)
-
-    @_play.error
-    async def play_error(self, ctx, error):
-        await ctx.send(
-            f"There was an error while trying to process your request. Error: {error}"
-        )
 
     def loop(self):
         self.looping_video = not self.looping_video

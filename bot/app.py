@@ -127,6 +127,7 @@ def analytics():
             "top_tracks": prcsd_top_tracks,
             "bot_tracks": prcsd_bot_tracks,
             "usr_tracks": usr_tracks,
+            "all_tracks": analytics_base.get_tracks_by_freq(year, guild_id, limit=-1),
             "usr_dtls": usr_dtls,
             "year": request.args.get("year"),
             "guild": {

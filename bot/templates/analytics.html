@@ -24,20 +24,18 @@
             {% for track in data['top_tracks'] %}
             {% if loop.index % 2 == 1 %}
             <div class="flex justify-start items-start">
-            {% endif %}
-            {% if loop.index % 2 == 0 %}
-            <div class="flex justify-end items-start">
-            {% endif %}
+                {% endif %}
+                {% if loop.index % 2 == 0 %}
+                <div class="flex justify-end items-start">
+                    {% endif %}
                     <div class="md:w-1/12 my-12 me-12 text-center">
                         <h1 class="text-7xl md:text-9xl font-bold">{{ loop.index }}.</h1>
                     </div>
                     <div class="md:w-2/5 flex flex-col justify-center items-center my-12">
                         {% if track['info'] is not none %}
-                        <img class="rounded-xl mb-4 w-full"
-                            src="{{ track['info']['thumbnails'][-1]['url'] }}">
+                        <img class="rounded-xl mb-4 w-full" src="{{ track['info']['thumbnails'][-1]['url'] }}">
                         {% else %}
-                        <img class="rounded-xl mb-4 w-full"
-                            src="{{ url_for('static', filename='placeholder.png') }}">
+                        <img class="rounded-xl mb-4 w-full" src="{{ url_for('static', filename='placeholder.png') }}">
                         {% endif %}
                         <div class="w-full">
                             <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
@@ -58,20 +56,18 @@
             {% for track in data['bot_tracks'] %}
             {% if loop.index % 2 == 1 %}
             <div class="flex justify-start items-start">
-            {% endif %}
-            {% if loop.index % 2 == 0 %}
-            <div class="flex justify-end items-start">
-            {% endif %}
+                {% endif %}
+                {% if loop.index % 2 == 0 %}
+                <div class="flex justify-end items-start">
+                    {% endif %}
                     <div class="md:w-1/12 my-12 me-12 text-center">
                         <h1 class="text-7xl md:text-9xl font-bold">{{ loop.index }}.</h1>
                     </div>
                     <div class="md:w-2/5 flex flex-col justify-center items-center my-12">
                         {% if track['info'] is not none %}
-                        <img class="rounded-xl mb-4 w-full"
-                            src="{{ track['info']['thumbnails'][-1]['url'] }}">
+                        <img class="rounded-xl mb-4 w-full" src="{{ track['info']['thumbnails'][-1]['url'] }}">
                         {% else %}
-                        <img class="rounded-xl mb-4 w-full"
-                            src="{{ url_for('static', filename='placeholder.png') }}">
+                        <img class="rounded-xl mb-4 w-full" src="{{ url_for('static', filename='placeholder.png') }}">
                         {% endif %}
                         <div class="w-full">
                             <h2 class="text-3xl line-clamp-3 font-bold">{{ track['title'] }}</h2>
@@ -85,23 +81,23 @@
 
     {% for usr in data['usr_dtls'] %}
     {% if data['usr_tracks'][usr]|length > 0 %}
-    <section class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
+    <section
+        class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
         <div class="max-w-screen-xl w-full mx-auto">
             <div class="w-full flex flex-col justify-center items-center my-24">
                 <img class="rounded-full mb-2 w-1/2 md:w-1/6" src="{{ data['usr_dtls'][usr]['avatar'] }}">
                 <h1 class="text-3xl md:text-5xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
-                <h2 class="text-xl md:text-2xl">You made {{ data['usr_dtls'][usr]['requests'] }} request{{ 's' if data['usr_dtls'][usr]['requests'] > 1 else '' }} this year</h2>
+                <h2 class="text-xl md:text-2xl">You made {{ data['usr_dtls'][usr]['requests'] }} request{{ 's' if
+                    data['usr_dtls'][usr]['requests'] > 1 else '' }} this year</h2>
             </div>
 
             <div class="w-full flex flex-wrap md:justify-evenly md:items-start md:no-wrap md:space-x-1">
                 {% for track in data['usr_tracks'][usr] %}
                 <div class="w-full md:w-1/4 flex flex-col justify-center items-center my-12">
                     {% if track['info'] is not none %}
-                    <img class="rounded-xl mb-4 w-full"
-                        src="{{ track['info']['thumbnails'][-1]['url'] }}">
+                    <img class="rounded-xl mb-4 w-full" src="{{ track['info']['thumbnails'][-1]['url'] }}">
                     {% else %}
-                    <img class="rounded-xl mb-4 w-full"
-                        src="{{ url_for('static', filename='placeholder.png') }}">
+                    <img class="rounded-xl mb-4 w-full" src="{{ url_for('static', filename='placeholder.png') }}">
                     {% endif %}
                     <div class="w-full">
                         <h2 class="text-xl line-clamp-2 font-bold">{{ track['title'] }}</h2>
@@ -115,12 +111,31 @@
     {% endif %}
     {% endfor %}
 
+    <section class="flex flex-col justify-center items-center bg-[#493638]">
+        <div class="max-w-screen-xl p-4 mb-12">
+            <div class="my-24 text-center">
+                <h1 class="text-4xl md:text-6xl font-bold mb-2">Here's every track played in {{ data['year'] }}</h1>
+                <h2 class="text-lg md:text-2xl">When was the last time you listened to any of these?</h2>
+            </div>
+            <div class="flex flex-wrap">
+                {% for track in data['all_tracks'] %}
+                <div class="md:w-1/2 mb-2">
+                    <a href="https://www.youtube.com/results?search_query={{ track[0] }}" target="_blank">
+                        {{ loop.index }}. {{ track[0] }}
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
     <section class="flex flex-col justify-center items-center bg-gradient-to-br from-[#55030E] to-[#A76E3A] py-24">
         <div class="my-6 text-center">
             <h1 class="text-4xl md:text-6xl font-bold mb-2">That's it!</h1>
             <h2 class="text-xl md:text-2xl">Ready for another round?</h2>
         </div>
-        <button id="btn-redirect" class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4">Let's go!</button>
+        <button id="btn-redirect"
+            class="rounded-3xl border bg-transparent hover:bg-white hover:text-black py-2 px-4">Let's go!</button>
     </section>
 
     <script src="{{ url_for('static', filename='analytics.js') }}"></script>

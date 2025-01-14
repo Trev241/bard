@@ -8,7 +8,6 @@ import validators
 
 from sqlite3 import IntegrityError
 from datetime import datetime
-from requests import get
 from discord.ext import commands
 from bot import logger
 from bot.cogs.music import Music
