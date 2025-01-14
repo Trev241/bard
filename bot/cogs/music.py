@@ -300,10 +300,6 @@ class Music(commands.Cog):
         ctx = request.ctx
         ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
-        if self._ctx is None or self._ctx.voice_client is None:
-            log.error("Failed to play track, bot must be connected to a voice channel.")
-            return
-
         # Qualify the message object of the request
         if request.source == Source.WEB:
             msg = await ctx.send(f'Received on the web player: "{request.query}".')
@@ -311,14 +307,17 @@ class Music(commands.Cog):
         else:
             request.msg = ctx.message
 
+        # Process the request
         if request.query:
-            if validators.url(request.query):
-                info = ydl.extract_info(request.query, download=False, process=False)
-            else:
-                # Avoid downloading by setting process=False to prevent blocking execution
-                info = ydl.extract_info(
-                    f"ytsearch:{request.query}", download=False, process=False
-                )
+            info = ydl.extract_info(
+                (
+                    request.query
+                    if validators.url(request.query)
+                    else f"ytsearch:{request.query}"
+                ),
+                download=False,
+                process=False,
+            )
 
             # If a single track is returned, convert it into a list for consistency in format
             entries = (
@@ -336,6 +335,19 @@ class Music(commands.Cog):
                 await ctx.send(f"Queued {count} tracks")
         else:
             self.add_autoplay_track()
+
+        if self.idle:
+            # Play immediately if the bot is idle or if playing elevator music
+            self.idle = False
+            await self.play_next(self._ctx)
+        elif self.current_track.get("elevator_music", False):
+            # Skip the current track if it's from the auto-playlist
+            self.skip(self._ctx)
+
+        socketio.emit(
+            "playlist_update",
+            {"queue": Music.simplify_queue(list(self.queue))},
+        )
 
     @commands.command(name="play")
     async def play_command(self, ctx, *, query=None):
@@ -357,26 +369,7 @@ class Music(commands.Cog):
             request.msg.created_at,
         )
 
-        # self.queue.append(entry)
-        self.add_to_queue()
-
-    async def add_to_queue(self, track):
-        """Appends a track to the queue and attempts to play it"""
-
-        self.queue.append(track)
-
-        if self.idle:
-            # Play immediately if the bot is idle or if playing elevator music
-            self.idle = False
-            await self.play_next(self._ctx)
-        elif self.current_track.get("elevator_music", False):
-            # Skip the current track if it's from the auto-playlist
-            self.skip(self._ctx)
-
-        socketio.emit(
-            "playlist_update",
-            {"queue": Music.simplify_queue(list(self.queue))},
-        )
+        self.queue.append(entry)
 
     @staticmethod
     def simplify_queue(queue):
@@ -465,8 +458,7 @@ class Music(commands.Cog):
 
                 # Insert the track back at the end of the list if queue is being looped
                 if self.looping_queue:
-                    # self.queue.append(track)
-                    self.add_to_queue(track)
+                    self.queue.append(track)
         elif self.looping_video:
             # If no track was popped from the queue, and the current
             # one needs to loop, then reset the start_from property to 0
@@ -494,8 +486,7 @@ class Music(commands.Cog):
 
         track = self.auto_play_tracks.popleft()
         track["elevator_music"] = True
-        # self.queue.append(track)
-        self.add_to_queue(track)
+        self.queue.append(track)
 
     async def start_timeout_timer(self):
         if self._timeout_task:
