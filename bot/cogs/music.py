@@ -343,12 +343,10 @@ class Music(commands.Cog):
         if not await self.join(ctx):
             return
 
-        await ctx.send("Searching...")
+        await ctx.send("Searching..." if query else "Playing a random song...")
         await self.play(MusicRequest(query, ctx.author, ctx, Source.CMD))
 
     async def queue_entry(self, entry, request: MusicRequest):
-        self.queue.append(entry)
-        ctx = request.ctx
         # Submit analytics data
         self.client.get_cog("Analytics").submit_track(
             request.msg.id,
@@ -359,13 +357,21 @@ class Music(commands.Cog):
             request.msg.created_at,
         )
 
+        # self.queue.append(entry)
+        self.add_to_queue()
+
+    async def add_to_queue(self, track):
+        """Appends a track to the queue and attempts to play it"""
+
+        self.queue.append(track)
+
         if self.idle:
             # Play immediately if the bot is idle or if playing elevator music
             self.idle = False
-            await self.play_next(ctx)
+            await self.play_next(self._ctx)
         elif self.current_track.get("elevator_music", False):
             # Skip the current track if it's from the auto-playlist
-            self.skip(ctx)
+            self.skip(self._ctx)
 
         socketio.emit(
             "playlist_update",
@@ -459,7 +465,8 @@ class Music(commands.Cog):
 
                 # Insert the track back at the end of the list if queue is being looped
                 if self.looping_queue:
-                    self.queue.append(track)
+                    # self.queue.append(track)
+                    self.add_to_queue(track)
         elif self.looping_video:
             # If no track was popped from the queue, and the current
             # one needs to loop, then reset the start_from property to 0
@@ -478,33 +485,6 @@ class Music(commands.Cog):
 
         self.skip_track = 0
 
-    async def play_now(self, audio_url):
-        """
-        Plays an audio source immediately. If there is another audio source
-        currently playing, it is temporarily paused.
-        """
-
-        interrupting_track = {
-            "type": "bot_speech",
-            "url": audio_url,
-            "start_from": 0,
-            "no_looping": True,
-        }
-
-        if self.idle:
-            self.queue.append(interrupting_track)
-            await self.play_next(self._ctx)
-        else:
-            interrupted_track = self.current_track.copy()
-            interrupted_track["start_from"] = int(time.time() - self._track_start_time)
-
-            current_track = self.queue.popleft()
-            self.queue.appendleft(interrupted_track)
-            self.queue.appendleft(interrupting_track)
-            self.queue.appendleft(current_track)
-
-            self.skip(self._ctx)
-
     def add_autoplay_track(self):
         """Adds a single random auto play track to the queue"""
 
@@ -514,7 +494,8 @@ class Music(commands.Cog):
 
         track = self.auto_play_tracks.popleft()
         track["elevator_music"] = True
-        self.queue.append(track)
+        # self.queue.append(track)
+        self.add_to_queue(track)
 
     async def start_timeout_timer(self):
         if self._timeout_task:
