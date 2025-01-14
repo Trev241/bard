@@ -176,7 +176,6 @@ class Music(commands.Cog):
 
         # Load auto-play tracks when the bot connects
         self.auto_play_tracks = Music.gen_auto_playlist()
-
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author
 
@@ -350,16 +349,19 @@ class Music(commands.Cog):
         )
 
     @commands.command(name="play")
+    @is_connected()
     async def play_command(self, ctx, *, query=None):
         # Abort if not in voice channel or query is missing
         if not await self.join(ctx):
             return
 
+        self._ctx = ctx
         await ctx.send("Searching..." if query else "Playing a random song...")
         await self.play(MusicRequest(query, ctx.author, ctx, Source.CMD))
 
     async def queue_entry(self, entry, request: MusicRequest):
         # Submit analytics data
+        self.queue.append(entry)
         self.client.get_cog("Analytics").submit_track(
             request.msg.id,
             request.msg.channel.id,
@@ -368,8 +370,6 @@ class Music(commands.Cog):
             request.author.id,
             request.msg.created_at,
         )
-
-        self.queue.append(entry)
 
     @staticmethod
     def simplify_queue(queue):
