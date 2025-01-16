@@ -467,10 +467,11 @@ class Music(commands.Cog):
         # Wait if playback was interrupted
         await self._playback_enabled.wait()
 
+        if self.auto_play:
+            self.add_autoplay_track()
+
         if len(self.queue) > 0:
             await self.play_next(ctx)
-        elif self.auto_play:
-            self.add_autoplay_track()
         else:
             self.idle = True
             await self.start_timeout_timer()
