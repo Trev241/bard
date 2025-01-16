@@ -522,7 +522,6 @@ class Music(commands.Cog):
         except:
             pass
 
-    @is_connected()
     async def play_next(self, ctx):
         try:
             track_type = self.queue[0].get("type", None)
