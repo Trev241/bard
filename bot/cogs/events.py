@@ -227,7 +227,7 @@ class Events(commands.Cog):
             if (
                 was_on_call
                 and len(channel.members) == 1
-                and is_user_bot(channel.members)
+                and is_user_bot(channel.members[0])
             ):
                 await music_cog.start_timeout_timer()
 
