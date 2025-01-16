@@ -217,7 +217,7 @@ class Events(commands.Cog):
         # Initialize some basic flags
         was_on_call = before.channel is not None and after.channel is None
         now_on_call = after.channel is not None and before.channel is None
-        is_user_bot = lambda member: member.id == self.client.user.id
+        is_user_bot = lambda member: member != None and member.id == self.client.user.id
         music_cog = self.client.get_cog("Music")
 
         if was_on_call or now_on_call:
