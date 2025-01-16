@@ -232,7 +232,9 @@ class Music(commands.Cog):
             except:
                 pass
 
-        ctx.voice_client.play(source, after=after_callback)
+        # Only play the disconnect track if the bot is still live
+        if ctx.voice_client:
+            ctx.voice_client.play(source, after=after_callback)
 
         self.reset()
         socketio.emit("playback_stop")
