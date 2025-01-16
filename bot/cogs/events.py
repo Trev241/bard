@@ -227,7 +227,7 @@ class Events(commands.Cog):
             if (
                 was_on_call
                 and len(channel.members) == 1
-                and is_user_bot(channel.members[0].id)
+                and is_user_bot(channel.members)
             ):
                 await music_cog.start_timeout_timer()
 
@@ -243,7 +243,7 @@ class Events(commands.Cog):
                 ctx = await self.client.get_context(wlcm_msg)
                 await music_cog.join_vc(ctx, channel, member)
 
-            if was_on_call and is_user_bot(member.id):
+            if was_on_call and is_user_bot(member):
                 # Attempt to reset again in case the bot was forcefully disconnected
                 music_cog.reset()
         else:
