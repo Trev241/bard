@@ -211,43 +211,44 @@ class Events(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        if (
-            after.channel is None
-            and len(before.channel.members) == 1
-            and before.channel.members[0].id == self.client.user.id
-        ):
-            await self.client.get_cog("Music").start_timeout_timer()
+    async def on_voice_state_update(
+        self, member, before: discord.VoiceState, after: discord.VoiceState
+    ):
+        # Initialize some basic flags
+        was_on_call = before.channel is not None and after.channel is None
+        now_on_call = after.channel is not None and before.channel is None
+        is_user_bot = lambda member: member.id == self.client.user.id
+        music_cog = self.client.get_cog("Music")
 
-        if before.channel is None and len(after.channel.members) == 1:
-            # Join the call automatically when someone is in the voice channel
-            # The Music cog needs a command context in order to run normally.
-            # As a workaround, we will use the bot to send a message and use
-            # that context instead.
-            # The only difference is that we must specify the voice channel
-            # and the author explicitly. Everything else works the same.
+        if was_on_call or now_on_call:
+            # Handling events where a member left or joined a call
+            channel = before.channel if was_on_call else after.channel
 
-            wlcm_msg = await after.channel.send("I'm here too!")
-            ctx = await self.client.get_context(wlcm_msg)
-            await self.client.get_cog("Music").join_vc(ctx, after.channel, member)
+            if (
+                was_on_call
+                and len(channel.members) == 1
+                and is_user_bot(channel.members[0].id)
+            ):
+                await music_cog.start_timeout_timer()
 
-        if (
-            after.channel != None and self.client.user in after.channel.members
-        ) or self.client.user in before.channel.members:
-            # Notify dashboard of updated call list
-            channel = before.channel if after.channel == None else after.channel
-            socketio.emit(
-                "call_list_update",
-                {
-                    "members": [
-                        {
-                            "avatar": member.avatar.url,
-                            "display_name": member.display_name,
-                        }
-                        for member in channel.members
-                    ]
-                },
-            )
+            if now_on_call and len(channel.members) == 1:
+                # Join the call automatically when someone is in the voice channel
+                # The Music cog needs a command context in order to run normally.
+                # As a workaround, we will use the bot to send a message and use
+                # that context instead.
+                # The only difference is that we must specify the voice channel
+                # and the author explicitly. Everything else works the same.
+
+                wlcm_msg = await channel.send("I'm here too!")
+                ctx = await self.client.get_context(wlcm_msg)
+                await music_cog.join_vc(ctx, channel, member)
+
+            if was_on_call and is_user_bot(member.id):
+                # Attempt to reset again in case the bot was forcefully disconnected
+                music_cog.reset()
+        else:
+            # Handling events where a member transferred between calls
+            pass
 
 
 async def setup(client):
