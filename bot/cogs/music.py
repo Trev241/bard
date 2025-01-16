@@ -92,7 +92,6 @@ class Music(commands.Cog):
 
     def is_connected():
         async def predicate(ctx):
-            log.debug(f"Voice client status: {ctx.voice_client}")
             connected = ctx.voice_client != None
             # The help command utility skips commands for which the predicate check fails.
             # Hence, it is best not to send any messages here to avoid needless repetitive spam
@@ -350,7 +349,6 @@ class Music(commands.Cog):
         )
 
     @commands.command(name="play")
-    @is_connected()
     async def play_command(self, ctx, *, query=None):
         # Abort if not in voice channel or query is missing
         if not await self.join(ctx):
