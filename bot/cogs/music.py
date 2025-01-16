@@ -468,7 +468,11 @@ class Music(commands.Cog):
         # Wait if playback was interrupted
         await self._playback_enabled.wait()
 
-        if self.auto_play and len(self.queue) == 0:
+        if self.auto_play and len(self.queue) == 0 and self.voice_channel:
+            # Add auto-play tracks only if
+            #   1. Auto-play is enabled
+            #   2. The queue is empty
+            #   3. A voice connection still exists
             self.add_autoplay_track()
 
         if len(self.queue) > 0:
