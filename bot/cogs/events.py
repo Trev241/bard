@@ -73,8 +73,8 @@ class Events(commands.Cog):
     async def on_command_error(self, ctx, error: discord.DiscordException):
         full_error = traceback.format_exception(error)
         await ctx.send(
-            f"**An exception has occurred!** (User {ctx.author.display_name} used "
-            f"{ctx.command.qualified_name} with args {ctx.args})\n```py\n{''.join(full_error)}```"
+            f"```py\n{''.join(full_error)}```\n"
+            f"**An exception has occurred!** This incident will be reported.\n"
         )
 
     async def find_anime(self, message: Message):

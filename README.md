@@ -1,64 +1,54 @@
 # Bard
 
-A simple Discord bot built on the [discord.py](https://github.com/Rapptz/discord.py) wrapper that offers basic commands for playing music on a server. Bard also uses an experimental extension that allows it to process vocal instructions. It is intended for private use only.
+A simple music bot built using [discord.py](https://github.com/Rapptz/discord.py). Bard also uses an experimental extension for processing vocal instructions.
+
+Bard was created for personal use. It will not work across multiple guilds.
 
 ## How do I run it?
 
-The bot comes with a launcher that allows you to remotely boot up the bot. However, it is not absolutely necessary and is not the only way to start the bot. You may also manually boot up the bot locally on your system as you normally would, if that is what you prefer.
+Before you begin, make sure you have Python v3.8 or above installed.
 
-### Without the launcher
+1. Download the repository as a zip or clone it.
 
-Before you begin, an installation of Python v3.8 or above is required.
+2. Make sure you are in the project's root directory. This means that you should only see the `bot` folder in your file explorer and not its contents.
 
-1. Download the repository as a zip and extract **only the `bot` folder**. Another way is to clone the repository and then later delete the `launcher` folder.
+3. Launch the shell (command prompt on Windows) in the directory you are currently on. If you are on Windows, enter `cmd` into the address bar in Windows Explorer. After you've launched the shell, enter the command `pip install -r requirements.txt`
 
-2. Open the `bot` folder and launch command prompt (or the shell or whatever equivalent exists on your operating system). In Windows, you can do this by entering `cmd` into the address bar at the top of the File Explorer.
-
-3. In the command prompt window, enter the command below. This command will install the bot's Python dependencies.
-
-```
-pip install -r requirements.txt
-```
-
-4. [Download](https://ffmpeg.org/download.html) and install FFmpeg. Make sure to also set the PATH environment variable to wherever FFmpeg is installed. This will help the bot locate the binary executables when processing audio. The path is _usually_ `C:\ffmpeg\bin`
+4. [Download](https://ffmpeg.org/download.html) and install FFmpeg. You must also set the PATH environment variable to FFmpeg's installation directory, which is _usually_ `C:\ffmpeg\bin`
 
 5. If you do not already have a Discord bot application ready, then [create one](https://discord.com/developers/applications).
 
 6. Save the token generated for your bot. This token essentially acts as a credential for your application to run.
 
-7. In the same directory, create a new file called `.env` and paste the text below in it. Replace the placeholder text with your token as illustrated. and do not forget to remove the "<" and ">" symbols.
+7. In the same directory, create a new file called `.env` and paste this text `TOKEN=<your token here>` into the file. Replace `<your token here>` with your bots's token. Your token must not contain "<" and ">".
 
-```
-TOKEN=<your token here>
-```
+8. In the same shell that we launched in step 3, launch the bot with this command `python -m bot.main`
 
-8. In the same command prompt window opened earlier, enter the command to start the bot.
+You only need to type the last command if you need to restart the bot in the future.
 
-```
-python main.py
-```
+## Features
 
-You only need to type the last command if you need to start the bot in the future.
+### Music
 
-### With the launcher
+Bard can play songs on demand and manages queued songs using an internal playlist. If this queue is exhausted, then Bard will continue playing randomly selected songs automatically until another song is queued to override it.
 
-_This is only a brief guide that assumes you have experience with Docker and Node._
+### Web Dashboard
 
-Firstly, create a `.env` file in the root directory of the repository and paste the following contents
+Bard hosts a web dashboard that is accessible on your machine's address on port 5000. If you are on the same machine that Bard is hosted on, you can access the dashboard on http://127.0.0.1/5000.
 
-```
-TOKEN=<your token here>
-SECRET=<your secret here>
-API_BASE_URL=<host url>
-```
+### Vocal Commands
 
-The bot can only be launched if the secret entered by the user through the browser matches the value of the `SECRET` environment variable.
+**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_
 
-The `API_BASE_URL` should be the URL of your web-app. For example, the `API_BASE_URL` would be `http://localhost:5000` if it was hosted locally on port 5000. This is necessary since the bot will make a POST request to this address whenever it exits.
+You can instruct Bard by issuing your commands vocally while on a call with her. Usually, this would mean first typing out `?join` while on a call and then just saying your commands out aloud. While on call, Bard will try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/).
 
-If your server or host system supports running Docker images, then use the Dockerfile in the repository to create a Docker image. Once the image has been created, run the Docker image and launch the bot from the web-app.
+To ask Bard to play a song, simply say "Play some music". If Bard correctly heard you, she will reply asking you to name the song that you want to play followed by silence. This silence is your cue to speak. After saying the name of your song, wait patiently since transcription can take time. Once the transcription is a success, Bard will look up your query on YouTube and queue the most relevant result. All of this is essentially the same as typing out the `?play` command but instead done vocally with zero keyboard interaction.
 
-In case there is no Docker support, then you can always run the command `npm start` from the `launcher` subdirectory. For this step to work, you must ensure that you have installed all required dependencies, both JavaScript as well as Python, using the commands `npm install` and `pip install -r requirements.txt`.
+You can get a list of all speech to intent patterns by giving the command `?intents`
+
+_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the voice channeln. So to make yourself the priority speaker, just disconnect Bard and invite her to the call yourself using_ `?join`.
+
+Bard also features wake word support, thanks to [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/). This feature is currently disabled though but will work fine if enabled. It can be cumbersome because Bard will receive commands only after you say "OK Bard" every time for each command.
 
 ## List of available commands
 
@@ -84,26 +74,12 @@ The bot's prefix is `?`. Some commands have aliases which have not been mentione
 
 10. `join`
 
-## Receiving vocal instructions
-
-**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discordpy wrapper. They can break at any time!_
-
-You can instruct Bard by issuing your commands vocally while on a call with her. Usually, this would mean first typing out `?join` while on a call and then just saying your commands out aloud. While on call, Bard will try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/).
-
-To ask Bard to play a song, simply say "Play some music". If Bard correctly heard you, she will reply asking you to name the song that you want to play followed by silence. This silence is your cue to speak. After saying the name of your song, wait patiently since transcription can take time. Once the transcription is a success, Bard will look up your query on YouTube and queue the most relevant result. All of this is essentially the same as typing out the `?play` command but instead done vocally with zero keyboard interaction.
-
-You can get a list of all speech to intent patterns by giving the command `?intents`
-
-_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the voice channel's current session. So to make yourself the priority speaker, just disconnect Bard and invite her to the call yourself using_ `?join`.
-
-Bard also features wake word support, thanks to [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/). This feature is currently disabled though but will work fine if enabled. It can be cumbersome because Bard will receive commands only after you say "OK Bard" every time for each command.
-
 ## Known issues
 
-1. The bot cannot play age restricted videos. A temporary workaround is to simply query a reposted version of the video that has not yet been flagged.
+1. The bot cannot play age restricted videos. A temporary workaround is to simply queue a reposted version of the video that has not yet been flagged.
 
-2. Since the bot was created with private use in mind, it does not support use across multiple guilds at once.
+2. It does not support use across multiple guilds at once.
 
-3. The launcher relies on the bot to notify it whenever it exits. This can be problematic if the bot unexpectedly crashes and fails to make a POST request to the server.
+3. Some dependencies update with breaking changes. There's nothing that can be done about it other than freezing the requirements at a specific version. You may do this if you wish in your clone/fork of the repository. I've chosen not to since YT especially can undergo huge API changes which will require a library update anyways and some inevitable rewrite.
 
-4. Some dependencies update with breaking changes. There's nothing that can be done about it other than freezing the requirements at a specific version. You may do this if you wish in your clone/fork of the repository. I've chosen not to since YT especially can undergo huge API changes which will require a library update anyways and some inevitable rewrite.
+4. At times, YouTube may flag you as a bot. This will prevent you from being able to queue any songs. You can resolve this issue by updating yt-dlp or providing a cookie file.

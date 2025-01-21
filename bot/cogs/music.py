@@ -340,10 +340,10 @@ class Music(commands.Cog):
         if self.idle:
             # Play immediately if the bot is idle or if playing elevator music
             self.idle = False
-            await self.play_next(self._ctx)
+            await self.play_next(ctx)
         elif self.current_track.get("elevator_music", False):
             # Skip the current track if it's from the auto-playlist
-            self.skip(self._ctx)
+            self.skip(ctx)
 
         socketio.emit(
             "playlist_update",

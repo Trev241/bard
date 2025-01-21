@@ -18,3 +18,6 @@ Flask_SocketIO
 watchdog
 GitPython
 validators
+pytest
+pytest-asyncio
+pytest-mock
