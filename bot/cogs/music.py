@@ -356,9 +356,8 @@ class Music(commands.Cog):
         if not await self.join(ctx):
             return
 
-        self._ctx = ctx
         await ctx.send("Searching..." if query else "Playing a random song...")
-        await self.play(MusicRequest(query, ctx.author, ctx, Source.CMD))
+        await self.play(MusicRequest(query, ctx.author, self._ctx, Source.CMD))
 
     async def queue_entry(self, entry, request: MusicRequest):
         # Submit analytics data
