@@ -7,6 +7,7 @@ import traceback
 
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
+from discord.ext.commands.errors import CommandNotFound
 from bs4 import BeautifulSoup
 from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL, socketio
 import discord.ext
@@ -71,6 +72,10 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error: discord.DiscordException):
+        if isinstance(error, CommandNotFound):
+            # Ignore CommandNotFound errors
+            return
+
         full_error = traceback.format_exception(error)
         await ctx.send(
             f"```py\n{''.join(full_error)}```\n"
