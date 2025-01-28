@@ -76,9 +76,10 @@ class Events(commands.Cog):
             # Ignore CommandNotFound errors
             return
 
-        full_error = traceback.format_exception(error)
+        full_error = "".join(traceback.format_exception(error))
+        log.error(full_error)
         await ctx.send(
-            f"```py\n{''.join(full_error)}```\n"
+            f"```py\n{full_error[:1900]}```\n"
             f"**An exception has occurred!** This incident will be reported.\n"
         )
 

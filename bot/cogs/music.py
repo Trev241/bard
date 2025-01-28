@@ -183,14 +183,17 @@ class Music(commands.Cog):
             await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
             # await voice_channel.connect()
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://localhost:4040/api/tunnels") as r:
-                    if r.status == 200:
-                        js = await r.json()
-                        self.public_url = js["tunnels"][0]["public_url"]
-                        await ctx.send(
-                            f"Visit {self.public_url}/dashboard to manage me!"
-                        )
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("http://127.0.0.1:4040/api/tunnels") as r:
+                        if r.status == 200:
+                            js = await r.json()
+                            self.public_url = js["tunnels"][0]["public_url"]
+                            await ctx.send(
+                                f"Visit {self.public_url}/dashboard to manage me!"
+                            )
+            except:
+                log.warning("Failed to fetch public URL.")
 
             # Prepare assistant
             assistant_base = self.client.get_cog("Assistant")
@@ -332,8 +335,12 @@ class Music(commands.Cog):
 
             if count == 1:
                 await ctx.send(f"Queued track")
-            else:
+            elif count > 1:
                 await ctx.send(f"Queued {count} tracks")
+            else:
+                # Return if no tracks were found
+                await ctx.send(f'No results for "{request.query}" were found.')
+                return
         else:
             self.add_autoplay_track()
 
@@ -590,9 +597,9 @@ class Music(commands.Cog):
             )
             await self.now(ctx)
         except yt_dlp.DownloadError as e:
-            traceback.print_exc()
-            await ctx.send(f"An error occurred while trying to download the track. {e}")
-            await ctx.send("Continuing to next song if available...")
+            full_error = "".join(traceback.format_exception(e))
+            log.error(full_error)
+            await ctx.send(f"**An exception as occurred!** {full_error[:1900]}")
 
             # End current unplayable track
             await self.on_track_complete(ctx)
