@@ -40,7 +40,10 @@ class Utils(commands.Cog):
 
     @commands.command()
     async def ping_stop(self, ctx):
+        # Reset everything
         self.is_pinging = False
+        self.ping_who = {}
+
         if self.pinging_task:
             self.pinging_task.cancel()
 
