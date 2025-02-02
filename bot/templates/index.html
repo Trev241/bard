@@ -1,26 +1,70 @@
 {% extends "base.html" %}
 {% block title %}Bard{% endblock %}
 {% block content %}
-<div class="max-w-screen-xl mx-auto">
-  <section class="flex flex-col justify-evenly h-screen p-4">
-    <div class="flex flex-col">
-      <h1 class="text-7xl md:text-9xl font-bold text-[#DB9E3D] tracking-[.15em] mb-2">BARD
-      </h1>
-      <div
-        class="text-2xl md:text-4xl max-w-max [text-wrap:balance] bg-clip-text bg-gradient-to-r from-slate-200/60 to-50% tracking-wider to-slate-200 mb-12">
-        Your cosmic assistant for <span
-          class="text-[#D8C6AD] inline-flex flex-col h-[calc(theme(fontSize.2xl)*theme(lineHeight.tight))] md:h-[calc(theme(fontSize.4xl)*theme(lineHeight.tight))] overflow-hidden">
-          <ul class="block animate-text-slide text-left leading-tight [&_li]:block">
-            <li>Music</li>
-            <li>Jokes</li>
-            <li>Games</li>
-            <li>Utility</li>
-            <li aria-hidden="true">Music</li>
-          </ul>
-        </span>
+<div class="bg-[#FBFBEE] text-black overflow-x-hidden">
+  <section class="flex flex-col justify-evenly h-screen">
+    <div class="scroll"></div>
+
+    <div>
+      <div class="max-w-screen-xl mx-auto">
+        <div class="flex items-center justify-between">
+          <div class="md:h-[50vh] flex flex-col justify-center">
+            <p class="header-item text-xl md:text-3xl ms-1 md:ms-2 mb-2">
+              <span class="header-item-word">Meet</span>
+              <span class="header-item-word">the</span>
+              <span class="header-item-word">ultimate</span>
+              <span class="header-item-word">cosmic</span>
+              <span class="header-item-word">assistant</span>
+            </p>
+            <div class="text-[0px] font-faculty-glyphic font-bold">
+              <span class="header-item leading-none header-item-title text-8xl md:text-[9rem]">B</span>
+              <span class="header-item leading-none header-item-title text-8xl md:text-[9rem]">A</span>
+              <span class="header-item leading-none header-item-title text-8xl md:text-[9rem]">R</span>
+              <span class="header-item leading-none header-item-title text-8xl md:text-[9rem]">D</span>
+            </div>
+          </div>
+
+          <div class="md:w-1/4">
+            <img class="hidden md:block md:w-full" id="img-main"
+              src="{{ url_for('static', filename='Bard_Astronaut_29.png') }}">
+          </div>
+        </div>
       </div>
-      <!-- <p class="tracking-[.4em] text-sm italic">SCROLL TO LEARN MORE</p> -->
     </div>
+
+    <div
+      class="abilities-container w-full bg-[#0F0C14] text-white font-manrope font-bold flex relative items-center overflow-x-hidden overflow-y-hidden">
+      <div class="abilities relative whitespace-nowrap p-0 m-0">
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">music</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">utility</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">games</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">fun</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">youtube</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">jokes</span>
+        <span class="p-0 md:text-8xl text-4xl inline-block me-4 ability">league</span>
+      </div>
+    </div>
+
+    <div class="scroll"></div>
   </section>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/gsap.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/Flip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/Observer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/ScrollToPlugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/Draggable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/MotionPathPlugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/EaselPlugin.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/TextPlugin.min.js"></script>
+
+<!-- RoughEase, ExpoScaleEase and SlowMo are all included in the EasePack file -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/EasePack.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.7/dist/CustomEase.min.js"></script>
+
+<script src="{{ url_for('static', filename='helper-methods.js')}}"></script>
+<script src="{{ url_for('static', filename='index-styles.js') }}"></script>
+
 {% endblock %}

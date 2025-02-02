@@ -5,6 +5,7 @@ module.exports = {
     extend: {
       fontFamily: {
         "faculty-glyphic": ['"faculty-glyphic"', "sans-serif"],
+        manrope: ['"manrope"', "sans-serif"],
       },
       keyframes: {
         "text-slide": {

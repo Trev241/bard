@@ -6,3 +6,8 @@
   font-family: "faculty-glyphic";
   src: url("/static/fonts/FacultyGlyphic-Regular.ttf");
 }
+
+@font-face {
+  font-family: "manrope";
+  src: url("/static/fonts/Manrope-Regular.ttf");
+}
