@@ -23,6 +23,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
       repeat: -1,
       speed: 1.5 + i * 0.5,
       reversed: false,
+      paused: true,
       paddingRight: parseFloat(gsap.getProperty(links[0], "marginRight", "px")),
     });
   });
@@ -78,6 +79,11 @@ document.addEventListener("DOMContentLoaded", (event) => {
   gsap.fromTo(
     ".abilities-container",
     { width: "0%", padding: "2rem 0" },
-    { width: "100%", padding: "2rem", delay: 2 }
+    {
+      width: "100%",
+      padding: "2rem",
+      delay: 2,
+      onComplete: () => loops.forEach((tl) => tl.resume()),
+    }
   );
 });
