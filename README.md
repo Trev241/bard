@@ -34,7 +34,7 @@ Bard can play songs on demand and manages queued songs using an internal playlis
 
 ### Web Dashboard
 
-Bard hosts a web dashboard that is accessible on your machine's address on port 5000. If you are on the same machine that Bard is hosted on, you can access the dashboard on http://127.0.0.1/5000.
+Bard hosts a web dashboard that is accessible on your machine's address on port 5000. If you are on the same machine that Bard is hosted on, you can access the dashboard on http://127.0.0.1:5000.
 
 ### Vocal Commands
 
