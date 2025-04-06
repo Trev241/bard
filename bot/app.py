@@ -201,4 +201,4 @@ def verify_signature(payload_body, signature):
 
 
 def run_flask(debug=True):
-    socketio.run(app, use_reloader=False, debug=debug)
+    socketio.run(app, use_reloader=False, debug=debug, allow_unsafe_werkzeug=True)
