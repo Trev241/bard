@@ -21,7 +21,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 @app.context_processor
 def inject_client_info():
-    with open("bot/head-commit.json") as fp:
+    with open("bot/resources/dumps/head-commit.json") as fp:
         head_commit = json.load(fp)
 
     client_avatar = client.user.avatar.url
@@ -188,7 +188,7 @@ def get_usr_dtls(user_id):
 
 
 def _save_commit(payload):
-    with open("bot/head-commit.json", "w") as fp:
+    with open("bot/resources/dumps/head-commit.json", "w") as fp:
         json.dump(payload["head_commit"], fp)
     logger.info("Successfully saved head commit.")
 

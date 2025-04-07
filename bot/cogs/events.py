@@ -148,7 +148,7 @@ class Events(commands.Cog):
             message = await channel.fetch_message(payload.message_id)
 
             try:
-                await message.attachments[0].save("cookies.txt")
+                await message.attachments[0].save("bot/secrets/cookies.txt")
                 await channel.send(f"Updated cookies to [this]({message.jump_url})!")
             except Exception as e:
                 log.error(f"Failed to save uploaded cookies: {e}")

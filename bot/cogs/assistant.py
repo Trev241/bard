@@ -29,9 +29,9 @@ log = logging.getLogger(__name__)
 class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after", "quiet_after"])
 
-    with open("bot/assistant/Bard Assistant.yml") as stream:
+    with open("bot/resources/assistant/Bard Assistant.yml") as stream:
         INTENTS = yaml.safe_load(stream)
-    with open("bot/assistant/dialogs.json") as fp:
+    with open("bot/resources/assistant/dialogs.json") as fp:
         DIALOGS = json.load(fp)
 
     def __init__(self, client):
@@ -77,7 +77,7 @@ class Assistant(commands.Cog):
         try:
             self.porcupine = pvporcupine.create(
                 access_key=os.getenv("PV_ACCESS_KEY"),
-                keyword_paths=[f"bot/assistant/{porcupine_mdl}"],
+                keyword_paths=[f"bot/resources/assistant/{porcupine_mdl}"],
             )
         except Exception as e:
             self._services_available = False
@@ -105,7 +105,7 @@ class Assistant(commands.Cog):
         try:
             self.rhino = pvrhino.create(
                 access_key=os.getenv("PV_ACCESS_KEY"),
-                context_path=f"bot/assistant/{rhino_mdl}",
+                context_path=f"bot/resources/assistant/{rhino_mdl}",
                 # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
             )
         except Exception as e:
@@ -210,9 +210,11 @@ class Assistant(commands.Cog):
     async def get_audio_from_text(self, message):
         """Converts and returns an Opus-ready audio source from the given message"""
 
-        self._tts_engine.save_to_file(message, "bot/assistant/reply.wav")
+        self._tts_engine.save_to_file(message, "bot/resources/assistant/reply.wav")
         self._tts_engine.runAndWait()
-        return await discord.FFmpegOpusAudio.from_probe("bot/assistant/reply.wav")
+        return await discord.FFmpegOpusAudio.from_probe(
+            "bot/resources/assistant/reply.wav"
+        )
 
     async def transcribe(self, prompt):
         """Enables the transcription service and returns the transcription of the shortest phrase captured"""
@@ -439,7 +441,7 @@ class Assistant(commands.Cog):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
             if self._query == None:
                 # AssemblyAI
-                audio_path = "bot/assistant/incoming.wav"
+                audio_path = "bot/resources/assistant/incoming.wav"
                 with open(audio_path, "wb") as fp:
                     fp.write(audio.get_wav_data())
 

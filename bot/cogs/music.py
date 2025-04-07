@@ -1,6 +1,3 @@
-import discord
-import yt_dlp
-
 import os
 import json
 import time
@@ -9,11 +6,14 @@ import asyncio
 import datetime
 import traceback
 import logging
+from collections import deque
+
+import discord
+import yt_dlp
 import validators
 import aiohttp
-
 from discord.ext import commands, voice_recv
-from collections import deque
+
 from bot import EMBED_COLOR_THEME, socketio
 from bot.models import MusicRequest, Source
 
@@ -35,7 +35,7 @@ class Music(commands.Cog):
 
     YDL_OPTIONS = {
         "format": "bestaudio",
-        "cookiefile": "bot/cookies.txt",
+        "cookiefile": "bot/secrets/cookies.txt",
         "verbose": False,
         "quiet": False,
         "logger": YDL_LOGGER,
@@ -48,7 +48,7 @@ class Music(commands.Cog):
     def __init__(self, client):
         # Convert newline endings in the cookies file
         try:
-            with open("bot/cookies.txt", "r") as f:
+            with open("bot/secrets/cookies.txt", "r") as f:
                 cookies_data = f.read()
 
             cookies_data = (
@@ -57,7 +57,7 @@ class Music(commands.Cog):
                 .replace("\n", os.linesep)
             )
 
-            with open("bot/cookies.txt", "w", newline="") as f:
+            with open("bot/secrets/cookies.txt", "w", newline="") as f:
                 f.write(cookies_data)
         except Exception as e:
             log.error(f"Failed to convert newline endings in cookies: {e}")
@@ -224,7 +224,7 @@ class Music(commands.Cog):
         assistant_base.disable(ctx)
 
         source = await discord.FFmpegOpusAudio.from_probe(
-            "bot/sounds/bard.disconnect.ogg"
+            "bot/resources/sounds/bard.disconnect.ogg"
         )
 
         def after_callback(error):
@@ -401,7 +401,7 @@ class Music(commands.Cog):
 
         ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
         processed_entry = ydl.process_ie_result(info, download=False)
-        with open("bot/yt-dlp.json", "w") as f:
+        with open("bot/resources/dumps/yt-dlp.json", "w") as f:
             json.dump(ydl.sanitize_info(processed_entry), fp=f, indent=2)
 
         url = None

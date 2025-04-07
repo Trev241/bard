@@ -46,7 +46,7 @@ class RestartHandler(FileSystemEventHandler):
 
 if __name__ == "__main__":
     command = "python -m bot.main"
-    target_file = "bot/head-commit.json"
+    target_file = "bot/resources/dumps/head-commit.json"
 
     # Set up the watchdog observer
     event_handler = RestartHandler(command=command, target_file=target_file)

@@ -2,7 +2,6 @@ import discord
 import asyncio
 import logging
 import os
-import sys
 import threading
 
 # Importing cogs
@@ -15,7 +14,7 @@ import bot.cogs.analytics as analytics
 
 from dotenv import load_dotenv
 from bot import client, log_handlers, log_formatter
-from bot.app import run_flask
+from bot.dashboard.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
