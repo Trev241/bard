@@ -38,7 +38,7 @@ Bard hosts a web dashboard that is accessible on your machine's address on port 
 
 ### Vocal Commands
 
-**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_
+**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_.
 
 You can instruct Bard by issuing your commands vocally while on a call with her. Usually, this would mean first typing out `?join` while on a call and then just saying your commands out aloud. While on call, Bard will try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/).
 
@@ -46,7 +46,7 @@ To ask Bard to play a song, simply say "Play some music". If Bard correctly hear
 
 You can get a list of all speech to intent patterns by giving the command `?intents`
 
-_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the voice channeln. So to make yourself the priority speaker, just disconnect Bard and invite her to the call yourself using_ `?join`.
+_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the voice channel. So to make yourself the priority speaker, just disconnect Bard and invite her to the call yourself using_ `?join`.
 
 Bard also features wake word support, thanks to [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/). This feature is currently disabled though but will work fine if enabled. It can be cumbersome because Bard will receive commands only after you say "OK Bard" every time for each command.
 
