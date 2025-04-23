@@ -3,13 +3,13 @@
 {% block content %}
 <div class="relative min-h-screen">
   <div id="backgroundImg" class="absolute inset-0 bg-cover bg-center bg-fixed" style="
-      background-image: url('{{ client_dtls.current_track.thumbnails[-1].url }}'); 
+      background-image: url('{{ client_dtls.curr_song.thumbnail }}'); 
       filter: blur(24px) brightness(25%); 
       background-attachment: fixed;
   ">
   </div>
   <!-- <div id="backgroundImg" style="
-      background-image: url('{{ client_dtls.current_track.thumbnails[-1].url }}'); 
+      background-image: url('{{ client_dtls.curr_song.thumbnail }}'); 
       filter: blur(24px) brightness(25%); 
       height: 100vh;
       background-position: center;
@@ -24,23 +24,21 @@
       <div class="flex flex-col col-span-8 justify-center items-center mb-12">
         <div class="flex flex-wrap rounded w-full justify-between mb-4">
           <img id="nowPlayingImg" class="rounded-xl p-4 object-fit md:w-1/2"
-            src="{{ client_dtls.current_track.thumbnails[-1].url if client_dtls.current_track != None else url_for('static', filename='placeholder.png') }}" />
+            src="{{ client_dtls.curr_song.thumbnail }}" />
           <div class="flex-grow w-1/2 flex flex-col justify-center p-4">
-            <p class="font-extralight text-sm tracking-widest mb-2">{{ 'NOW PLAYING' if client_dtls.current_track !=
+            <p class="font-extralight text-sm tracking-widest mb-2">{{ 'NOW PLAYING' if client_dtls.curr_song !=
               None else 'When you play a song, you\'ll see it here.' }}</p>
             <div class="line-clamp-3 mb-2">
-              <a id="nowPlayingTtl" href="{{client_dtls.current_track.webpage_url}}"
+              <a id="nowPlayingTtl" href="{{client_dtls.curr_song.webpage}}"
                 class="text-4xl font-bold overflow-hidden hover:underline">
-                {{client_dtls.current_track.title if client_dtls.current_track
-                != None else ''}}
+                {{ client_dtls.curr_song.title }}
               </a>
             </div>
             <p id="requestedBy" class="font-light text-lg">
-              {{ 'on' if client_dtls.current_track != None else ''
-              }}
-              <span id="nowPlayingReq">{{client_dtls.current_track.requester.display_name if
-                client_dtls.current_track else ''}}</span>{{ '\'s request' if client_dtls.current_track != None else ''
-              }}
+              {{ 'on' if client_dtls.curr_song }}
+              <span id="nowPlayingReq">
+                {{ client_dtls.curr_song.requester.display_name }}
+              </span>{{ '\'s request' }}
             </p>
           </div>
         </div>
@@ -66,18 +64,18 @@
             </tr>
           </thead>
           <tbody id="nextUp">
-            {% for track in client_dtls.queue[1:] %}
+            {% for song in client_dtls.queue[1:] %}
             <tr class="mb-6">
               <td class="pe-4 py-4 hidden md:table-cell">{{ loop.index }}.</td>
               <td class="pb-4">
                 <div class="flex items-center">
-                  <img class="w-36 md:w-52 rounded" src="{{ track.thumbnail }}" />
+                  <img class="w-36 md:w-52 rounded" src="{{ song.thumbnail }}" />
                   <div class="line-clamp-2">
-                    <h3 class="text-md font-semibold px-4">{{track.title}}</h3>
+                    <h3 class="text-md font-semibold px-4">{{song.title}}</h3>
                   </div>
                 </div>
               </td>
-              <td class="hidden font-extralight md:table-cell px-4 text-center">{{ track.duration }}</td>
+              <td class="hidden font-extralight md:table-cell px-4 text-center">{{ song.duration }}</td>
             </tr>
             {% endfor %}
             {% if client_dtls.queue|length <= 1 %} <tr class="italic">
@@ -98,7 +96,7 @@
         <div>
           <div class="hidden md:block">
             <p class="font-light text-xs">Now playing</p>
-            <h1 id="pcNowPlaying" class="tracking-wider line-clamp-1">{{ client_dtls.current_track.title }}</h1>
+            <h1 id="pcNowPlaying" class="tracking-wider line-clamp-1">{{ client_dtls.curr_song.title }}</h1>
           </div>
         </div>
 

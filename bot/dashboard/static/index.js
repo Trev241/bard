@@ -62,6 +62,8 @@ const updatePlaylist = (data) => {
 };
 
 const updatePlayingNow = (data) => {
+  console.log("Update playing now", data);
+
   const imgElement = document.getElementById("nowPlayingImg");
   const ttlElement = document.getElementById("nowPlayingTtl");
   const spnElement = document.getElementById("requestedBy");
@@ -177,4 +179,7 @@ socket.on("playback_state", (state) => {
   if (state.hasOwnProperty("looping")) setLooping(state.looping);
 });
 
+// socket.onAny((event, ...args) => {
+//   console.log(`📨 Received event: ${event}`, args);
+// });
 // socket.on("call_list_update", updateCallMembers);

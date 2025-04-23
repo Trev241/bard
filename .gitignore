@@ -168,3 +168,4 @@ logs
 stats.db
 stats.db-journal
 head-commit.json
+entries.json

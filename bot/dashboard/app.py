@@ -21,8 +21,14 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 @app.context_processor
 def inject_client_info():
-    with open("bot/resources/dumps/head-commit.json") as fp:
-        head_commit = json.load(fp)
+    head_commit = {}
+    try:
+        fp = open("bot/resources/dumps/head-commit.json")
+    except:
+        logger.warning(f"Failed to open head-commit.json")
+    else:
+        with fp:
+            head_commit = json.load(fp)
 
     client_avatar = client.user.avatar.url
     return {"client_avatar": client_avatar, "head_commit": head_commit}
@@ -36,16 +42,15 @@ def index():
 
 @app.route("/dashboard")
 def dashboard():
-    music = client.get_cog("Music")
+    music: Music = client.get_cog("Music")
 
-    client_dtls = {
-        "current_track": music.current_track,
-        "queue": Music.simplify_queue(music.queue),
-        "playback_paused": music.is_playback_paused(),
-        "voice_channel": music.voice_channel,
-    }
+    client_dtls = {}
+    if music.playback_manager:
+        client_dtls["curr_song"] = music.playback_manager.curr_song
+        client_dtls["queue"] = list(music.playback_manager.queue)
+        client_dtls["playback_paused"] = music.is_playback_paused()
 
-    if client_dtls["current_track"]:
+    if client_dtls.get("curr_song"):
         return render_template("dashboard.html", client_dtls=client_dtls)
     else:
         return render_template("banner.html")

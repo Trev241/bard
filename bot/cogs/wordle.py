@@ -56,7 +56,7 @@ class Wordle(commands.Cog):
             size=(Wordle.LETTER_SIZE * self.size, Wordle.LETTER_SIZE),
             color=(0, 0, 0, 0),
         )
-        font = ImageFont.truetype("bot/fonts/DroidSansMono.ttf", 45)
+        font = ImageFont.truetype("bot/resources/fonts/DroidSansMono.ttf", 45)
         draw = ImageDraw.Draw(image)
 
         letters = {}

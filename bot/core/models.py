@@ -14,6 +14,19 @@ class Source(Enum):
 class MusicRequest:
     query: str
     author: User
-    ctx: Context
-    source: Source
+    ctx: Context = None
+    source: Source = None
     msg: Message = None
+
+
+@dataclass
+class Song:
+    title: str
+    duration: str
+    requester: User
+    ie_result: dict
+    auto_play: bool = False
+    url: str = None
+    thumbnail: str = None
+    webpage: str = None
+    start_at: int = 0

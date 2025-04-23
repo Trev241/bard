@@ -1,49 +1,22 @@
 import os
-import json
-import time
-import random
 import asyncio
-import datetime
-import traceback
 import logging
-from collections import deque
+import itertools
 
-import discord
-import yt_dlp
-import validators
-import aiohttp
 from discord.ext import commands, voice_recv
+import discord
 
-from bot import EMBED_COLOR_THEME, socketio
-from bot.models import MusicRequest, Source
+from bot import EMBED_COLOR_THEME, socketio, public_url
+from bot.core.models import MusicRequest, Source, Song
+from bot.core.playback import PlaybackManager
+from bot.cogs.assistant import Assistant
+from bot.core.events import events, SONG_START, SONG_COMPLETE
 
 log = logging.getLogger(__name__)
 
 
 class Music(commands.Cog):
-    IDLE_TIMEOUT_INTERVAL = 300
-
-    FFMPEG_OPTIONS = {
-        "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-        "options": "-vn",
-    }
-
-    YDL_LOGGER = logging.getLogger("yt-dlp")
-    YDL_LOGGER.setLevel(logging.DEBUG)
-    YDL_LOG_HANDLER = logging.StreamHandler()
-    YDL_LOGGER.addHandler(YDL_LOG_HANDLER)
-
-    YDL_OPTIONS = {
-        "format": "bestaudio",
-        "cookiefile": "bot/secrets/cookies.txt",
-        "verbose": False,
-        "quiet": False,
-        "logger": YDL_LOGGER,
-    }
-
-    AUTO_PLAYLIST = (
-        "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
-    )
+    IDLE_TIMEOUT_INTERVAL = 120
 
     def __init__(self, client):
         # Convert newline endings in the cookies file
@@ -62,8 +35,13 @@ class Music(commands.Cog):
         except Exception as e:
             log.error(f"Failed to convert newline endings in cookies: {e}")
 
-        self.client = client
-        self._playback_enabled = asyncio.Event()
+        self.client: discord.Client = client
+        self.playback_manager: PlaybackManager = None
+        self.voice_client: discord.VoiceProtocol = None
+
+        # Register event listeners
+        events.on(SONG_START, self.on_song_start)
+        events.on(SONG_COMPLETE, self.on_song_complete)
 
         self.load_handlers()
         self.reset()
@@ -72,27 +50,12 @@ class Music(commands.Cog):
         """Resets the state of the bot."""
 
         # Bot state
-        self.tts = True
-        self.idle = True
-        self.skip_track = False
-        self.looping_video = False
-        self.looping_queue = False
-        self.auto_play = True
-        self.auto_play_tracks = []
-        self.voice_channel = None
-        self.public_url = None
-
-        self.current_track = None
+        self.ctx = None
         self._timeout_task = None
-        self._ctx = None
-        self._track_start_time = None
-        self._playback_enabled.set()
-
-        self.queue = deque()
 
     def is_connected():
-        async def predicate(ctx):
-            connected = ctx.voice_client != None
+        async def predicate(ctx: commands.Context):
+            connected = ctx.voice_client is not None
             # The help command utility skips commands for which the predicate check fails.
             # Hence, it is best not to send any messages here to avoid needless repetitive spam
             # if not connected:
@@ -102,16 +65,14 @@ class Music(commands.Cog):
         return commands.check(predicate)
 
     def load_handlers(self):
-        el = asyncio.get_event_loop()
-
         @socketio.on("playback_track_request")
         def handle_track_request(json=None):
-            task = el.create_task(
+            task = self.client.loop.create_task(
                 self.play(
                     MusicRequest(
                         query=json["query"],
                         author=self.client.user,
-                        ctx=self._ctx,
+                        ctx=self.ctx,
                         source=Source.WEB,
                     )
                 )
@@ -121,31 +82,31 @@ class Music(commands.Cog):
         @socketio.on("playback_instruct_play")
         def handle_play(json=None):
             # Create an async task to play/pause the current track
-            is_playing = self._ctx.voice_client.is_playing()
+            is_playing = self.ctx.voice_client.is_playing()
             if is_playing:
-                self.pause(self._ctx)
+                self.pause(self.ctx)
             else:
-                self.resume(self._ctx)
+                self.resume(self.ctx)
             on_handle_complete()
 
         @socketio.on("playback_instruct_skip")
         def handle_skip(json=None):
             # Create an async task to skip the current track
-            self.skip(self._ctx)
+            self.skip(self.ctx)
             on_handle_complete()
 
         @socketio.on("playback_instruct_loop")
         def handle_loop(json=None):
             # Create an async task to loop the current track
             self.loop()
-            on_handle_complete({"is_looping": self.looping_video})
+            on_handle_complete({"is_looping": self.playback_manager.looping})
 
         def on_handle_complete(data=None):
             socketio.emit("playback_instruct_done", data)
 
     @commands.command(aliases=["connect"])
-    async def join(self, ctx):
-        self._ctx = ctx
+    async def join(self, ctx: commands.Context):
+        self.ctx = ctx
         if ctx.author.voice is None:
             await ctx.send("Please join a voice channel!")
             return False
@@ -153,29 +114,13 @@ class Music(commands.Cog):
         await self.join_vc(ctx)
         return True
 
-    @staticmethod
-    def gen_auto_playlist():
-        """
-        Returns a shuffled playlist of tracks to play automatically when the bot is idle
-        """
-
-        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
-        info = ydl.extract_info(Music.AUTO_PLAYLIST, download=False, process=False)
-        auto_play_tracks = deque()
-        for entry in info["entries"]:
-            auto_play_tracks.append(entry)
-        random.shuffle(auto_play_tracks)
-
-        return auto_play_tracks
-
-    async def join_vc(self, ctx, voice_channel=None, author=None):
+    async def join_vc(self, ctx: commands.Context, voice_channel=None, author=None):
         """
         Instructs the bot to join the voice channel. If voice_channel and author
         are not provided, they will be taken from the context instead.
         """
 
         # Load auto-play tracks when the bot connects
-        self.auto_play_tracks = Music.gen_auto_playlist()
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author
 
@@ -183,20 +128,11 @@ class Music(commands.Cog):
             await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
             # await voice_channel.connect()
 
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get("http://127.0.0.1:4040/api/tunnels") as r:
-                        if r.status == 200:
-                            js = await r.json()
-                            self.public_url = js["tunnels"][0]["public_url"]
-                            await ctx.send(
-                                f"Visit {self.public_url}/dashboard to manage me!"
-                            )
-            except:
-                log.warning("Failed to fetch public URL.")
+            if public_url:
+                await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
 
             # Prepare assistant
-            assistant_base = self.client.get_cog("Assistant")
+            assistant_base: Assistant = self.client.get_cog("Assistant")
             if not assistant_base.enabled:
                 # Enable the assistant
                 assistant_connected = assistant_base.enable(ctx)
@@ -204,22 +140,21 @@ class Music(commands.Cog):
                 # Let the user know at least once if voice commands are enabled or not
                 if assistant_connected:
                     await ctx.send(f"Hey there! I can take voice commands too.")
+
+            # Initialize PlaybackManager
+            self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
         else:
             await ctx.voice_client.move_to(voice_channel)
 
         # Cache context
-        self._ctx = ctx
-        self.voice_channel = voice_channel
+        self.ctx = ctx
+        self.voice_client = ctx.voice_client
         await self.start_timeout_timer()
 
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
-    async def disconnect(self, ctx):
-        # Temporarily disable some flags to allow the bot to exit
-        self.looping_video = self.auto_play = False
-        self.queue.clear()
-
-        ctx.voice_client.stop()
+    async def disconnect(self, ctx: commands.Context):
+        self.playback_manager.stop()
         assistant_base = self.client.get_cog("Assistant")
         assistant_base.disable(ctx)
 
@@ -239,70 +174,81 @@ class Music(commands.Cog):
         if ctx.voice_client:
             ctx.voice_client.play(source, after=after_callback)
 
-        self.reset()
-        socketio.emit("playback_stop")
+        socketio.start_background_task(socketio.emit, "playback_stop")
+        log.info("Disconnected...")
+
+    def on_song_complete(self, song: Song):
+        self.start_timeout_timer()
+
+    def on_song_start(self, song: Song):
+        socketio.emit(
+            "playing_track",
+            {
+                "title": song.title,
+                "thumbnail": song.thumbnail,
+                "requester": song.requester.display_name,
+                "webpage_url": song.webpage,
+                "queue": Music.simplify_queue(self.playback_manager.queue),
+            },
+        )
+
+        self._timeout_task.cancel()
+        task = self.client.loop.create_task(self.send_song_dtls(song))
+        try:
+            task.result()
+        except:
+            pass
 
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
     async def now(self, ctx):
-        try:
-            # It is possible that the current audio playing is not a music track
+        await self.send_song_dtls(ctx)
 
-            track = self.current_track
-            requester = track["requester"]
-            footer_text = (
-                f"Played automatically by me. This song will be skipped as soon as you play something else!"
-                if track["requester"] == self.client.user
-                else f"Song requested by {requester.display_name}"
-            )
+    async def send_song_dtls(self, song: Song = None, ctx: commands.Context = None):
+        if ctx is None:
+            ctx = self.ctx
 
-            embed = discord.Embed.from_dict(
-                {
-                    "title": track["title"],
-                    "description": f'[Click here for video link]({track["webpage_url"]})',
-                    "thumbnail": {
-                        "url": track["thumbnail"],
+        if song is None:
+            song = self.playback_manager.now()
+
+        requester = song.requester
+        footer_text = (
+            f"Played automatically by me. This song will be skipped as soon as you play something else!"
+            if song.requester == self.client.user
+            else f"Song requested by {requester.display_name}"
+        )
+
+        embed = discord.Embed.from_dict(
+            {
+                "title": song.title,
+                "description": f"[Link to video]({song.webpage})",
+                "thumbnail": {
+                    "url": song.thumbnail,
+                },
+                "color": 15844367,
+                "fields": [
+                    {
+                        "name": "Duration",
+                        "value": song.duration,
+                        "inline": True,
                     },
-                    "color": 15844367,
-                    "fields": [
-                        {
-                            "name": "Duration",
-                            "value": track["duration"],
-                            "inline": True,
-                        },
-                        {
-                            "name": "Loop",
-                            "value": "Yes" if self.looping_video else "No",
-                            "inline": True,
-                        },
-                        {
-                            "name": "Next",
-                            "value": (
-                                self.queue[1]["title"]
-                                if len(self.queue) > 1
-                                else (
-                                    track["title"]
-                                    if self.looping_queue
-                                    else "(End of queue)"
-                                )
-                            ),
-                            "inline": True,
-                        },
-                    ],
-                    "footer": {
-                        "text": footer_text,
-                        "icon_url": requester.display_avatar.url,
+                    {
+                        "name": "Loop",
+                        "value": "Yes" if self.playback_manager.looping else "No",
+                        "inline": True,
                     },
-                }
-            )
+                ],
+                "footer": {
+                    "text": footer_text,
+                    "icon_url": requester.display_avatar.url,
+                },
+            }
+        )
 
-            await ctx.send(embed=embed)
-        except:
-            pass
+        await ctx.send(embed=embed)
 
     async def play(self, request: MusicRequest):
         ctx = request.ctx
-        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
 
         # Qualify the message object of the request
         if request.source == Source.WEB:
@@ -311,471 +257,173 @@ class Music(commands.Cog):
         else:
             request.msg = ctx.message
 
-        # Process the request
-        if request.query:
-            info = ydl.extract_info(
-                (
-                    request.query
-                    if validators.url(request.query)
-                    else f"ytsearch:{request.query}"
-                ),
-                download=False,
-                process=False,
-            )
+        results = self.playback_manager.search_and_add(request)
 
-            # If a single track is returned, convert it into a list for consistency in format
-            entries = (
-                info["entries"] if info.get("_type", None) == "playlist" else [info]
-            )
-            count = 0
-            for entry in entries:
-                entry["requester"] = request.author
-                await self.queue_entry(entry, request)
-                count += 1
-
-            if count == 1:
-                await ctx.send(f"Queued track")
-            elif count > 1:
-                await ctx.send(f"Queued {count} tracks")
-            else:
-                # Return if no tracks were found
-                await ctx.send(f'No results for "{request.query}" were found.')
-                return
+        if len(results) == 1:
+            await ctx.send(f"✅\tQueued {results[0].title}")
+        elif len(results) > 1:
+            await ctx.send(f"✅\tQueued {len(results)} tracks")
         else:
-            self.add_autoplay_track()
+            # Return if no tracks were found
+            await ctx.send(f'No results for "{request.query}" were found.')
+            return
 
-        if self.idle:
-            # Play immediately if the bot is idle or if playing elevator music
-            self.idle = False
-            await self.play_next(ctx)
-        elif self.current_track.get("elevator_music", False):
-            # Skip the current track if it's from the auto-playlist
-            self.skip(ctx)
+        # Submitting analytics
+        for song in results:
+            self.client.get_cog("Analytics").submit_track(
+                request.msg.id,
+                request.msg.channel.id,
+                request.msg.guild.id,
+                song.title,
+                request.author.id,
+                request.msg.created_at,
+            )
 
+        await self.playback_manager.play()
         socketio.emit(
             "playlist_update",
-            {"queue": Music.simplify_queue(list(self.queue))},
+            {"queue": Music.simplify_queue(list(self.playback_manager.queue))},
         )
 
     @commands.command(name="play")
-    async def play_command(self, ctx, *, query=None):
-        # Abort if not in voice channel or query is missing
+    async def play_command(self, ctx: commands.Context, *, query: str = None):
         if not await self.join(ctx):
             return
 
-        await ctx.send("Searching..." if query else "Playing a random song...")
-        await self.play(MusicRequest(query, ctx.author, self._ctx, Source.CMD))
+        if ctx.voice_client is not None and self.playback_manager is None:
+            await ctx.send(
+                "🛑\tPlease do **not** spam commands until I join the call. "
+                "Your request was ignored. Submit it again once I've connected."
+            )
+            return
 
-    async def queue_entry(self, entry, request: MusicRequest):
-        # Submit analytics data
-        self.queue.append(entry)
-        self.client.get_cog("Analytics").submit_track(
-            request.msg.id,
-            request.msg.channel.id,
-            request.msg.guild.id,
-            entry["title"],
-            request.author.id,
-            request.msg.created_at,
-        )
+        await ctx.send("🔎\tSearching..." if query else "🎲\tPlaying a random song...")
+        await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
 
     @staticmethod
-    def simplify_queue(queue):
+    def simplify_queue(queue: list[Song]):
         return [
             {
-                "title": track["title"],
-                "thumbnail": track["thumbnails"][-1]["url"],
-                "duration": (
-                    track["duration"]
-                    if type(track["duration"]) is str and ":" in track["duration"]
-                    else str(datetime.timedelta(seconds=int(track["duration"])))
-                ),
+                "title": song.title,
+                "thumbnail": song.thumbnail,
+                "duration": song.duration,
             }
-            for track in queue
+            for song in queue
         ]
-
-    def create_track(self, info):
-        """
-        Processes the incomplete entry and returns a dict containing a subset of
-        the track's original attributes and some other properties set by the cog.
-        """
-
-        ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
-        processed_entry = ydl.process_ie_result(info, download=False)
-        with open("bot/resources/dumps/yt-dlp.json", "w") as f:
-            json.dump(ydl.sanitize_info(processed_entry), fp=f, indent=2)
-
-        url = None
-        abr = 0
-
-        for format in processed_entry["formats"]:
-            if float(format.get("abr", 0) or 0) > abr:
-                # Save the URL with the highest audio bit rate
-                url = format["url"]
-
-        track = {}
-        for k, v in processed_entry.items():
-            track[k] = v
-
-        track["title"] = processed_entry["title"]
-        track["url"] = url
-        track["duration"] = str(datetime.timedelta(seconds=int(info["duration"])))
-        track["thumbnail"] = processed_entry["thumbnails"][0]["url"]
-        track["webpage_url"] = processed_entry["webpage_url"]
-        track["requester"] = info.get("requester", self.client.user)
-        # Retaining specific properties
-        track["start_from"] = info.get("start_from", 0)
-        track["elevator_music"] = info.get("elevator_music", False)
-
-        return track
-
-    async def on_track_complete(self, ctx):
-        """
-        Callback for when a track has completed playing either by exhausting its source or through interruption.
-        The decision on how to manage the queue is based on the current state of the bot.
-
-        If the bot is looping a single track, then the track at the front of the queue is not removed.
-        If the bot is skipping a track, then the track at the front of the queue is removed
-        If the bot is looping the queue, then the track at the front of the queue is removed and inserted at the rear.
-
-        If both flags are true (i.e. loop single as well as queue), then the task of looping the single track takes
-        higher priority over looping the queue as one would expect intuitively. In other words, the next track
-        will not be played unless looping for the current track has been turned off. This is because the track
-        at the front of the queue is not popped.
-
-        At the end of the callback, if there are still items in the queue, then play_next() is called to play
-        the next track at the head of the queue.
-        """
-
-        # Pop tracks from the playback queue if
-        # 1. The current track is not set to loop
-        # 2. Skip count is more than zero
-        # 3. Force skip requested
-        if (
-            not self.looping_video
-            or self.skip_track > 0
-            or self.current_track.get("force_skip", False)
-        ):
-            # Skip the number of tracks specified by limit
-            # The value 1 is given by default to allow the queue to progress if a track ends naturally
-            # i.e. it was neither skipped nor interrupted
-            limit = min(max(1, self.skip_track), len(self.queue))
-
-            for _ in range(limit):
-                track = self.queue.popleft()
-
-                # Insert the track back at the end of the list if queue is being looped
-                if self.looping_queue:
-                    self.queue.append(track)
-        elif self.looping_video:
-            # If no track was popped from the queue, and the current
-            # one needs to loop, then reset the start_from property to 0
-            self.queue[0]["start_from"] = 0
-
-        # Wait if playback was interrupted
-        await self._playback_enabled.wait()
-
-        if self.auto_play and len(self.queue) == 0 and self.voice_channel:
-            # Add auto-play tracks only if
-            #   1. Auto-play is enabled
-            #   2. The queue is empty
-            #   3. A voice connection still exists
-            self.add_autoplay_track()
-
-        if len(self.queue) > 0:
-            await self.play_next(ctx)
-        else:
-            self.idle = True
-            await self.start_timeout_timer()
-
-        self.skip_track = 0
-
-    def add_autoplay_track(self):
-        """Adds a single random auto play track to the queue"""
-
-        if len(self.auto_play_tracks) == 0:
-            # If all tracks in the playlist are exhausted or if it does not exist
-            self.auto_play_tracks = Music.gen_auto_playlist()
-
-        track = self.auto_play_tracks.popleft()
-        track["elevator_music"] = True
-        self.queue.append(track)
 
     async def start_timeout_timer(self):
         if self._timeout_task:
             self._timeout_task.cancel()
-        self._timeout_task = asyncio.get_running_loop().create_task(self.idle_timeout())
+        self._timeout_task = self.client.loop.create_task(self.idle_timeout())
 
     async def idle_timeout(self):
-        # Timeout countdown
         await asyncio.sleep(Music.IDLE_TIMEOUT_INTERVAL)
 
         try:
-            voice_client = self._ctx.voice_client
+            voice_client = self.ctx.voice_client
             alone = (
                 voice_client
                 and len(voice_client.channel.members) == 1
                 and voice_client.channel.members[0].id == self.client.user.id
             )
-            if alone or self.idle:
-                embed = discord.Embed.from_dict(
-                    {
-                        "title": "Bard is still in development!",
-                        "description": "Please be patient if you encounter any bugs. You may also raise them as issues on the [bot's repository](https://github.com/Trev241/bard/issues)",
-                        "color": EMBED_COLOR_THEME,
-                    }
-                )
-                await self._ctx.send(embed=embed)
+            idle = len(self.playback_manager.queue) == 0
+
+            if alone or idle:
+                await self.ctx.send("👋\tSee you later!")
 
                 # It is necessary to pass all required arguments to the function in order for it to execute
                 # Calling self.disconnect() alone without any parameters does not actually invoke the function
                 # This could be because of some pre-processing done by the decorators attached.
-                await self.disconnect(self._ctx)
+                await self.disconnect(self.ctx)
         except:
             pass
 
-    async def play_next(self, ctx):
-        try:
-            track_type = self.queue[0].get("type", None)
-            self.current_track = self.queue[0]
-            ffmpeg_opts = {}
-
-            if track_type == "bot_speech":
-                self.current_track = self.queue[0]
-            else:
-                # IE most likely stands for Incomplete Entry (actually stands for Information Extractor)
-                # Process IE and probe audio
-                if track_type is None:
-                    # If the track was already processed, the same result will be returned
-                    self.current_track = self.create_track(self.queue[0])
-
-                # Adjust FFmpeg options to start
-                start_from = self.current_track.get("start_from", 0)
-                ffmpeg_opts = Music.FFMPEG_OPTIONS.copy()
-                ffmpeg_opts["options"] = (
-                    ffmpeg_opts.get("options", "") + f" -ss {start_from}"
-                )
-
-            source = await discord.FFmpegOpusAudio.from_probe(
-                self.current_track["url"], **ffmpeg_opts
-            )
-
-            # Reference:
-            # https://discordpy.readthedocs.io/en/stable/faq.html#how-do-i-pass-a-coroutine-to-the-player-s-after-function
-            def after_callback(error):
-                if error:
-                    # Report any errors encountered by the audio player
-                    coro_report = ctx.send(f"**An error occurred!**")
-                    fut_report = asyncio.run_coroutine_threadsafe(
-                        coro_report, self.client.loop
-                    )
-
-                coro = self.on_track_complete(ctx)
-                fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
-
-                try:
-                    if error:
-                        fut_report.result()
-                    fut.result()
-                except:
-                    pass
-
-            ctx.voice_client.play(source, after=after_callback)
-
-            # Set start time to current time minus time seeked ahead
-            start_from = self.current_track.get("start_from", 0)
-            self._track_start_time = time.time() - start_from
-
-            socketio.emit(
-                "playing_track",
-                {
-                    "title": self.current_track["title"],
-                    "thumbnail": self.current_track["thumbnails"][-1]["url"],
-                    "requester": self.current_track["requester"].display_name,
-                    "webpage_url": self.current_track["webpage_url"],
-                    "queue": Music.simplify_queue(list(self.queue)),
-                },
-            )
-            await self.now(ctx)
-        except yt_dlp.DownloadError as e:
-            full_error = "".join(traceback.format_exception(e))
-            log.error(full_error)
-            await ctx.send(f"**An exception as occurred!** {full_error[:1900]}")
-
-            # End current unplayable track
-            await self.on_track_complete(ctx)
-        except Exception as e:
-            full_error = traceback.format_exception(e)
-            await ctx.send(
-                f"**An exception has occurred!** \n```py\n{''.join(full_error)}```"
-            )
-
-            # End current unplayable track
-            await self.on_track_complete(ctx)
-
     def loop(self):
-        self.looping_video = not self.looping_video
-        socketio.emit("playback_state", {"looping": self.looping_video})
+        self.playback_manager.loop()
+        socketio.emit("playback_state", {"looping": self.playback_manager.looping})
 
     @commands.group(name="loop", invoke_without_command=True)
     @is_connected()
-    async def _loop(self, ctx):
+    async def _loop(self, ctx: commands.Context):
         self.loop()
-        await ctx.send(f'{"Looping" if self.looping_video else "Stopped looping"}')
+        await ctx.send(
+            f'{"Looping" if self.playback_manager.looping else "Stopped looping"}'
+        )
 
     @_loop.command(name="queue", aliases=["all"])
     @is_connected()
-    async def loop_queue(self, ctx):
-        self.looping_queue = not self.looping_queue
+    async def loop_queue(self, ctx: commands.Context):
+        self.playback_manager.loop_queue()
         await ctx.send(
-            f'{"Looping queue from current track" if self.looping_queue else "Stopped looping queue"}'
+            f'{"Looping queue from current track" if self.playback_manager.looping_queue else "Stopped looping queue"}'
         )
 
     @commands.command(name="queue", aliases=["q"])
     @is_connected()
-    async def show_queue(self, ctx):
+    async def show_queue(self, ctx: commands.Context):
+        song_count = len(self.playback_manager.queue)
+        description = f"{song_count} song(s) queued."
+        small_queue = list(itertools.islice(self.playback_manager.queue, 0, 10))
+        if song_count > 10:
+            description += " Showing the first ten songs."
+
         embed = discord.Embed.from_dict(
             {
-                "title": f'Bard\'s Queue{" (Looping)" if self.looping_queue else ""}',
-                "description": f"{len(self.queue)} track(s) queued.",
+                "title": f'Bard\'s Queue{" (Looping)" if self.playback_manager.looping_queue else ""}',
+                "description": description,
                 "color": EMBED_COLOR_THEME,
                 "fields": [
                     {
-                        "name": f'{i + 1}. {track["title"]}',
-                        "value": (
-                            str(
-                                datetime.timedelta(
-                                    seconds=(
-                                        track["duration"]
-                                        if track["duration"] != None
-                                        else 0
-                                    )
-                                )
-                            )
-                            if type(track["duration"]) is not str
-                            else track["duration"]
-                        ),
+                        "name": f"{i + 1}. {song.title}",
+                        "value": song.duration,
                         "inline": False,
                     }
-                    for i, track in enumerate(self.queue)
+                    for i, song in enumerate(small_queue)
                 ],
             }
         )
 
         await ctx.send(embed=embed)
 
-    def skip(self, ctx, count=1):
-        self.skip_track = count
-        assistant_base = self.client.get_cog("Assistant")
-        restart_assistant = assistant_base.enabled
-
-        # Stops the player. Since a callback has already been registered for the current track, there is no need
-        # to do anything else. The queue will continue playing as expected.
-        ctx.voice_client.stop()
-
-        # Experimental feature in VoiceRecvClient, calling stop() will
-        # halt both listening and playback services. There is currently no
-        # way to halt one service separately from the other. A temporary workaround
-        # is to restart the assistant if it was initially enabled
-        if restart_assistant:
-            # Only restart the assistant if it was initially enabled
-            assistant_base.restore(ctx)
+    def skip(self, ctx: commands.Context, count: int = 1):
+        self.playback_manager.skip(count)
 
     @commands.command(name="skip")
     @is_connected()
-    async def _skip(self, ctx, count: int = 1):
+    async def _skip(self, ctx: commands.Context, count: int = 1):
         self.skip(ctx, count)
 
     @commands.command()
     @is_connected()
-    async def remove(self, ctx, index):
-        index = int(index) - 1
+    async def remove(self, ctx: commands.Context, index):
+        self.playback_manager.remove(index)
 
-        if 0 <= index and index < len(self.queue):
-            if index == 0:
-                self.skip(ctx)
-            else:
-                track = self.queue[index]
-                del self.queue[index]
-                await ctx.send(f'Removed {track["title"]}')
-        else:
-            await ctx.send(f"There is no track with that index")
-
-    def pause(self, ctx):
-        """
-        Pause playback normally. You cannot play anything else until
-        the ongoing track has completed
-        """
-
-        ctx.voice_client.pause()
+    def pause(self, ctx: commands.Context):
+        self.playback_manager.pause()
         socketio.emit("playback_state", {"playing": ctx.voice_client.is_playing()})
 
     @commands.command(name="pause")
     @is_connected()
-    async def _pause(self, ctx):
+    async def _pause(self, ctx: commands.Context):
         self.pause(ctx)
 
-    async def suspend(self, ctx):
-        """
-        Pauses playback by suspending the music playback cycle
-        until a command to resume has been given.
+    async def suspend(self, ctx: commands.Context):
+        self.playback_manager.suspend()
 
-        This is different from a regular pause. Use this if you
-        want to play a different track while also allowing you
-        to resume from the old track once you are finished.
-        """
-
-        if len(self.queue) == 0 or not self._playback_enabled.is_set():
-            return
-
-        """
-        Pausing playback works by creating a copy of the current
-        track playing. The only difference being is an additional
-        property that is added stating where to begin from. Hence,
-        giving the illusion of resuming the track from where it 
-        was last paused.
-
-        The current track is then skipped and the playback cycle
-        will continue by queuing the copied version of the track 
-        next once the interrupt event has been set.
-
-        To counter the quirk of loops not popping the current track,
-        an additional property is added to the paused track
-        strictly instructing it to forcefully skip even if the track is
-        looping
-        """
-
-        curr_track_copy = self.current_track.copy()
-        curr_track_copy["start_from"] = int(time.time() - self._track_start_time)
-        curr_track_orig = self.queue.popleft()
-        curr_track_orig["force_skip"] = True
-        self.queue.appendleft(curr_track_copy)
-        self.queue.appendleft(curr_track_orig)
-
-        self._playback_enabled.clear()
-        self.skip(ctx)
-
-    def resume(self, ctx):
-        ctx.voice_client.resume()
+    def resume(self, ctx: commands.Context):
+        self.playback_manager.resume()
         socketio.emit("playback_state", {"playing": ctx.voice_client.is_playing()})
 
     @commands.command(name="resume")
     @is_connected()
-    async def _resume(self, ctx):
-        """
-        Resumes playback
-        """
-
+    async def _resume(self, ctx: commands.Context):
         self.resume(ctx)
 
     def remove_suspension(self):
-        """
-        Resume playback of a suspended track
-        Not to be confused with resume
-        """
-        self._playback_enabled.set()
+        self.playback_manager.remove_suspension()
 
     def is_playback_paused(self):
-        return not self._playback_enabled.is_set()
+        return not self.playback_manager.playback_enabled.is_set()
 
 
 async def setup(client):

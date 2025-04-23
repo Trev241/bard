@@ -1,13 +1,14 @@
+from datetime import datetime
+from pathlib import Path
 import sys
 import os
 import logging
-from datetime import datetime
-from pathlib import Path
+import requests
 
-import discord
-from discord.ext import commands
 from flask import Flask
 from flask_socketio import SocketIO
+from discord.ext import commands
+import discord
 
 client = commands.Bot(command_prefix="?", intents=discord.Intents.all())
 app = Flask(
@@ -16,6 +17,15 @@ app = Flask(
     static_folder=os.path.join("dashboard", "static"),
 )
 socketio = SocketIO(app)
+
+public_url = "http://127.0.0.1:5000"
+try:
+    r = requests.get("http://127.0.0.1:4040/api/tunnels")
+    if r.status_code == 200:
+        js = r.json()
+        public_url = js["tunnels"][0]["public_url"]
+except:
+    pass
 
 # Constants
 EMBED_COLOR_THEME = 15844367

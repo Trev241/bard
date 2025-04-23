@@ -1,10 +1,15 @@
-import discord
+import os
 import asyncio
 import logging
-import os
 import threading
 
-# Importing cogs
+from dotenv import load_dotenv
+from discord.ext import tasks
+import discord
+
+from bot import client, log_handlers, log_formatter, public_url, socketio
+from bot.dashboard.app import run_flask
+from bot.cogs.music import Music
 import bot.cogs.music as music
 import bot.cogs.utils as utils
 import bot.cogs.events as events
@@ -12,9 +17,6 @@ import bot.cogs.wordle as wordle
 import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
 
-from dotenv import load_dotenv
-from bot import client, log_handlers, log_formatter
-from bot.dashboard.app import run_flask
 
 # LOADING ENVIRONMENT VARIABLES
 load_dotenv()
@@ -33,6 +35,34 @@ async def load_extensions():
         await cogs[i].setup(client)
 
 
+@tasks.loop(seconds=1)
+async def check_restart_signal():
+    signal_file = "bot/restart_signal.flag"
+    music_cog: Music = client.get_cog("Music")
+
+    def remove_signal_file():
+        try:
+            os.remove(signal_file)
+        except Exception as e:
+            pass
+
+    # Remove the signal file if it was not successfully removed after last reboot
+    remove_signal_file()
+
+    while True:
+        if os.path.exists(signal_file):
+            remove_signal_file()
+
+            # Send an alert message
+            if music_cog.voice_client:
+                message = "🚧\tI am scheduled to restart soon."
+                if public_url:
+                    message += f" [Learn more]({public_url}/maintenance)."
+                await music_cog.ctx.send(message)
+
+        await asyncio.sleep(1)
+
+
 async def main():
     discord.utils.setup_logging(
         handler=log_handlers["strm"],
@@ -43,6 +73,12 @@ async def main():
 
     async with client:
         await load_extensions()
+
+        @client.listen()
+        async def on_ready():
+            check_restart_signal.start()
+
+        logger.info(f"Socket IO async-mode: {socketio.async_mode}")
         await client.start(token=TOKEN)
 
 
