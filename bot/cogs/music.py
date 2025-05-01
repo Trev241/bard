@@ -107,19 +107,7 @@ class Music(commands.Cog):
     @commands.command(aliases=["connect"])
     async def join(self, ctx: commands.Context):
         self.ctx = ctx
-
-        try:
-            await self.join_vc(ctx)
-            return True
-        except ConnectionError as e:
-            await ctx.send("Please join a voice channel")
-            log.error(f"Could not connect to voice: {e}")
-        except Exception as e:
-            await ctx.send(
-                f"There was an error trying to connect to the voice channel: {e}"
-            )
-
-        return False
+        await self.join_vc(ctx)
 
     async def join_vc(self, ctx: commands.Context, voice_channel=None, author=None):
         """
