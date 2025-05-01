@@ -54,7 +54,7 @@ async def check_restart_signal():
             remove_signal_file()
 
             # Send an alert message
-            if music_cog.voice_client:
+            if music_cog.voice_client and music_cog.ctx:
                 message = "🚧\tI am scheduled to restart soon."
                 if public_url:
                     message += f" [Learn more]({public_url}/maintenance)."
