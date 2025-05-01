@@ -107,7 +107,16 @@ class Music(commands.Cog):
     @commands.command(aliases=["connect"])
     async def join(self, ctx: commands.Context):
         self.ctx = ctx
-        await self.join_vc(ctx)
+
+        try:
+            await self.join_vc(ctx)
+            return True
+        except asyncio.TimeoutError as e:
+            await ctx.send("❗\tConnection timed out. Please try again later")
+        except ConnectionRefusedError:
+            await ctx.send("⚠️\tPlease join a voice channel")
+
+        return False
 
     async def join_vc(self, ctx: commands.Context, voice_channel=None, author=None):
         """
@@ -116,41 +125,30 @@ class Music(commands.Cog):
         """
 
         if voice_channel is None and ctx.author.voice is None:
-            await ctx.send("⚠️\tPlease join a voice channel.")
+            raise ConnectionRefusedError
 
         # Load auto-play tracks when the bot connects
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author
 
         if ctx.voice_client is None:
-            try:
-                await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
-                # await voice_channel.connect()
-                if public_url:
-                    await ctx.send(
-                        f"😊\tCheck out {public_url}/dashboard to manage me!"
-                    )
+            await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
+            # await voice_channel.connect()
+            if public_url:
+                await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
 
-                # Prepare assistant
-                assistant_base: Assistant = self.client.get_cog("Assistant")
-                if not assistant_base.enabled:
-                    # Enable the assistant
-                    assistant_connected = assistant_base.enable(ctx)
+            # Prepare assistant
+            assistant_base: Assistant = self.client.get_cog("Assistant")
+            if not assistant_base.enabled:
+                # Enable the assistant
+                assistant_connected = assistant_base.enable(ctx)
 
-                    # Let the user know at least once if voice commands are enabled or not
-                    if assistant_connected:
-                        await ctx.send(f"Hey there! I can take voice commands too.")
+                # Let the user know at least once if voice commands are enabled or not
+                if assistant_connected:
+                    await ctx.send(f"Hey there! I can take voice commands too.")
 
-                # Initialize PlaybackManager
-                self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
-            except asyncio.TimeoutError as e:
-                await ctx.send(
-                    f"❗\tConnection timed out. Please try again later.\n```{e}```"
-                )
-            except Exception as e:
-                await ctx.send(
-                    f"❗\tThere was an error trying to join the call.\n```{e}```"
-                )
+            # Initialize PlaybackManager
+            self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
         else:
             await ctx.voice_client.move_to(voice_channel)
 
@@ -295,22 +293,18 @@ class Music(commands.Cog):
 
     @commands.command(name="play")
     async def play_command(self, ctx: commands.Context, *, query: str = None):
-        try:
-            await self.join_vc(ctx)
+        if not await self.join(ctx):
+            return
 
-            if ctx.voice_client is not None and self.playback_manager is None:
-                await ctx.send(
-                    "🛑\tPlease do **not** spam commands until I join the call. "
-                    "Your request was ignored. Submit it again once I've connected."
-                )
-                return
-
+        if ctx.voice_client is not None and self.playback_manager is None:
             await ctx.send(
-                "🔎\tSearching..." if query else "🎲\tPlaying a random song..."
+                "🛑\tPlease do **not** spam commands until I join the call. "
+                "Your request was ignored. Submit it again once I've connected."
             )
-            await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
-        except ConnectionError:
-            ctx.send("Please join a voice channel")
+            return
+
+        await ctx.send("🔎\tSearching..." if query else "🎲\tPlaying a random song...")
+        await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
 
     @staticmethod
     def simplify_queue(queue: list[Song]):
