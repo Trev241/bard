@@ -17,23 +17,28 @@ Before you begin, make sure you have Python v3.8 or above installed.
 7. In the same directory, create a new file called `.env` and paste this text `TOKEN=<your token here>` into the file. Replace `<your token here>` with your bots's token. Your token must not contain "<" and ">".
 8. In the terminal that we launched before in step 3, start the bot by typing this command: `python -m bot.main`. You only need to type the last command again if you need to restart the bot in the future.
 
+### Optional steps
+
+1. In the same terminal from before, enter this command: `cd bot/dashboard && npm install && cd ../..` This will install the dependencies needed for the bot's web dashboard.
+2. Run the bot by typing: `python -m bot.main`.
+
 You can also launch the bot by typing this command instead: `python bot/watcher.py`. This script uses watchdog to monitor JSON files dumped by the bot whenever it receives a webhook request from GitHub. Its useful in cases where a reboot is needed whenenver the repository is updated. You can change the target file being monitored to whatever you like.
 
 ## Features
 
 ### Music
 
-Bard can play songs and playlists on demand and manages all queued songs using an internal playlist. If this queue is exhausted, then a randomly selected song is played automatically until another song is queued to override it. All music played on Bard is streamed from YouTube through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+Bard can play songs on demand and manages all queued songs using an internal queue. If this queue is exhausted, a randomly selected song is played automatically until another one is queued to override it. All music played on Bard is streamed from YouTube through [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ### Web Dashboard
 
-Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access the dashboard at http://127.0.0.1:5000.
+Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
 
 ### Vocal Commands
 
 **_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_.
 
-Bard uses wake word support, thanks to [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/), to avoid misinterpreting normal speech as commands. You must always wake up Bard first by saying "Okay, Bard" before you issue any other command.
+Bard uses a wake words supported by [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/) to avoid misinterpreting normal speech as commands. You must always wake Bard up first by saying "Okay, Bard" before you issue any other command.
 
 You can instruct Bard by issuing your commands vocally while on a call with her. First type `?join` while on a call and then say out loud "Okay, Bard". If Bard heard you correctly, you will hear a reply. Bard will then try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/). You can get a list of all speech to intent patterns by typing out the command `?intents`.
 
