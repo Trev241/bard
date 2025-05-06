@@ -276,6 +276,17 @@ class Music(commands.Cog):
 
         if results is None:
             await ctx.send(f"🎲\tPlaying a random song.")
+
+            # Submitting analytics
+            for song in results:
+                self.client.get_cog("Analytics").submit_track(
+                    request.msg.id,
+                    request.msg.channel.id,
+                    request.msg.guild.id,
+                    song.title,
+                    request.author.id,
+                    request.msg.created_at,
+                )
         else:
             if len(results) == 1:
                 await ctx.send(f"✅\tQueued {results[0].title}")
@@ -285,17 +296,6 @@ class Music(commands.Cog):
                 # Return if no tracks were found
                 await ctx.send(f'No results for "{request.query}" were found.')
                 return
-
-        # Submitting analytics
-        for song in results:
-            self.client.get_cog("Analytics").submit_track(
-                request.msg.id,
-                request.msg.channel.id,
-                request.msg.guild.id,
-                song.title,
-                request.author.id,
-                request.msg.created_at,
-            )
 
         await self.playback_manager.play()
         socketio.emit(
