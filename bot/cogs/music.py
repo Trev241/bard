@@ -115,6 +115,8 @@ class Music(commands.Cog):
             await ctx.send("❗\tConnection timed out. Please try again later")
         except ConnectionRefusedError:
             await ctx.send("⚠️\tPlease join a voice channel")
+        except Exception as e:
+            await ctx.send(f"❗\tFailed to connect to voice: {e}")
 
         return False
 
@@ -132,7 +134,14 @@ class Music(commands.Cog):
         ctx.author = author or ctx.author
 
         if ctx.voice_client is None:
-            await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
+            voice_client = await voice_channel.connect(
+                timeout=10, cls=voice_recv.VoiceRecvClient
+            )
+
+            if not voice_client.is_connected():
+                voice_client.disconnect()
+                raise Exception("Connection failed.")
+
             # await voice_channel.connect()
             if public_url:
                 await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
@@ -208,7 +217,7 @@ class Music(commands.Cog):
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
     async def now(self, ctx):
-        await self.send_song_dtls(ctx)
+        await self.send_song_dtls(ctx=ctx)
 
     async def send_song_dtls(self, song: Song = None, ctx: commands.Context = None):
         if ctx is None:
@@ -265,11 +274,13 @@ class Music(commands.Cog):
 
         results = self.playback_manager.search_and_add(request)
 
+        if results is None:
+            await ctx.send(f"🎲\tPlaying a random song.")
         if len(results) == 1:
             await ctx.send(f"✅\tQueued {results[0].title}")
         elif len(results) > 1:
             await ctx.send(f"✅\tQueued {len(results)} tracks")
-        else:
+        elif len(results) == 0:
             # Return if no tracks were found
             await ctx.send(f'No results for "{request.query}" were found.')
             return
@@ -303,7 +314,7 @@ class Music(commands.Cog):
             )
             return
 
-        await ctx.send("🔎\tSearching..." if query else "🎲\tPlaying a random song...")
+        await ctx.send("🔎\tSearching...")
         await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
 
     @staticmethod
