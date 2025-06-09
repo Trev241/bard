@@ -11,12 +11,22 @@ from bot.core.models import MusicRequest, Source, Song
 from bot.core.playback import PlaybackManager
 from bot.cogs.assistant import Assistant
 from bot.core.events import events, SONG_START, SONG_COMPLETE
+from bot.core.exceptions import (
+    UserNotInVoice,
+    AlreadyConnected,
+    AlreadyConnecting,
+    ConnectionFailed,
+)
 
 log = logging.getLogger(__name__)
 
 
 class Music(commands.Cog):
     IDLE_TIMEOUT_INTERVAL = 120
+
+    VOICE_DISCONNECTED = "DISCONNECTED"
+    VOICE_CONNECTED = "CONNECTED"
+    VOICE_CONNECTING = "CONNECTING"
 
     def __init__(self, client):
         # Convert newline endings in the cookies file
@@ -38,6 +48,7 @@ class Music(commands.Cog):
         self.client: discord.Client = client
         self.playback_manager: PlaybackManager = None
         self.voice_client: discord.VoiceProtocol = None
+        self.voice_status = Music.VOICE_DISCONNECTED
 
         # Register event listeners
         events.on(SONG_START, self.on_song_start)
@@ -107,18 +118,7 @@ class Music(commands.Cog):
     @commands.command(aliases=["connect"])
     async def join(self, ctx: commands.Context):
         self.ctx = ctx
-
-        try:
-            await self.join_vc(ctx)
-            return True
-        except asyncio.TimeoutError as e:
-            await ctx.send("❗\tConnection timed out. Please try again later")
-        except ConnectionRefusedError:
-            await ctx.send("⚠️\tPlease join a voice channel")
-        except Exception as e:
-            await ctx.send(f"❗\tFailed to connect to voice: {e}")
-
-        return False
+        await self.join_vc(ctx)
 
     async def join_vc(self, ctx: commands.Context, voice_channel=None, author=None):
         """
@@ -127,22 +127,30 @@ class Music(commands.Cog):
         """
 
         if voice_channel is None and ctx.author.voice is None:
-            raise ConnectionRefusedError
+            raise UserNotInVoice("User not in a voice channel.")
 
-        # Load auto-play tracks when the bot connects
+        if self.voice_status == Music.VOICE_CONNECTED:
+            raise AlreadyConnected("Already connected to voice.")
+
+        if self.voice_status == Music.VOICE_CONNECTING:
+            raise AlreadyConnecting("Already attempting to connect to voice.")
+
+        self.voice_status = Music.VOICE_CONNECTING
         voice_channel = voice_channel or ctx.author.voice.channel
         ctx.author = author or ctx.author
 
         if ctx.voice_client is None:
+            # await voice_channel.connect()
             voice_client = await voice_channel.connect(
                 timeout=10, cls=voice_recv.VoiceRecvClient
             )
 
             if not voice_client.is_connected():
                 voice_client.disconnect()
-                raise Exception("Connection failed.")
+                self.voice_status = Music.VOICE_DISCONNECTED
 
-            # await voice_channel.connect()
+                raise ConnectionFailed("Failed to connect to voice.")
+
             if public_url:
                 await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
 
@@ -164,7 +172,10 @@ class Music(commands.Cog):
         # Cache context
         self.ctx = ctx
         self.voice_client = ctx.voice_client
+        self.voice_status = Music.VOICE_CONNECTED
         await self.start_timeout_timer()
+
+        return True
 
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
@@ -305,15 +316,10 @@ class Music(commands.Cog):
 
     @commands.command(name="play")
     async def play_command(self, ctx: commands.Context, *, query: str = None):
-        if not await self.join(ctx):
-            return
-
-        if ctx.voice_client is not None and self.playback_manager is None:
-            await ctx.send(
-                "🛑\tPlease do **not** spam commands until I join the call. "
-                "Your request was ignored. Submit it again once I've connected."
-            )
-            return
+        if self.voice_status != Music.VOICE_CONNECTED:
+            joined = await self.join_vc(ctx)
+            if not joined:
+                return
 
         await ctx.send("🔎\tSearching...")
         await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))

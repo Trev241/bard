@@ -34,6 +34,7 @@ BOT_SPAM_CHANNEL = 423774455332864011
 # Create required folders
 Path("bot/logs").mkdir(parents=True, exist_ok=True)
 Path("bot/resources/dumps").mkdir(parents=True, exist_ok=True)
+Path("bot/resources/stickers").mkdir(parents=True, exist_ok=True)
 Path("bot/secrets").mkdir(parents=True, exist_ok=True)
 
 

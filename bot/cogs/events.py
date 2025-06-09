@@ -1,16 +1,24 @@
-import discord.ext.commands
+import os
+import re
 import requests
 import urllib.parse
 import logging
 import discord
 import traceback
 
+from asyncio import TimeoutError
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
 from discord.ext.commands.errors import CommandNotFound
 from bs4 import BeautifulSoup
-from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL, socketio
-import discord.ext
+from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
+from bot.cogs.music import Music
+from bot.core.exceptions import (
+    AlreadyConnected,
+    AlreadyConnecting,
+    UserNotInVoice,
+    ConnectionFailed,
+)
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +42,13 @@ class Events(commands.Cog):
 
         self._last_message = None
         self._repetitions = 0
+
+        # Load all stickers
+        stickers_path = "bot/resources/stickers"
+        self.stickers = {}
+        for file in os.listdir(stickers_path):
+            name = file.split(".")[0]
+            self.stickers[name] = stickers_path + "/" + file
 
     @commands.Cog.listener()
     async def on_message(self, message: Message):
@@ -68,20 +83,40 @@ class Events(commands.Cog):
         else:
             self._repetitions = 0
 
+        # Sticker utility
+        for name, path in self.stickers.items():
+            if re.search(rf"\b{name}\b", message.content):
+                with open(path, "rb") as fp:
+                    sticker_file = discord.File(fp=path)
+                    await message.channel.send(file=sticker_file)
+
         self._last_message = message
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx, error: discord.DiscordException):
-        if isinstance(error, CommandNotFound):
+    async def on_command_error(self, ctx, error):
+        # Get original error
+        original = getattr(error, "original", error)
+
+        if isinstance(original, CommandNotFound):
             # Ignore CommandNotFound errors
             return
-
-        full_error = "".join(traceback.format_exception(error))
-        log.error(full_error)
-        await ctx.send(
-            f"```py\n{full_error[:1900]}```\n"
-            f"**An exception has occurred!** This incident will be reported.\n"
-        )
+        elif isinstance(original, TimeoutError):
+            await ctx.send("❗\tConnection timed out. Please try again later.")
+        elif isinstance(original, UserNotInVoice):
+            await ctx.send("⚠️\tPlease join a voice channel.")
+        elif isinstance(original, AlreadyConnected):
+            await ctx.send("😔\tSorry, I'm already connected elsewhere.")
+        elif isinstance(original, AlreadyConnecting):
+            await ctx.send("🛑\tPlease **wait** until I've connected.")
+        elif isinstance(original, ConnectionFailed):
+            await ctx.send("❌\tSomething went wrong when trying to connect to voice.")
+        else:
+            full_error = "".join(traceback.format_exception(error))
+            log.error(full_error)
+            await ctx.send(
+                f"```py\n{full_error[:1900]}```\n"
+                f"**An exception has occurred!** This incident will be reported.\n"
+            )
 
     async def find_anime(self, message: Message):
         """
@@ -245,12 +280,13 @@ class Events(commands.Cog):
                 # The only difference is that we must specify the voice channel
                 # and the author explicitly. Everything else works the same.
 
-                wlcm_msg = await channel.send("I'm here too!")
+                wlcm_msg = await channel.send("Let me try joining in!")
                 ctx = await self.client.get_context(wlcm_msg)
                 await music_cog.join_vc(ctx, channel, member)
 
             if was_on_call and is_user_bot(member):
                 # Attempt to reset again in case the bot was forcefully disconnected
+                music_cog.voice_status = Music.VOICE_DISCONNECTED
                 music_cog.reset()
         else:
             # Handling events where a member transferred between calls
