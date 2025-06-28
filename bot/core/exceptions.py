@@ -12,3 +12,11 @@ class UserNotInVoice(Exception):
 
 class ConnectionFailed(Exception):
     pass
+
+
+class ConnectionNotReady(Exception):
+    pass
+
+
+class CannotCompleteAction(Exception):
+    pass

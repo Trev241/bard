@@ -1,17 +1,17 @@
+from collections import deque
+from datetime import timedelta
 import logging
 import asyncio
 import random
 import json
 import copy
 import time
-from collections import deque
-from datetime import timedelta
 
-import yt_dlp
-import validators
 from discord import FFmpegOpusAudio
 from discord import Client
 from discord.ext.voice_recv import VoiceRecvClient
+import yt_dlp
+import validators
 
 from bot.core.models import MusicRequest, Song
 from bot.core.events import events, SONG_START
@@ -49,6 +49,10 @@ class PlaybackManager:
         self.voice_client = voice_client
         self.client = client
         self.curr_song = None
+        self.idle = True
+        # An extra flag is needed because is_playing is only set when audio actually
+        # starts playing. This creates an edge case where two songs can be queued to
+        # play at the same time if requested in quick succession.
 
         # Playback controls
         self.looping = False
@@ -167,8 +171,11 @@ class PlaybackManager:
         elif self.looping:
             self.queue[0].start_at = 0
 
-        if self.auto_play and len(self.queue) == 0:
-            self.add()  # Add a random song if auto-play is enabled
+        if len(self.queue) == 0:
+            if self.auto_play:
+                self.add()  # Add a random song if auto-play is enabled
+            else:
+                self.idle = True
 
         if len(self.queue) > 0:
             # Base case - no more tracks to play
@@ -237,9 +244,11 @@ class PlaybackManager:
         self.curr_song = None
         self.looping = self.auto_play = False
         self.voice_client.stop_playing()
+        self.idle = True
 
     async def play(self):
-        if not self.is_playing():
+        if self.idle:
+            self.idle = False
             await self.next()
         elif self.curr_song.auto_play:
             self.skip()

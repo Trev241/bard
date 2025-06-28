@@ -1,4 +1,3 @@
-import os
 import asyncio
 import logging
 import itertools
@@ -15,7 +14,8 @@ from bot.core.exceptions import (
     UserNotInVoice,
     AlreadyConnected,
     AlreadyConnecting,
-    ConnectionFailed,
+    CannotCompleteAction,
+    ConnectionNotReady,
 )
 
 log = logging.getLogger(__name__)
@@ -25,30 +25,15 @@ class Music(commands.Cog):
     IDLE_TIMEOUT_INTERVAL = 120
 
     VOICE_DISCONNECTED = "DISCONNECTED"
+    VOICE_DISCONNECTING = "DISCONNECTING"
     VOICE_CONNECTED = "CONNECTED"
     VOICE_CONNECTING = "CONNECTING"
 
     def __init__(self, client):
-        # Convert newline endings in the cookies file
-        try:
-            with open("bot/secrets/cookies.txt", "r") as f:
-                cookies_data = f.read()
-
-            cookies_data = (
-                cookies_data.replace("\r\n", "\n")
-                .replace("\r", "\n")
-                .replace("\n", os.linesep)
-            )
-
-            with open("bot/secrets/cookies.txt", "w", newline="") as f:
-                f.write(cookies_data)
-        except Exception as e:
-            log.error(f"Failed to convert newline endings in cookies: {e}")
-
         self.client: discord.Client = client
         self.playback_manager: PlaybackManager = None
         self.voice_client: discord.VoiceProtocol = None
-        self.voice_status = Music.VOICE_DISCONNECTED
+        self.voice_state = Music.VOICE_DISCONNECTED
 
         # Register event listeners
         events.on(SONG_START, self.on_song_start)
@@ -62,16 +47,12 @@ class Music(commands.Cog):
 
         # Bot state
         self.ctx = None
+        self.voice_state = Music.VOICE_DISCONNECTED
         self._timeout_task = None
 
     def is_connected():
         async def predicate(ctx: commands.Context):
-            connected = ctx.voice_client is not None
-            # The help command utility skips commands for which the predicate check fails.
-            # Hence, it is best not to send any messages here to avoid needless repetitive spam
-            # if not connected:
-            #     await ctx.send(f'The bot must be in a voice channel for this command to work!')
-            return connected
+            return ctx.voice_client is not None
 
         return commands.check(predicate)
 
@@ -115,12 +96,11 @@ class Music(commands.Cog):
         def on_handle_complete(data=None):
             socketio.emit("playback_instruct_done", data)
 
-    @commands.command(aliases=["connect"])
-    async def join(self, ctx: commands.Context):
-        self.ctx = ctx
-        await self.join_vc(ctx)
+    @commands.command(name="join", aliases=["connect"])
+    async def _join(self, ctx: commands.Context):
+        await self.join(ctx)
 
-    async def join_vc(self, ctx: commands.Context, voice_channel=None, author=None):
+    async def join(self, ctx: commands.Context, voice_channel=None, author=None):
         """
         Instructs the bot to join the voice channel. If voice_channel and author
         are not provided, they will be taken from the context instead.
@@ -129,64 +109,62 @@ class Music(commands.Cog):
         if voice_channel is None and ctx.author.voice is None:
             raise UserNotInVoice("User not in a voice channel.")
 
-        if self.voice_status == Music.VOICE_CONNECTED:
+        if self.voice_state == Music.VOICE_CONNECTED:
             raise AlreadyConnected("Already connected to voice.")
 
-        if self.voice_status == Music.VOICE_CONNECTING:
+        if self.voice_state == Music.VOICE_CONNECTING:
             raise AlreadyConnecting("Already attempting to connect to voice.")
 
-        self.voice_status = Music.VOICE_CONNECTING
-        voice_channel = voice_channel or ctx.author.voice.channel
-        ctx.author = author or ctx.author
+        if self.voice_state == Music.VOICE_DISCONNECTING:
+            raise CannotCompleteAction("Still disconnecting from voice.")
 
-        if ctx.voice_client is None:
-            # await voice_channel.connect()
-            voice_client = await voice_channel.connect(
-                timeout=10, cls=voice_recv.VoiceRecvClient
-            )
+        try:
+            self.voice_state = Music.VOICE_CONNECTING
+            voice_channel = voice_channel or ctx.author.voice.channel
+            ctx.author = author or ctx.author
 
-            if not voice_client.is_connected():
-                voice_client.disconnect()
-                self.voice_status = Music.VOICE_DISCONNECTED
-
-                raise ConnectionFailed("Failed to connect to voice.")
+            await voice_channel.connect(cls=voice_recv.VoiceRecvClient, reconnect=False)
 
             if public_url:
                 await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
 
-            # Prepare assistant
-            assistant_base: Assistant = self.client.get_cog("Assistant")
-            if not assistant_base.enabled:
-                # Enable the assistant
+            try:
+                assistant_base: Assistant = self.client.get_cog("Assistant")
                 assistant_connected = assistant_base.enable(ctx)
-
-                # Let the user know at least once if voice commands are enabled or not
                 if assistant_connected:
-                    await ctx.send(f"Hey there! I can take voice commands too.")
+                    await ctx.send('Say "OK, Bard" if you need help!')
+            except Exception as e:
+                # Handle this exception so that the bot can still connect.
+                log.warning(f"Failed to enable assistant: {e}")
 
             # Initialize PlaybackManager
             self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
-        else:
-            await ctx.voice_client.move_to(voice_channel)
+        except Exception as e:
+            self.voice_state = Music.VOICE_DISCONNECTED
+            raise
 
-        # Cache context
         self.ctx = ctx
         self.voice_client = ctx.voice_client
-        self.voice_status = Music.VOICE_CONNECTED
+        self.voice_state = Music.VOICE_CONNECTED
         await self.start_timeout_timer()
-
-        return True
 
     @commands.command(aliases=["leave", "quit", "bye"])
     @is_connected()
     async def disconnect(self, ctx: commands.Context):
+        if (
+            self.voice_state == Music.VOICE_DISCONNECTED
+            or self.voice_state == Music.VOICE_DISCONNECTING
+        ):
+            return
+
+        self.voice_state = Music.VOICE_DISCONNECTING
+
         self.playback_manager.stop()
-        assistant_base = self.client.get_cog("Assistant")
+        assistant_base: Assistant = self.client.get_cog("Assistant")
         assistant_base.disable(ctx)
 
-        source = await discord.FFmpegOpusAudio.from_probe(
-            "bot/resources/sounds/bard.disconnect.ogg"
-        )
+        audio_path = "bot/resources/sounds/bard.disconnect.ogg"
+        source = await discord.FFmpegOpusAudio.from_probe(audio_path)
 
         def after_callback(error):
             coro = ctx.voice_client.disconnect()
@@ -195,13 +173,13 @@ class Music(commands.Cog):
                 fut.result()
             except:
                 pass
+            self.voice_state = Music.VOICE_DISCONNECTED
 
         # Only play the disconnect track if the bot is still live
         if ctx.voice_client:
             ctx.voice_client.play(source, after=after_callback)
 
         socketio.start_background_task(socketio.emit, "playback_stop")
-        log.info("Disconnected...")
 
     def on_song_complete(self, song: Song):
         self.start_timeout_timer()
@@ -276,30 +254,37 @@ class Music(commands.Cog):
     async def play(self, request: MusicRequest):
         ctx = request.ctx
 
+        if self.voice_state != Music.VOICE_CONNECTED:
+            raise ConnectionNotReady("Voice connection is not ready")
+
         # Qualify the message object of the request
         if request.source == Source.WEB:
-            msg = await ctx.send(f'Received on the web player: "{request.query}".')
-            request.msg = msg
+            request.msg = await ctx.send(
+                f'Received on the web player: "{request.query}".'
+            )
         else:
             request.msg = ctx.message
 
         results = self.playback_manager.search_and_add(request)
 
-        if results is None:
-            await ctx.send(f"🎲\tPlaying a random song.")
-        else:
-            if len(results) == 1:
-                await ctx.send(f"✅\tQueued {results[0].title}")
-            elif len(results) > 1:
-                await ctx.send(f"✅\tQueued {len(results)} tracks")
-            elif len(results) == 0:
-                # Return if no tracks were found
-                await ctx.send(f'No results for "{request.query}" were found.')
+        if not results:
+            if results is None:
+                await ctx.message.reply("🎲\tPlaying a random song.")
+            else:
+                await ctx.message.reply(f'No results for "{request.query}" were found.')
                 return
+        else:
+            reply_msg = (
+                f"✅\tQueued {results[0].title}"
+                if len(results) == 1
+                else f"✅\tQueued {len(results)} tracks"
+            )
+            await ctx.message.reply(reply_msg)
 
-            # Submitting analytics
+            # Submit track analytics
+            analytics = self.client.get_cog("Analytics")
             for song in results:
-                self.client.get_cog("Analytics").submit_track(
+                analytics.submit_track(
                     request.msg.id,
                     request.msg.channel.id,
                     request.msg.guild.id,
@@ -316,11 +301,10 @@ class Music(commands.Cog):
 
     @commands.command(name="play")
     async def play_command(self, ctx: commands.Context, *, query: str = None):
-        if self.voice_status != Music.VOICE_CONNECTED:
-            joined = await self.join_vc(ctx)
-            if not joined:
-                return
+        if self.voice_state == Music.VOICE_DISCONNECTED:
+            await self.join(ctx)
 
+        self.ctx = ctx  # Update the context
         await ctx.send("🔎\tSearching...")
         await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
 
@@ -350,7 +334,11 @@ class Music(commands.Cog):
                 and len(voice_client.channel.members) == 1
                 and voice_client.channel.members[0].id == self.client.user.id
             )
-            idle = len(self.playback_manager.queue) == 0
+            idle = (
+                len(self.playback_manager.queue) == 0
+                or not self.playback_manager.is_playing()
+                or self.playback_manager.is_paused()
+            )
 
             if alone or idle:
                 await self.ctx.send("👋\tSee you later!")
@@ -370,7 +358,7 @@ class Music(commands.Cog):
     @is_connected()
     async def _loop(self, ctx: commands.Context):
         self.loop()
-        await ctx.send(
+        await ctx.message.reply(
             f'{"Looping" if self.playback_manager.looping else "Stopped looping"}'
         )
 
@@ -378,7 +366,7 @@ class Music(commands.Cog):
     @is_connected()
     async def loop_queue(self, ctx: commands.Context):
         self.playback_manager.loop_queue()
-        await ctx.send(
+        await ctx.message.reply(
             f'{"Looping queue from current track" if self.playback_manager.looping_queue else "Stopped looping queue"}'
         )
 

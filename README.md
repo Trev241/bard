@@ -38,7 +38,7 @@ Bard hosts a web dashboard that is accessible on your machine's IP address on po
 
 **_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_.
 
-Bard uses a wake words supported by [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/) to avoid misinterpreting normal speech as commands. You must always wake Bard up first by saying "Okay, Bard" before you issue any other command.
+Bard uses wake words supported by [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/) to avoid misinterpreting normal speech as commands. You must always wake Bard up first by saying "Okay, Bard" before you issue any other command.
 
 You can instruct Bard by issuing your commands vocally while on a call with her. First type `?join` while on a call and then say out loud "Okay, Bard". If Bard heard you correctly, you will hear a reply. Bard will then try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/). You can get a list of all speech to intent patterns by typing out the command `?intents`.
 

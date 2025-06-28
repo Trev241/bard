@@ -9,7 +9,8 @@ import traceback
 from asyncio import TimeoutError
 from discord.ext import commands
 from discord import Embed, RawReactionActionEvent, Message, MessageType
-from discord.ext.commands.errors import CommandNotFound
+from discord.ext.commands.errors import CommandNotFound, CheckFailure
+from discord.errors import ClientException
 from bs4 import BeautifulSoup
 from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 from bot.cogs.music import Music
@@ -17,7 +18,8 @@ from bot.core.exceptions import (
     AlreadyConnected,
     AlreadyConnecting,
     UserNotInVoice,
-    ConnectionFailed,
+    CannotCompleteAction,
+    ConnectionNotReady,
 )
 
 log = logging.getLogger(__name__)
@@ -85,7 +87,7 @@ class Events(commands.Cog):
 
         # Sticker utility
         for name, path in self.stickers.items():
-            if re.search(rf"\b{name}\b", message.content):
+            if re.search(rf"\b{name}\b", message.content, re.IGNORECASE):
                 with open(path, "rb") as fp:
                     sticker_file = discord.File(fp=path)
                     await message.channel.send(file=sticker_file)
@@ -93,23 +95,26 @@ class Events(commands.Cog):
         self._last_message = message
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
+    async def on_command_error(self, ctx: commands.Context, error):
         # Get original error
         original = getattr(error, "original", error)
 
         if isinstance(original, CommandNotFound):
-            # Ignore CommandNotFound errors
-            return
+            return  # Ignore CommandNotFound errors
         elif isinstance(original, TimeoutError):
-            await ctx.send("❗\tConnection timed out. Please try again later.")
-        elif isinstance(original, UserNotInVoice):
-            await ctx.send("⚠️\tPlease join a voice channel.")
+            await ctx.message.reply("❗\tConnection timed out. Please try again later.")
+        elif isinstance(original, (UserNotInVoice, CheckFailure)):
+            await ctx.message.reply("⚠️\tPlease join a voice channel.")
         elif isinstance(original, AlreadyConnected):
-            await ctx.send("😔\tSorry, I'm already connected elsewhere.")
+            await ctx.message.reply("😔\tSorry, I'm already connected elsewhere.")
         elif isinstance(original, AlreadyConnecting):
-            await ctx.send("🛑\tPlease **wait** until I've connected.")
-        elif isinstance(original, ConnectionFailed):
-            await ctx.send("❌\tSomething went wrong when trying to connect to voice.")
+            await ctx.message.reply("🛑\tPlease **WAIT** until I've connected.")
+        elif isinstance(original, (ConnectionNotReady, CannotCompleteAction)):
+            await ctx.message.reply(
+                "⚠️\tI am still not yet ready. Resubmit your request again later."
+            )
+        elif isinstance(original, ClientException):
+            await ctx.message.reply(f"❗\tSomething went wrong. Reason: {original}")
         else:
             full_error = "".join(traceback.format_exception(error))
             log.error(full_error)
@@ -259,7 +264,7 @@ class Events(commands.Cog):
         was_on_call = before.channel is not None and after.channel is None
         now_on_call = after.channel is not None and before.channel is None
         is_user_bot = lambda member: member != None and member.id == self.client.user.id
-        music_cog = self.client.get_cog("Music")
+        music_cog: Music = self.client.get_cog("Music")
 
         if was_on_call or now_on_call:
             # Handling events where a member left or joined a call
@@ -282,11 +287,9 @@ class Events(commands.Cog):
 
                 wlcm_msg = await channel.send("Let me try joining in!")
                 ctx = await self.client.get_context(wlcm_msg)
-                await music_cog.join_vc(ctx, channel, member)
+                await music_cog.join(ctx, channel, member)
 
             if was_on_call and is_user_bot(member):
-                # Attempt to reset again in case the bot was forcefully disconnected
-                music_cog.voice_status = Music.VOICE_DISCONNECTED
                 music_cog.reset()
         else:
             # Handling events where a member transferred between calls
