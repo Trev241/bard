@@ -18,15 +18,14 @@ class Utils(commands.Cog):
         self.channel = None
         self.ping_who = {}
 
-    @commands.command(name="ping")
+    @commands.group(name="ping", invoke_without_command=True)
     async def issue_ping(self, ctx, who: discord.Member, limit: int = 100):
         await self.ping(ctx.message.channel, [who], limit)
 
     async def ping(self, channel, who, limit: int = 100):
         # Set a ping limit for all new members to be pinged
         for member in who:
-            if member not in self.ping_who:
-                self.ping_who[member] = limit
+            self.ping_who[member] = limit
 
         # Find out who will be pinged last
         self.ping_limit = max(self.ping_who.values())
@@ -38,7 +37,10 @@ class Utils(commands.Cog):
             el = asyncio.get_event_loop()
             self.pinging_task = el.create_task(self.pinging(channel))
 
-    @commands.command()
+    @issue_ping.command(
+        name="stop",
+        aliases=["halt", "remove", "terminate", "end", "done", "finish", "over"],
+    )
     async def ping_stop(self, ctx):
         # Reset everything
         self.is_pinging = False
