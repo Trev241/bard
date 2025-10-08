@@ -6,7 +6,7 @@ import traceback
 import parsedatetime as pdt
 
 from asyncio import TimeoutError
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from datetime import datetime
 
 from discord.ext import commands
@@ -40,6 +40,7 @@ class Events(commands.Cog):
         "Australia/Sydney",
         "Europe/London",
         "America/Toronto",
+        "America/Los_Angeles",
     ]
 
     def __init__(self, client):
@@ -100,18 +101,28 @@ class Events(commands.Cog):
                 await message.channel.send(file=sticker_file)
 
         # Timezone utility
-        local_tz = get_localzone()
-        timestamp, status = self.calendar.parseDT(message.content, datetime.now())
-        timestamp = timestamp.replace(tzinfo=local_tz)
-        if status > 1:
-            conv_timestamps = {
-                tz: timestamp.astimezone(ZoneInfo(tz)).strftime("%H:%M")
-                for tz in Events.TIMEZONES
-            }
+        local_tz = None
+        for role in message.author.roles:
+            try:
+                local_tz = ZoneInfo(role.name)
+                break
+            except ZoneInfoNotFoundError:
+                print(f"Couldn't detect timezone from {role}")
+                pass
 
-            await message.reply(
-                "\n".join([f"{ts} ({tz})" for tz, ts in conv_timestamps.items()])
-            )
+        if local_tz:
+            local_base_time = datetime.now().astimezone(local_tz)
+            timestamp, status = self.calendar.parseDT(message.content, local_base_time)
+            timestamp = timestamp.replace(tzinfo=local_tz)
+            if status > 1:
+                conv_timestamps = {
+                    tz: timestamp.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+                    for tz in Events.TIMEZONES
+                }
+
+                await message.reply(
+                    "\n".join([f"{ts} ({tz})" for tz, ts in conv_timestamps.items()])
+                )
 
         self._last_message = message
 
