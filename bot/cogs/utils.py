@@ -14,6 +14,8 @@ class Utils(commands.Cog):
 
     def __init__(self, client):
         self.client = client
+
+        # Pinging-related utils
         self.is_pinging = False
         self.channel = None
         self.ping_who = {}

@@ -21,3 +21,5 @@ validators
 pytest
 pytest-asyncio
 pytest-mock
+tzlocal
+parsedatetime
