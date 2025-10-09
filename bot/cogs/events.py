@@ -13,9 +13,7 @@ from discord.ext import commands
 from discord import RawReactionActionEvent, Message, MessageType
 from discord.ext.commands.errors import CommandNotFound, CheckFailure
 from discord.errors import ClientException
-from tzlocal import get_localzone
 
-from bot import EMBED_COLOR_THEME, BOT_SPAM_CHANNEL
 from bot.cogs.music import Music
 from bot.core.exceptions import (
     AlreadyConnected,
@@ -107,7 +105,6 @@ class Events(commands.Cog):
                 local_tz = ZoneInfo(role.name)
                 break
             except ZoneInfoNotFoundError:
-                print(f"Couldn't detect timezone from {role}")
                 pass
 
         if local_tz:
@@ -115,14 +112,28 @@ class Events(commands.Cog):
             timestamp, status = self.calendar.parseDT(message.content, local_base_time)
             timestamp = timestamp.replace(tzinfo=local_tz)
             if status > 1:
-                conv_timestamps = {
-                    tz: timestamp.astimezone(ZoneInfo(tz)).strftime("%H:%M")
-                    for tz in Events.TIMEZONES
-                }
-
-                await message.reply(
-                    "\n".join([f"{ts} ({tz})" for tz, ts in conv_timestamps.items()])
+                select = discord.ui.Select(
+                    placeholder="Check other timezones with Chronokeeper"
                 )
+                for tz in Events.TIMEZONES:
+                    ts = timestamp.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+                    hr = int(ts[:2])
+                    is_day = hr > 8 and hr < 20
+
+                    select.add_option(
+                        label=f"{ts}",
+                        description=f"{ZoneInfo(tz).key}",
+                        emoji="☀️" if is_day else "🌙",
+                    )
+
+                    async def callback(interaction: discord.Interaction):
+                        await interaction.response.defer()
+
+                    select.callback = callback
+
+                view = discord.ui.View()
+                view.add_item(select)
+                await message.reply(view=view)
 
         self._last_message = message
 
