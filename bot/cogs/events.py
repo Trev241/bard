@@ -116,7 +116,9 @@ class Events(commands.Cog):
                     placeholder="Check other timezones with Chronokeeper"
                 )
                 for tz in Events.TIMEZONES:
-                    ts = timestamp.astimezone(ZoneInfo(tz)).strftime("%H:%M")
+                    ts = timestamp.astimezone(ZoneInfo(tz)).strftime(
+                        "%A, %b %d - %H:%M"
+                    )
                     hr = int(ts[:2])
                     is_day = hr > 8 and hr < 20
 
