@@ -117,7 +117,7 @@ class Events(commands.Cog):
                 )
                 for tz in Events.TIMEZONES:
                     ts = timestamp.astimezone(ZoneInfo(tz))
-                    ts_str = ts.strftime("%A, %b %d - %H:%M")
+                    ts_str = ts.strftime("%H:%M %a, %b %d ")
                     hr = ts.hour
                     is_day = hr >= 8 and hr < 20
 
@@ -127,10 +127,10 @@ class Events(commands.Cog):
                         emoji="☀️" if is_day else "🌙",
                     )
 
-                    async def callback(interaction: discord.Interaction):
-                        await interaction.response.defer()
+                async def callback(interaction: discord.Interaction):
+                    await interaction.response.defer()
 
-                    select.callback = callback
+                select.callback = callback
 
                 view = discord.ui.View()
                 view.add_item(select)
