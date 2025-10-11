@@ -116,14 +116,13 @@ class Events(commands.Cog):
                     placeholder="Check other timezones with Chronokeeper"
                 )
                 for tz in Events.TIMEZONES:
-                    ts = timestamp.astimezone(ZoneInfo(tz)).strftime(
-                        "%A, %b %d - %H:%M"
-                    )
-                    hr = int(ts[:2])
-                    is_day = hr > 8 and hr < 20
+                    ts = timestamp.astimezone(ZoneInfo(tz))
+                    ts_str = ts.strftime("%A, %b %d - %H:%M")
+                    hr = ts.hour
+                    is_day = hr >= 8 and hr < 20
 
                     select.add_option(
-                        label=f"{ts}",
+                        label=f"{ts_str}",
                         description=f"{ZoneInfo(tz).key}",
                         emoji="☀️" if is_day else "🌙",
                     )
