@@ -117,7 +117,7 @@ class Events(commands.Cog):
                 )
                 for tz in Events.TIMEZONES:
                     ts = timestamp.astimezone(ZoneInfo(tz))
-                    ts_str = ts.strftime("%H:%M %a, %b %d ")
+                    ts_str = ts.strftime("%H:%M - %a, %b %d ")
                     hr = ts.hour
                     is_day = hr >= 8 and hr < 20
 
