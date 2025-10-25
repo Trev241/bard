@@ -8,8 +8,13 @@ import psutil
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-REBOOT_GRACE_PERIOD = 60
+REBOOT_GRACE_PERIOD = 10
 MODIFICATION_COOLDOWN_PERIOD = 5
+PIP_INSTALL_COMMANDS = [
+    ["pip", "install", "discord.py", "-U"],
+    ["pip", "install", "-U", "--pre", "yt-dlp[default]"],
+]
+RESTART_SIGNAL_TRIGGER_FILE = "bot/restart_signal_trigger.flag"
 
 
 class RestartHandler(FileSystemEventHandler):
@@ -42,8 +47,50 @@ class RestartHandler(FileSystemEventHandler):
 
         print("Initiating restart...")
         self.terminate_process()
+
+        for cmd in PIP_INSTALL_COMMANDS:
+            print(f"Running: {' '.join(cmd)}")
+            try:
+                result = subprocess.run(
+                    cmd,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                if result.stdout.strip():
+                    print(result.stdout)
+                print(f"Finished: {' '.join(cmd)}")
+                if "Requirement already satisfied" not in result.stdout:
+                    # Something actually installed/upgraded → we’ll need a restart
+                    needs_restart = True
+            except subprocess.CalledProcessError as e:
+                print(f"pip install failed ({' '.join(cmd)}):")
+                print(e.stdout)
+
         time.sleep(1)
         self.start_process()
+
+    def initiate_restart(self):
+        if self.timer is None:
+            with open("bot/restart_signal.flag", "w") as f:
+                f.write("restart")
+
+            print(f"Rebooting in {REBOOT_GRACE_PERIOD} seconds.")
+            self.timer = threading.Timer(REBOOT_GRACE_PERIOD, self.restart_process)
+            self.timer.start()
+
+    def check_full_restart_signal(self):
+        """Check for full restart signal file and act if present."""
+
+        if os.path.exists(RESTART_SIGNAL_TRIGGER_FILE):
+            print(f"Detected {RESTART_SIGNAL_TRIGGER_FILE}, initiating full restart...")
+            try:
+                os.remove(RESTART_SIGNAL_TRIGGER_FILE)  # Clean up signal file
+            except Exception as e:
+                print(f"Error removing {RESTART_SIGNAL_TRIGGER_FILE}: {e}")
+
+            self.initiate_restart()
 
     def terminate_process(self):
         """Terminates the process and its children"""
@@ -91,13 +138,7 @@ class RestartHandler(FileSystemEventHandler):
             except Exception as e:
                 print(f"Failed to pull changes: {e}")
 
-            if self.timer is None:
-                with open("bot/restart_signal.flag", "w") as f:
-                    f.write("restart")
-
-                print(f"Rebooting in {REBOOT_GRACE_PERIOD} seconds.")
-                self.timer = threading.Timer(REBOOT_GRACE_PERIOD, self.restart_process)
-                self.timer.start()
+            self.initiate_restart()
 
 
 if __name__ == "__main__":
@@ -115,6 +156,7 @@ if __name__ == "__main__":
         observer.start()
         print(f"Watching {target_file} for changes. Press Ctrl+C to exit.")
         while True:
+            event_handler.check_full_restart_signal()
             time.sleep(1)
     except KeyboardInterrupt:
         print("Shutting down observer and terminating processes...")

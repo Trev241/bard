@@ -76,6 +76,12 @@ class Utils(commands.Cog):
         self.ping_who = {}
 
     @commands.command()
+    async def restart(self, ctx):
+        await ctx.send("🔄\tRestarting...")
+        with open("bot/restart_signal_trigger.flag", "w") as fp:
+            fp.write("restart")
+
+    @commands.command()
     async def logs(self, ctx):
         await ctx.send(file=discord.File(f"logs/{datetime.date(datetime.now())}.txt"))
 
