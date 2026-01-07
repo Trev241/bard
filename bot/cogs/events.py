@@ -41,13 +41,24 @@ class Events(commands.Cog):
         "America/Los_Angeles",
     ]
 
+    TIME_ANCHORS = re.compile(
+        r"\b("
+        r"at|in|by|around|after|before|"
+        r"am|pm|"
+        r"\d{1,2}:\d{2}|"
+        r"today|tomorrow|tonight|"
+        r"tmr|tmrw|"
+        r"next\s+(hour|day|week)|"
+        r"in\s+\d+\s*(minute|minutes|hour|hours)|"
+        r"\d+\s*(minute|minutes|hour|hours)\s+from\s+now"
+        r")",
+        re.IGNORECASE,
+    )
+
+    SUSPICIOUS_NUM = re.compile(r"\b0?\d{3,}\b")
+
     def __init__(self, client):
         self.client = client
-
-        # --TRACE MOE--
-        self.message = None
-        self.matches = None
-        self.index = 0
 
         self._last_message = None
         self._repetitions = 0
@@ -109,8 +120,16 @@ class Events(commands.Cog):
 
         if local_tz:
             local_base_time = datetime.now().astimezone(local_tz)
+
+            if Events.SUSPICIOUS_NUM.search(message.content):
+                return
+
+            if not Events.TIME_ANCHORS.search(message.content):
+                return
+
             timestamp, status = self.calendar.parseDT(message.content, local_base_time)
             timestamp = timestamp.replace(tzinfo=local_tz)
+
             if status > 1:
                 select = discord.ui.Select(
                     placeholder="Check other timezones with Chronokeeper"
