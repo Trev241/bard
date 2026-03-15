@@ -14,8 +14,9 @@ import bot.cogs.music as music
 import bot.cogs.utils as utils
 import bot.cogs.events as events
 import bot.cogs.wordle as wordle
-import bot.cogs.assistant as assistant
 import bot.cogs.analytics as analytics
+
+# import bot.cogs.assistant as assistant
 
 
 # LOADING ENVIRONMENT VARIABLES
