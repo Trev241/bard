@@ -102,7 +102,7 @@ class Music(commands.Cog):
 
     async def join(self, ctx: commands.Context, voice_channel=None, author=None):
         """
-        Instructs the bot to join the voice channel. If voice_channel and author
+        Instructs the bot to join the voice channel. If `voice_channel` and `author`
         are not provided, they will be taken from the context instead.
         """
 

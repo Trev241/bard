@@ -25,7 +25,8 @@ TOKEN = os.getenv("TOKEN")
 logger = logging.getLogger(__name__)
 
 # ADDING COGS TO BOT
-cogs = [music, utils, events, wordle, assistant, analytics]
+# Assistant temporarily removed
+cogs = [music, utils, events, wordle, analytics]
 
 
 async def load_extensions():
