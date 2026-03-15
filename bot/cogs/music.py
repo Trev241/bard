@@ -8,7 +8,8 @@ import discord
 from bot import EMBED_COLOR_THEME, socketio, public_url
 from bot.core.models import MusicRequest, Source, Song
 from bot.core.playback import PlaybackManager
-from bot.cogs.assistant import Assistant
+
+# from bot.cogs.assistant import Assistant
 from bot.core.events import events, SONG_START, SONG_COMPLETE
 from bot.core.exceptions import (
     UserNotInVoice,
@@ -128,14 +129,14 @@ class Music(commands.Cog):
             if public_url:
                 await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
 
-            try:
-                assistant_base: Assistant = self.client.get_cog("Assistant")
-                assistant_connected = assistant_base.enable(ctx)
-                if assistant_connected:
-                    await ctx.send('Say "OK, Bard" if you need help!')
-            except Exception as e:
-                # Handle this exception so that the bot can still connect.
-                log.warning(f"Failed to enable assistant: {e}")
+            # try:
+            #     assistant_base: Assistant = self.client.get_cog("Assistant")
+            #     assistant_connected = assistant_base.enable(ctx)
+            #     if assistant_connected:
+            #         await ctx.send('Say "OK, Bard" if you need help!')
+            # except Exception as e:
+            #     # Handle this exception so that the bot can still connect.
+            #     log.warning(f"Failed to enable assistant: {e}")
 
             # Initialize PlaybackManager
             self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
@@ -160,8 +161,8 @@ class Music(commands.Cog):
         self.voice_state = Music.VOICE_DISCONNECTING
 
         self.playback_manager.stop()
-        assistant_base: Assistant = self.client.get_cog("Assistant")
-        assistant_base.disable(ctx)
+        # assistant_base: Assistant = self.client.get_cog("Assistant")
+        # assistant_base.disable(ctx)
 
         audio_path = "bot/resources/sounds/bard.disconnect.ogg"
         source = await discord.FFmpegOpusAudio.from_probe(audio_path)
