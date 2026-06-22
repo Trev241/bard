@@ -1,36 +1,34 @@
 from collections import deque
-from datetime import timedelta
 import logging
 import asyncio
-import random
-import json
 import copy
 import time
 
 from discord import FFmpegOpusAudio
 from discord import Client
 from discord.ext.voice_recv import VoiceRecvClient
-import validators
 
-from bot import config
 from bot.core.models import MusicRequest, Song
-from bot.core.events import events, SONG_START
-from bot.core.youtube import create_ytdlp
+from bot.core.events import SONG_COMPLETE, SONG_START, events
+from bot.core.resolver import TrackResolver
 
 logger = logging.getLogger(__name__)
 
 
 class PlaybackManager:
-    def __init__(self, client: Client, voice_client: VoiceRecvClient):
+    def __init__(
+        self,
+        client: Client,
+        voice_client: VoiceRecvClient,
+        resolver: TrackResolver = None,
+    ):
         self.ffmpeg_options = {
             "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
             "options": "-vn",
         }
 
-        self.auto_playlist_url = config.AUTOPLAY_PLAYLIST_URL
-
         # Core
-        self.yt = create_ytdlp()
+        self.resolver = resolver or TrackResolver(client)
         self.queue: deque[Song] = deque()
         self.voice_client = voice_client
         self.client = client
@@ -53,62 +51,19 @@ class PlaybackManager:
 
         # Auto-play properties
         self.auto_play = True
-        self.auto_play_songs = None
 
     def search(self, request: MusicRequest, auto_play: bool = False) -> list[Song]:
-        if request.query is None:
-            return None
-
-        info = self.yt.extract_info(
-            (
-                request.query
-                if validators.url(request.query)
-                else f"ytsearch:{request.query}"
-            ),
-            download=False,
-            process=False,
-        )
-
-        entries = info["entries"] if info.get("_type", None) == "playlist" else [info]
-        results = []
-        for entry in entries:
-            with open(config.ENTRIES_DUMP, "w") as fp:
-                json.dump(self.yt.sanitize_info(entry), fp)
-
-            try:
-                thumbnails = entry.get("thumbnails", [])
-                if len(thumbnails) > 0 and "url" in thumbnails[-1]:
-                    thumbnail_url = thumbnails[-1]["url"]
-                else:
-                    thumbnail_url = "/static/placeholder.png"
-
-                song = Song(
-                    title=entry.get("title", "Unknown title"),
-                    duration=str(
-                        timedelta(
-                            seconds=entry.get("duration", 0),
-                        )
-                    ),
-                    requester=request.author,
-                    ie_result=entry,
-                    auto_play=auto_play,
-                    thumbnail=thumbnail_url,
-                )
-                results.append(song)
-            except Exception:
-                logger.warning(
-                    "Failed to process entry - %s. This entry will be skipped.",
-                    entry.get("title", "Unknown title"),
-                    exc_info=True,
-                )
-
-        return results
+        return self.resolver.search(request, auto_play)
 
     def search_and_add(self, request: MusicRequest) -> list[Song]:
         songs = self.search(request)
 
         if songs is None:
-            self.add()
+            try:
+                self.add()
+            except Exception:
+                logger.warning("Failed to add autoplay track.", exc_info=True)
+                return []
         else:
             for song in songs:
                 self.add(song)
@@ -122,20 +77,7 @@ class PlaybackManager:
         """
 
         if song is None:
-            # Add a random song
-            if self.auto_play_songs is None or len(self.auto_play_songs) == 0:
-                # Prepare the auto-play list if its empty or does not exist
-                songs = self.search(
-                    MusicRequest(
-                        self.auto_playlist_url,
-                        self.client.user,
-                    ),
-                    auto_play=True,
-                )
-                random.shuffle(songs)
-                self.auto_play_songs = deque(songs)
-
-            song = self.auto_play_songs.popleft()
+            song = self.resolver.next_autoplay_song()
 
         self.queue.append(song)
 
@@ -145,23 +87,40 @@ class PlaybackManager:
         skipped by the user
         """
 
-        if error:
-            raise error
+        playback_failed = error is not None
+        if playback_failed:
+            failed_song = self.queue[0] if self.queue else self.curr_song
+            exc_info = (
+                (type(error), error, error.__traceback__)
+                if isinstance(error, BaseException)
+                else False
+            )
+            logger.warning(
+                "Playback callback reported an error for %s.",
+                failed_song.title if failed_song else "unknown track",
+                exc_info=exc_info,
+            )
 
-        if not self.looping or self.skip_songs > 0 or self.force_skip:
+        if playback_failed or not self.looping or self.skip_songs > 0 or self.force_skip:
             skip_count = min(max(1, self.skip_songs), len(self.queue))
 
             for _ in range(skip_count):
                 song = self.queue.popleft()
+                events.emit(SONG_COMPLETE, song=song)
 
-                if self.looping_queue:
+                if self.looping_queue and not playback_failed:
                     self.add(song)
         elif self.looping:
+            events.emit(SONG_COMPLETE, song=self.queue[0])
             self.queue[0].start_at = 0
 
         if len(self.queue) == 0:
             if self.auto_play:
-                self.add()  # Add a random song if auto-play is enabled
+                try:
+                    self.add()  # Add a random song if auto-play is enabled
+                except Exception:
+                    logger.warning("Failed to add autoplay track.", exc_info=True)
+                    self.idle = True
             else:
                 self.idle = True
 
@@ -184,45 +143,40 @@ class PlaybackManager:
         Plays the next song available at the start of the queue
         """
 
-        if len(self.queue) == 0:
-            # Edge case for when next is called on an empty queue
-            self.after_playback()
+        while self.queue:
+            song = self.queue[0]
+
+            try:
+                self.resolver.hydrate(song)
+
+                # Wait if playback is suspended
+                await self.playback_enabled.wait()
+
+                self.curr_song = song
+                ffmpeg_options = self.ffmpeg_options.copy()
+                ffmpeg_options["options"] += f" -ss {song.start_at}"
+                audio = await FFmpegOpusAudio.from_probe(song.url, **ffmpeg_options)
+                self.voice_client.play(audio, after=self.after_playback)
+            except Exception:
+                failed_song = self.queue.popleft()
+                events.emit(SONG_COMPLETE, song=failed_song)
+                logger.warning(
+                    "Failed to start playback for %s. Skipping track.",
+                    failed_song.title,
+                    exc_info=True,
+                )
+                continue
+
+            # Emit event
+            events.emit(SONG_START, song=song)
+
+            # Save the timestamp at which this track started
+            self.curr_song_start_time = time.time() - song.start_at
+            self.idle = False
             return
 
-        song = self.queue[0]
-
-        if not song.url or not song.thumbnail or not song.webpage:
-            # Only process if at least one property is missing
-            info = self.yt.process_ie_result(song.ie_result, download=False)
-            song.thumbnail = info["thumbnails"][-1]["url"]
-            song.webpage = info["webpage_url"]
-            format: dict = next(
-                (
-                    format
-                    for format in info["formats"]
-                    if info["format_id"] == format["format_id"]
-                ),
-                None,
-            )
-            song.url = format.get("url")
-
-            with open(config.YTDLP_DUMP, "w") as fp:
-                json.dump(self.yt.sanitize_info(info), fp, indent=2)
-
-        # Wait if playback is suspended
-        await self.playback_enabled.wait()
-
-        self.curr_song = song
-        ffmpeg_options = self.ffmpeg_options.copy()
-        ffmpeg_options["options"] += f" -ss {song.start_at}"
-        audio = await FFmpegOpusAudio.from_probe(song.url, **ffmpeg_options)
-        self.voice_client.play(audio, after=self.after_playback)
-
-        # Emit event
-        events.emit(SONG_START, song=song)
-
-        # Save the timestamp at which this track started
-        self.curr_song_start_time = time.time() - song.start_at
+        self.curr_song = None
+        self.idle = True
 
     def stop(self):
         """
@@ -239,12 +193,12 @@ class PlaybackManager:
         if self.idle:
             self.idle = False
             await self.next()
-        elif self.curr_song.auto_play:
+        elif self.curr_song and self.curr_song.auto_play:
             self.skip()
 
     def skip(self, count: int = 1):
-        self.voice_client.stop_playing()
         self.skip_songs = count
+        self.voice_client.stop_playing()
 
     def now(self) -> Song:
         return self.curr_song

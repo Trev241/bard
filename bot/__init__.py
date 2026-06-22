@@ -1,8 +1,4 @@
-from datetime import datetime
 import sys
-import os
-import logging
-import requests
 
 from flask import Flask
 from flask_socketio import SocketIO
@@ -10,6 +6,7 @@ from discord.ext import commands
 import discord
 
 from bot import config
+from bot.core.logging_service import configure_logging
 
 
 config.ensure_runtime_dirs()
@@ -17,19 +14,12 @@ config.ensure_runtime_dirs()
 client = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=discord.Intents.all())
 app = Flask(
     __name__,
-    template_folder=os.path.join("dashboard", "templates"),
-    static_folder=os.path.join("dashboard", "static"),
+    template_folder=str(config.BASE_DIR / "dashboard" / "templates"),
+    static_folder=str(config.BASE_DIR / "dashboard" / "static"),
 )
 socketio = SocketIO(app)
 
 public_url = config.DEFAULT_PUBLIC_URL
-try:
-    r = requests.get("http://127.0.0.1:4040/api/tunnels")
-    if r.status_code == 200:
-        js = r.json()
-        public_url = js["tunnels"][0]["public_url"]
-except requests.RequestException:
-    pass
 
 # Constants
 EMBED_COLOR_THEME = 15844367
@@ -74,18 +64,4 @@ class StderrHandler:
 # stdout_handler = StdoutHandler()
 # stderr_handler = StderrHandler()
 
-# Setting up logging
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-log_formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-log_handlers = {
-    "strm": logging.StreamHandler(sys.stdout),
-    "file": logging.FileHandler(config.LOG_DIR / f"{datetime.date(datetime.now())}.txt"),
-}
-for log_handler in log_handlers.values():
-    log_handler.setLevel(logging.DEBUG)
-    log_handler.setFormatter(log_formatter)
-    logger.addHandler(log_handler)
+log_handlers, log_formatter = configure_logging()

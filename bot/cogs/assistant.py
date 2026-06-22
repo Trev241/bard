@@ -1,4 +1,3 @@
-import os
 import array
 import time
 import asyncio
@@ -23,20 +22,19 @@ from discord.ext import commands, voice_recv
 from discord.ext.commands import Context
 from collections import defaultdict, deque, namedtuple
 
+from bot import config
+
 log = logging.getLogger(__name__)
 
 
 class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after", "quiet_after"])
 
-    with open("bot/resources/assistant/Bard Assistant.yml") as stream:
-        INTENTS = yaml.safe_load(stream)
-    with open("bot/resources/assistant/dialogs.json") as fp:
-        DIALOGS = json.load(fp)
-
     def __init__(self, client):
         # Bot state
         self.client = client
+        self.intents = self.load_intents()
+        self.dialogs = self.load_dialogs()
         self.recognizer = sr.Recognizer()
         self.enabled = False
         self.always_awake = False
@@ -76,8 +74,8 @@ class Assistant(commands.Cog):
 
         try:
             self.porcupine = pvporcupine.create(
-                access_key=os.getenv("PV_ACCESS_KEY"),
-                keyword_paths=[f"bot/resources/assistant/{porcupine_mdl}"],
+                access_key=config.PV_ACCESS_KEY,
+                keyword_paths=[str(config.ASSISTANT_RESOURCES_DIR / porcupine_mdl)],
             )
         except Exception as e:
             self._services_available = False
@@ -87,9 +85,15 @@ class Assistant(commands.Cog):
             log.error("Wake word services will not be available!")
 
         # TTS
-        self._tts_engine = pyttsx3.init()
-        tts_voice_id = self._tts_engine.getProperty("voices")[1].id
-        self._tts_engine.setProperty("voice", tts_voice_id)
+        try:
+            self._tts_engine = pyttsx3.init()
+            voices = self._tts_engine.getProperty("voices")
+            if len(voices) > 1:
+                self._tts_engine.setProperty("voice", voices[1].id)
+        except Exception:
+            self._tts_engine = None
+            self._services_available = False
+            log.error("Text-to-speech services will not be available.", exc_info=True)
         self._message_queue = deque()
         self._msg_queue_task = None
 
@@ -104,8 +108,8 @@ class Assistant(commands.Cog):
 
         try:
             self.rhino = pvrhino.create(
-                access_key=os.getenv("PV_ACCESS_KEY"),
-                context_path=f"bot/resources/assistant/{rhino_mdl}",
+                access_key=config.PV_ACCESS_KEY,
+                context_path=str(config.ASSISTANT_RESOURCES_DIR / rhino_mdl),
                 # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
             )
         except Exception as e:
@@ -117,7 +121,17 @@ class Assistant(commands.Cog):
 
     @commands.command()
     async def intents(self, ctx):
-        await ctx.send(f"```{json.dumps(Assistant.INTENTS, indent=2)}```")
+        await ctx.send(f"```{json.dumps(self.intents, indent=2)}```")
+
+    @staticmethod
+    def load_intents():
+        with open(config.ASSISTANT_CONTEXT) as stream:
+            return yaml.safe_load(stream)
+
+    @staticmethod
+    def load_dialogs():
+        with open(config.ASSISTANT_DIALOGS) as fp:
+            return json.load(fp)
 
     def _detect_intent(self, audio_frame):
         """
@@ -210,10 +224,13 @@ class Assistant(commands.Cog):
     async def get_audio_from_text(self, message):
         """Converts and returns an Opus-ready audio source from the given message"""
 
-        self._tts_engine.save_to_file(message, "bot/resources/assistant/reply.wav")
+        if not self._tts_engine:
+            raise RuntimeError("Text-to-speech service is unavailable.")
+
+        self._tts_engine.save_to_file(message, str(config.ASSISTANT_REPLY_AUDIO))
         self._tts_engine.runAndWait()
         return await discord.FFmpegOpusAudio.from_probe(
-            "bot/resources/assistant/reply.wav"
+            config.ASSISTANT_REPLY_AUDIO
         )
 
     async def transcribe(self, prompt):
@@ -264,7 +281,7 @@ class Assistant(commands.Cog):
             if inference.intent == "play":
                 # Additional transcription is required
                 prompt_dialog = random.choice(
-                    Assistant.DIALOGS["prompts"]["music_selection"]
+                    self.dialogs["prompts"]["music_selection"]
                 )
                 query = await self.transcribe(prompt_dialog)
                 await command(self._ctx, query=query)
@@ -367,7 +384,7 @@ class Assistant(commands.Cog):
 
                             log.info("Detected wake word")
                             dialog = random.choice(
-                                Assistant.DIALOGS["prompts"]["general"]
+                                self.dialogs["prompts"]["general"]
                             )
                             self.say(
                                 f"Hi {user.display_name}. {dialog}", quiet_after=True
@@ -431,7 +448,9 @@ class Assistant(commands.Cog):
         self._events["UTTERANCE_FINISHED"].set()
 
         # Clean up tasks
-        self._msg_queue_task.cancel()
+        if self._msg_queue_task:
+            self._msg_queue_task.cancel()
+            self._msg_queue_task = None
 
         # Clear queues
         self._message_queue.clear()
@@ -439,9 +458,9 @@ class Assistant(commands.Cog):
 
     def _get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
-            if self._query == None:
+            if self._query is None:
                 # AssemblyAI
-                audio_path = "bot/resources/assistant/incoming.wav"
+                audio_path = config.ASSISTANT_INCOMING_AUDIO
                 with open(audio_path, "wb") as fp:
                     fp.write(audio.get_wav_data())
 

@@ -22,7 +22,7 @@ The primary users are:
 - Members of the owner's Discord server.
 - Users in a voice channel where Bard is present.
 
-The owner or trusted admins may also use maintenance commands and analytics tools.
+The owner or trusted admins may also use maintenance commands.
 
 ## Core Goals
 
@@ -34,8 +34,7 @@ Bard should:
 4. Maintain a predictable playback queue.
 5. Expose playback controls through Discord commands.
 6. Expose playback controls through a local web dashboard.
-7. Record useful listening history for analytics.
-8. Remain easy to run in a small self-hosted environment.
+7. Remain easy to run in a small self-hosted environment.
 
 ## Non-Goals
 
@@ -47,6 +46,7 @@ Bard does not currently need to:
 - Replace Discord as the primary interaction surface.
 - Support every music platform.
 - Add broad unrelated bot features that distract from music playback.
+- Build analytical listening-history views or music statistics.
 
 ## Functional Requirements
 
@@ -138,31 +138,6 @@ Dashboard state must update from playback events through Socket.IO.
 
 Dashboard actions must be routed back into the same playback logic used by Discord commands.
 
-### Analytics
-
-Bard must record track requests in SQLite.
-
-At minimum, each record should include:
-
-- Message ID.
-- Channel ID.
-- Guild ID.
-- Track title.
-- Requester ID.
-- Timestamp.
-
-Bard should provide yearly and guild-specific analytics views.
-
-Analytics should support:
-
-- Top tracks.
-- Low-frequency or randomly selected less-common tracks.
-- Top requesters.
-- Per-user favorite tracks.
-- Full yearly track history.
-
-Analytics commands and routes should handle missing guilds, missing users, and unavailable YouTube metadata gracefully.
-
 ### Discord Utilities
 
 Bard may provide convenience utilities, including:
@@ -175,6 +150,20 @@ Bard may provide convenience utilities, including:
 - Logs, restart, and shutdown commands.
 
 Sensitive utilities must be limited to trusted users or admins.
+
+### Logging And Debugging
+
+Bard must write runtime logs to a bounded rotating log file.
+
+Logs should include enough context to debug Discord, playback, dashboard, webhook, and watcher failures.
+
+Log output should redact configured secrets before writing or displaying messages.
+
+Trusted Discord users must be able to request a bounded recent log snippet without downloading the full file.
+
+Trusted Discord users may request the current full log file when needed.
+
+The dashboard must expose a recent-log view for local debugging.
 
 ### Yordle
 
@@ -213,15 +202,16 @@ Bard should use centralized configuration for:
 - Webhook secret.
 - Autoplay playlist URL.
 - Cookie file path.
-- Database path.
 - Log path.
 - Restart signal paths.
 - Bot owner or admin IDs.
 - Feature flags for optional modules.
+- Whether the watcher refreshes `yt-dlp` before restart.
+- Log rotation size, backup count, and default snippet length.
 
 Secrets must not be committed.
 
-Runtime data such as logs, database files, cookies, generated dumps, and restart flags should be treated as local runtime state.
+Runtime data such as logs, cookies, generated dumps, and restart flags should be treated as local runtime state.
 
 ## Security Requirements
 
@@ -231,7 +221,6 @@ The following actions should require owner or admin permission:
 - Restart.
 - Log access.
 - Cookie updates.
-- Analytics backfills or full scans.
 - Mass pinging.
 - Any future command that reads secrets, writes runtime files, or affects deployment.
 
@@ -249,7 +238,6 @@ Errors should be logged with enough context to debug:
 - YouTube extraction failures.
 - FFmpeg playback failures.
 - Dashboard rendering failures.
-- Database failures.
 - Webhook verification failures.
 - Restart/watchdog failures.
 
@@ -261,7 +249,7 @@ Future changes should keep the existing user-facing command behavior stable unle
 
 Music playback logic should remain testable without needing a live Discord connection.
 
-Discord command handling, web dashboard handling, analytics submission, and core queue/playback behavior should be separated where practical.
+Discord command handling, web dashboard handling, and core queue/playback behavior should be separated where practical.
 
 Shared constants and paths should not be scattered across unrelated modules.
 
@@ -284,7 +272,6 @@ The highest-priority tests should cover `PlaybackManager` behavior:
 
 Additional tests should cover:
 
-- Analytics database inserts and queries.
 - Signature verification for webhooks.
 - Configuration loading defaults.
 - Permission checks for sensitive commands.
@@ -310,11 +297,11 @@ When major features are added or removed, `TARGET.md` and `SPEC.md` should be up
 - Replace silent exception handling with logged errors.
 - Centralize configuration values.
 - Extract shared `yt-dlp` options.
+- Keep watcher-managed `yt-dlp` refresh configurable and failure-tolerant.
 
 ### Phase 2: Improve Testability
 
 - Add unit tests for queue and playback behavior.
-- Add tests for analytics queries.
 - Add tests for webhook signature verification.
 - Reduce import-time side effects where practical.
 
@@ -338,6 +325,5 @@ A future change should be considered acceptable when:
 - It preserves the current personal music-bot workflow.
 - It does not break existing `?` commands unless intentionally migrated.
 - It does not expose secrets or runtime files.
-- It has focused tests when playback, queue, analytics, or security behavior changes.
+- It has focused tests when playback, queue, utility, assistant, or security behavior changes.
 - It updates documentation when user-facing behavior changes.
-

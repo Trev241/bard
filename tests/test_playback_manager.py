@@ -2,6 +2,8 @@ import asyncio
 from collections import deque
 from types import SimpleNamespace
 
+import pytest
+
 from bot.core.models import Song
 from bot.core.playback import PlaybackManager
 
@@ -53,6 +55,7 @@ def make_manager(*songs):
     manager.curr_song_start_time = 0
     manager.auto_play = False
     manager.auto_play_songs = None
+    manager.resolver = SimpleNamespace(hydrate=lambda song: song)
     return manager
 
 
@@ -72,6 +75,75 @@ def test_skip_stops_voice_and_records_count():
 
     assert manager.voice_client.stop_count == 1
     assert manager.skip_songs == 2
+
+
+def test_skip_sets_count_before_voice_stop_callback():
+    first = make_song("Track A")
+    second = make_song("Track B")
+    manager = make_manager(first, second)
+
+    def stop_and_callback():
+        manager.voice_client.stop_count += 1
+        manager.after_playback(None)
+
+    manager.voice_client.stop_playing = stop_and_callback
+
+    manager.skip(2)
+
+    assert list(manager.queue) == []
+    assert manager.voice_client.stop_count == 1
+
+
+def test_after_playback_error_drops_failed_track_without_raising():
+    song = make_song("Track A")
+    manager = make_manager(song)
+
+    manager.after_playback(RuntimeError("ffmpeg failed"))
+
+    assert list(manager.queue) == []
+    assert manager.idle is True
+
+
+def test_after_playback_error_does_not_requeue_looped_track():
+    song = make_song("Track A")
+    manager = make_manager(song)
+    manager.looping = True
+    manager.looping_queue = True
+
+    manager.after_playback(RuntimeError("ffmpeg failed"))
+
+    assert list(manager.queue) == []
+    assert manager.idle is True
+
+
+def test_after_playback_goes_idle_when_autoplay_fails():
+    song = make_song("Track A")
+    manager = make_manager(song)
+    manager.auto_play = True
+    manager.resolver = SimpleNamespace(
+        hydrate=lambda song: song,
+        next_autoplay_song=lambda: (_ for _ in ()).throw(ValueError("yt-dlp failed")),
+    )
+
+    manager.after_playback(None)
+
+    assert list(manager.queue) == []
+    assert manager.idle is True
+
+
+@pytest.mark.asyncio
+async def test_next_skips_track_when_hydration_fails():
+    song = make_song("Track A")
+    manager = make_manager(song)
+    manager.resolver = SimpleNamespace(
+        hydrate=lambda song: (_ for _ in ()).throw(ValueError("bad metadata"))
+    )
+
+    await manager.next()
+
+    assert list(manager.queue) == []
+    assert manager.curr_song is None
+    assert manager.idle is True
 
 
 def test_remove_queued_song_by_one_based_index():
@@ -126,4 +198,3 @@ def test_pause_and_resume_delegate_to_voice_client():
 
     manager.resume()
     assert manager.voice_client.paused is False
-

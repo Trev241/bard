@@ -1,20 +1,37 @@
-import time
+import logging
 import subprocess
+import sys
 import threading
-import git
-import os
-import psutil
+import time
+from pathlib import Path
 
-from watchdog.observers import Observer
+import git
+import psutil
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from bot import config
+
 
 REBOOT_GRACE_PERIOD = 10
 MODIFICATION_COOLDOWN_PERIOD = 5
-PIP_INSTALL_COMMANDS = [
-    ["pip", "install", "discord.py", "-U"],
-    ["pip", "install", "-U", "--pre", "yt-dlp[default]"],
+YTDLP_UPDATE_COMMAND = [
+    "pip",
+    "install",
+    "-U",
+    "--pre",
+    "yt-dlp[default]",
 ]
-RESTART_SIGNAL_TRIGGER_FILE = "bot/restart_signal_trigger.flag"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 class RestartHandler(FileSystemEventHandler):
@@ -23,145 +40,161 @@ class RestartHandler(FileSystemEventHandler):
         self.target_file = target_file
         self.process = None
         self.timer = None
-        self.repo = git.Repo()
+        self.repo = git.Repo(config.PROJECT_ROOT)
         self.last_pull_time = 0
 
     def start_process(self):
-        """Start the process."""
-        self.timer = None  # Reset timer object after restart
+        self.timer = None
         if self.process and self.is_process_running():
-            print("Process is already running, terminating it first.")
+            logger.info("Process is already running; terminating it first.")
             self.terminate_process()
 
-        print(f"Starting process: {' '.join(self.command)}")
-        self.process = subprocess.Popen(self.command)
-        print(f"Process started with PID: {self.process.pid}")
+        logger.info("Starting process: %s", " ".join(self.command))
+        self.process = subprocess.Popen(self.command, cwd=config.PROJECT_ROOT)
+        logger.info("Process started with PID: %s", self.process.pid)
 
     def is_process_running(self):
-        if self.process is None:
-            return False
-        return self.process.poll() is None
+        return self.process is not None and self.process.poll() is None
 
     def restart_process(self):
-        """Restart the process."""
-
-        print("Initiating restart...")
+        logger.info("Restarting process.")
         self.terminate_process()
-
-        for cmd in PIP_INSTALL_COMMANDS:
-            print(f"Running: {' '.join(cmd)}")
-            try:
-                result = subprocess.run(
-                    cmd,
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                )
-                if result.stdout.strip():
-                    print(result.stdout)
-                print(f"Finished: {' '.join(cmd)}")
-                if "Requirement already satisfied" not in result.stdout:
-                    # Something actually installed/upgraded, so a restart is needed.
-                    needs_restart = True
-            except subprocess.CalledProcessError as e:
-                print(f"pip install failed ({' '.join(cmd)}):")
-                print(e.stdout)
-
+        self.refresh_ytdlp()
         time.sleep(1)
         self.start_process()
 
-    def initiate_restart(self):
-        if self.timer is None:
-            with open("bot/restart_signal.flag", "w") as f:
-                f.write("restart")
+    def refresh_ytdlp(self):
+        if not config.WATCHER_UPDATE_YTDLP_ON_RESTART:
+            logger.info("Skipping yt-dlp refresh; disabled by configuration.")
+            return
 
-            print(f"Rebooting in {REBOOT_GRACE_PERIOD} seconds.")
-            self.timer = threading.Timer(REBOOT_GRACE_PERIOD, self.restart_process)
-            self.timer.start()
+        logger.info("Refreshing yt-dlp before restart.")
+        try:
+            result = subprocess.run(
+                YTDLP_UPDATE_COMMAND,
+                cwd=config.PROJECT_ROOT,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=config.WATCHER_YTDLP_UPDATE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "yt-dlp refresh timed out after %s seconds; continuing startup.",
+                config.WATCHER_YTDLP_UPDATE_TIMEOUT,
+                exc_info=True,
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            logger.warning(
+                "yt-dlp refresh failed; continuing startup. Output:\n%s",
+                exc.stdout,
+            )
+            return
+
+        output = result.stdout.strip()
+        if output:
+            logger.info("yt-dlp refresh output:\n%s", output)
+
+    def initiate_restart(self):
+        if self.timer is not None:
+            return
+
+        config.RESTART_SIGNAL_FILE.write_text("restart")
+        logger.info("Rebooting in %s seconds.", REBOOT_GRACE_PERIOD)
+        self.timer = threading.Timer(REBOOT_GRACE_PERIOD, self.restart_process)
+        self.timer.start()
 
     def check_full_restart_signal(self):
-        """Check for full restart signal file and act if present."""
+        if not config.RESTART_SIGNAL_TRIGGER_FILE.exists():
+            return
 
-        if os.path.exists(RESTART_SIGNAL_TRIGGER_FILE):
-            print(f"Detected {RESTART_SIGNAL_TRIGGER_FILE}, initiating full restart...")
-            try:
-                os.remove(RESTART_SIGNAL_TRIGGER_FILE)  # Clean up signal file
-            except Exception as e:
-                print(f"Error removing {RESTART_SIGNAL_TRIGGER_FILE}: {e}")
+        logger.info("Detected restart trigger file; initiating restart.")
+        try:
+            config.RESTART_SIGNAL_TRIGGER_FILE.unlink(missing_ok=True)
+        except Exception:
+            logger.warning("Failed to remove restart trigger file.", exc_info=True)
 
-            self.initiate_restart()
+        self.initiate_restart()
 
     def terminate_process(self):
-        """Terminates the process and its children"""
+        if not self.process:
+            return
 
         try:
             proc = psutil.Process(self.process.pid)
             children = proc.children(recursive=True)
 
-            print(f"Terminating process with PID: {self.process.pid}")
-            proc.terminate()
-
+            logger.info("Terminating process with PID: %s", self.process.pid)
             for child in children:
-                print(f"Terminating child process with PID: {child.pid}")
+                logger.info("Terminating child process with PID: %s", child.pid)
+                child.terminate()
 
-            proc.wait(timeout=5)
-            print("Process terminated successfully.")
+            proc.terminate()
+            _, alive = psutil.wait_procs([proc, *children], timeout=5)
+            for remaining in alive:
+                logger.warning("Killing unresponsive process with PID: %s", remaining.pid)
+                remaining.kill()
         except psutil.NoSuchProcess:
-            print("Process no longer exists")
-        except psutil.TimeoutExpired:
-            print("Process did not terminate, forcing kill...")
-            proc.kill()
-            proc.wait(timeout=5)
-        except Exception as e:
-            print(f"Error terminating processes: {e}")
+            logger.info("Process no longer exists.")
+        except Exception:
+            logger.warning("Error terminating process tree.", exc_info=True)
 
         self.process = None
 
     def on_modified(self, event):
-        """Handle file modification events by restarting the app if the target file is modified."""
-        if os.path.samefile(event.src_path, os.path.relpath(self.target_file)):
-            current_time = time.time()
-
-            if current_time - self.last_pull_time < MODIFICATION_COOLDOWN_PERIOD:
-                print(
-                    f"Ignoring modification in {event.src_path} due to recent git pull (cooldown)."
-                )
+        try:
+            changed_path = config.PROJECT_ROOT / event.src_path
+            if changed_path.resolve() != self.target_file.resolve():
                 return
+        except FileNotFoundError:
+            return
 
-            print(f"Detected change in {event.src_path}, restarting Flask app.")
-            print("Pulling changes...")
-            try:
-                self.repo.remotes.origin.pull()
-                self.last_pull_time = time.time()
-                print("Success! Changes were pulled.")
-            except Exception as e:
-                print(f"Failed to pull changes: {e}")
+        current_time = time.time()
+        if current_time - self.last_pull_time < MODIFICATION_COOLDOWN_PERIOD:
+            logger.info("Ignoring modification due to recent git pull cooldown.")
+            return
 
-            self.initiate_restart()
+        logger.info("Detected change in %s; pulling changes.", self.target_file)
+        try:
+            self.repo.remotes.origin.pull()
+            self.last_pull_time = time.time()
+            logger.info("Changes pulled successfully.")
+        except Exception:
+            logger.warning("Failed to pull changes.", exc_info=True)
+
+        self.initiate_restart()
 
 
-if __name__ == "__main__":
+def main():
     command = ["python", "-m", "bot.main"]
-    # command = "uvicorn bot.main:wsgi_app --host 0.0.0.0 --port 5000 --workers 1 --log-level info".split()
-    target_file = "bot/resources/dumps/head-commit.json"
+    target_file = config.HEAD_COMMIT_DUMP
 
-    # Set up the watchdog observer
     event_handler = RestartHandler(command=command, target_file=target_file)
     event_handler.start_process()
+
     observer = Observer()
-    observer.schedule(event_handler, path=os.path.dirname(target_file), recursive=False)
+    observer.schedule(
+        event_handler,
+        path=str(target_file.parent),
+        recursive=False,
+    )
 
     try:
         observer.start()
-        print(f"Watching {target_file} for changes. Press Ctrl+C to exit.")
+        logger.info("Watching %s. Press Ctrl+C to exit.", target_file)
         while True:
             event_handler.check_full_restart_signal()
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Shutting down observer and terminating processes...")
+        logger.info("Shutting down observer and process.")
         observer.stop()
         event_handler.terminate_process()
 
     observer.join()
-    print("Script terminated.")
+    logger.info("Watcher stopped.")
+
+
+if __name__ == "__main__":
+    main()

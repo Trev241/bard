@@ -1,99 +1,43 @@
-import discord
-import requests
 import logging
 
-from random import randrange
-from PIL import Image, ImageDraw, ImageFont
+import discord
 from discord.ext import commands
+
+from bot.core.yordle import ChampionProvider, YordleGame
 
 log = logging.getLogger(__name__)
 
 
 class Wordle(commands.Cog):
-    LETTER_SIZE = 50
-    HIDDEN_WORD_IMAGE_FILENAME = "yordle_word.png"
-
-    def __init__(self, client):
+    def __init__(self, client, champion_provider=None):
         self.client = client
-        self.running = False
+        self.champion_provider = champion_provider or ChampionProvider()
+        self.word_bank = self.champion_provider.load()
+        self.game = YordleGame(self.word_bank)
         self.ctx = None
 
-        # Updating champion data
-        try:
-            # Fetch latest version
-            version_url = "https://ddragon.leagueoflegends.com/realms/euw.json"
-            version_data = requests.get(version_url).json()
-            version = version_data["v"]
-
-            # Fetch champion data
-            champion_data_url = f"http://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
-            response = requests.get(champion_data_url).json()
-            champion_data = response["data"]
-
-            self.word_bank = [champion.upper() for champion in champion_data.keys()]
-        except Exception as e:
-            log.error(f"An error occured while trying to update champion data: {e}")
+        if self.word_bank == self.champion_provider.fallback:
+            log.warning("Using fallback Yordle champion bank.")
 
     @commands.command()
     async def yordle(self, ctx):
-        self.running = True
         self.ctx = ctx
-        self.word = self.word_bank[randrange(0, len(self.word_bank))]
-        self.size = len(self.word)
-        self.last_guess = "?" * self.size
+        try:
+            image_path = self.game.start()
+        except ValueError as exc:
+            await ctx.send(f"Yordle is unavailable: {exc}")
+            return
 
-        await self.display()
-
-    async def display(self):
-        self.image_for_hidden_word()
-        file = discord.File(fp=Wordle.HIDDEN_WORD_IMAGE_FILENAME)
-        await self.ctx.send(file=file)
-
-    def image_for_hidden_word(self):
-        padding = 5
-        image = Image.new(
-            mode="RGBA",
-            size=(Wordle.LETTER_SIZE * self.size, Wordle.LETTER_SIZE),
-            color=(0, 0, 0, 0),
-        )
-        font = ImageFont.truetype("bot/resources/fonts/DroidSansMono.ttf", 45)
-        draw = ImageDraw.Draw(image)
-
-        letters = {}
-        for c in self.word:
-            letters[c] = letters.get(c, 0) + 1
-
-        position = [5, 0]
-
-        for i, c in enumerate(self.last_guess):
-            if letters.get(c, 0):
-                letters[c] -= 1
-                bg = "green" if c == self.word[i] else "orange"
-                fg = "white"
-            else:
-                bg = (0, 0, 0, 0)
-                fg = (180, 180, 180, 200)
-
-            left, top, right, bottom = draw.textbbox(position, c, font=font)
-            draw.rectangle(
-                (left - padding, top - padding, right + padding, bottom + padding),
-                fill=bg,
-            )
-            draw.text(position, c, font=font, fill=fg)
-            position[0] += Wordle.LETTER_SIZE
-
-        image.save(Wordle.HIDDEN_WORD_IMAGE_FILENAME)
+        await ctx.send(file=discord.File(fp=image_path))
 
     async def guess(self, guess: str, author):
-        guess = guess.upper()
+        image_path, solved = self.game.guess(guess)
+        if not image_path:
+            return
 
-        if self.running and len(guess) == self.size and guess in self.word_bank:
-            self.last_guess = guess
-            await self.display()
-
-            if guess == self.word:
-                await self.ctx.send(f"{author.display_name} guessed the name!")
-                self.running = False
+        await self.ctx.send(file=discord.File(fp=image_path))
+        if solved:
+            await self.ctx.send(f"{author.display_name} guessed the name!")
 
 
 async def setup(client):

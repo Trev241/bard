@@ -12,10 +12,17 @@ class EventEmitter:
         self._events = defaultdict(list)
 
     def on(self, event_name, callback):
+        if callback in self._events[event_name]:
+            return
+
         self._events[event_name].append(callback)
 
+    def off(self, event_name, callback):
+        if callback in self._events[event_name]:
+            self._events[event_name].remove(callback)
+
     def emit(self, event_name, *args, **kwargs):
-        for callback in self._events[event_name]:
+        for callback in list(self._events[event_name]):
             callback(*args, **kwargs)
 
 

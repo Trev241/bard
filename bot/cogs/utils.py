@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime
 
 import discord
 from discord.ext import commands
 
 from bot import config
 from bot.core.checks import trusted_only
+from bot.core.logging_service import recent_log_text
 
 log = logging.getLogger(__name__)
 
@@ -81,11 +81,30 @@ class Utils(commands.Cog):
         with open(config.RESTART_SIGNAL_TRIGGER_FILE, "w") as fp:
             fp.write("restart")
 
-    @commands.command()
+    @commands.group(name="logs", invoke_without_command=True)
     @trusted_only
-    async def logs(self, ctx):
-        log_file = config.LOG_DIR / f"{datetime.date(datetime.now())}.txt"
-        await ctx.send(file=discord.File(log_file))
+    async def logs(self, ctx, lines: int = config.LOG_SNIPPET_LINES):
+        lines = max(1, min(lines, 300))
+        log_text = recent_log_text(max_lines=lines)
+        if not log_text:
+            await ctx.send("No logs are available yet.")
+            return
+
+        snippet = log_text[-1800:]
+        if len(snippet) < len(log_text):
+            snippet = f"... truncated to fit Discord message limits ...\n{snippet}"
+
+        snippet = snippet.replace("```", "` ` `")
+        await ctx.send(f"```text\n{snippet}\n```")
+
+    @logs.command(name="full")
+    @trusted_only
+    async def logs_full(self, ctx):
+        if not config.LOG_FILE.exists():
+            await ctx.send("No log file is available yet.")
+            return
+
+        await ctx.send(file=discord.File(config.LOG_FILE))
 
     @commands.command()
     @trusted_only

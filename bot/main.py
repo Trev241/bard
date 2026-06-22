@@ -3,25 +3,23 @@ import logging
 import threading
 
 from discord.ext import tasks
-import discord
 
-from bot import client, config, log_handlers, log_formatter, public_url, socketio
+from bot import client, config, public_url, socketio
 from bot.dashboard.app import run_flask
 from bot.cogs.music import Music
 import bot.cogs.music as music
 import bot.cogs.utils as utils
 import bot.cogs.events as events
 import bot.cogs.wordle as wordle
-import bot.cogs.analytics as analytics
-
-# import bot.cogs.assistant as assistant
 
 
 logger = logging.getLogger(__name__)
 
-# ADDING COGS TO BOT
-# Assistant temporarily removed
-cogs = [music, utils, events, wordle, analytics]
+cogs = [music, utils, events, wordle]
+if config.ASSISTANT_ENABLED:
+    import bot.cogs.assistant as assistant
+
+    cogs.append(assistant)
 
 
 async def load_extensions():
@@ -60,12 +58,8 @@ async def check_restart_signal():
 
 
 async def main():
-    discord.utils.setup_logging(
-        handler=log_handlers["strm"],
-        formatter=log_formatter,
-        level=logging.INFO,
-        root=True,
-    )
+    logging.getLogger("discord").setLevel(logging.INFO)
+    logging.getLogger("discord.http").setLevel(logging.WARNING)
 
     async with client:
         await load_extensions()

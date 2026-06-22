@@ -65,23 +65,6 @@ Important files:
 - `bot/dashboard/templates/dashboard.html`
 - `bot/dashboard/static/index.js`
 
-### Analytics
-
-Bard stores played tracks in a SQLite database.
-
-The analytics feature can:
-
-- Record requested tracks.
-- Track who requested songs.
-- Group tracks by guild and year.
-- Generate a web page showing top tracks, least-played/random low-frequency tracks, requester summaries, and yearly listening history.
-
-Important files:
-
-- `bot/cogs/analytics.py`
-- `bot/dashboard/templates/analytics.html`
-- `bot/dashboard/templates/analytics_home.html`
-
 ### Discord Utilities
 
 Bard includes extra Discord helper behavior:
@@ -93,11 +76,28 @@ Bard includes extra Discord helper behavior:
 - Parse time expressions for users with timezone role names and offer converted times.
 - Save YouTube cookie files when a message attachment is reacted to with the configured cookie emoji.
 - Restart or shut down the bot from Discord commands.
+- Read recent runtime log snippets from Discord for debugging.
 
 Important files:
 
 - `bot/cogs/utils.py`
 - `bot/cogs/events.py`
+
+### Logging And Debugging
+
+Bard writes runtime logs to a rotating log file so errors can be inspected after the fact without unbounded log growth.
+
+Logs can be accessed through:
+
+- The dashboard at `/dashboard/logs`.
+- The trusted Discord `?logs` command for a recent snippet.
+- The trusted Discord `?logs full` command for the current log file.
+
+Important files:
+
+- `bot/core/logging_service.py`
+- `bot/dashboard/templates/logs.html`
+- `bot/cogs/utils.py`
 
 ### Yordle
 
@@ -141,7 +141,7 @@ There is also a watcher script:
 python bot/watcher.py
 ```
 
-The watcher starts the bot, watches for restart signal files, can pull changes from Git, reinstall/update selected dependencies, and restart the process.
+The watcher starts the bot, watches for restart signal files, can pull changes from Git, refresh `yt-dlp`, and restart the process.
 
 ## Important Assumptions
 
@@ -159,8 +159,9 @@ The watcher starts the bot, watches for restart signal files, can pull changes f
 - Features are organized mostly by Discord cog.
 - Music playback is separated somewhat into `PlaybackManager`.
 - The dashboard is useful and directly connected to playback events.
-- Analytics add long-term value for a personal music bot.
 - The watcher script supports a lightweight self-hosted deployment flow.
+- The watcher refreshes `yt-dlp` before restarts by default because YouTube extraction can break when `yt-dlp` falls out of date.
+- Runtime logs are centralized, rotated, redacted, and visible from both Discord and the dashboard.
 
 ## Known Weak Spots
 
@@ -190,9 +191,7 @@ This can make playback, dashboard rendering, restart behavior, and Discord API f
 
 ### Tight Coupling
 
-The `Music` cog currently handles Discord commands, Socket.IO web controls, playback state, analytics submission, and dashboard update events.
-
-This makes it harder to change one interface without affecting the others.
+The music playback stack has been split into adapter, service, playback, and resolver layers. Future changes should preserve those boundaries.
 
 ### Limited Tests
 
@@ -200,23 +199,17 @@ The repository includes test dependencies, but there does not appear to be focus
 
 The highest-value tests would target `PlaybackManager`.
 
-### Possible Broken Analytics Path
-
-`bot/cogs/analytics.py` references `Music.YDL_OPTIONS`, but the YouTube options appear to live inside `PlaybackManager.__init__`.
-
-This likely needs cleanup before the `analyze` command can be trusted.
-
 ## Recommended Future Improvements
 
 Priority improvements:
 
 1. Fix broken text encoding in bot messages.
-2. Add admin/owner checks for sensitive commands such as `shutdown`, `restart`, `logs`, cookie updates, analytics scans, and mass pinging.
+2. Add or maintain admin/owner checks for sensitive commands such as `shutdown`, `restart`, `logs`, cookie updates, and mass pinging.
 3. Replace bare `except` blocks with logged exceptions.
 4. Move config values into a central `bot/config.py` module.
 5. Extract shared YouTube/`yt-dlp` options into one place.
 6. Add focused unit tests for `PlaybackManager` queue behavior.
-7. Clarify whether the voice assistant is active, experimental, or archived.
+7. Keep the voice assistant behind an explicit feature flag until it is actively maintained.
 8. Add useful npm scripts for rebuilding dashboard CSS.
 9. Keep the single-guild assumption explicit unless a future task changes the architecture.
 
@@ -230,6 +223,6 @@ When making changes:
 
 - Keep behavior compatible with the existing `?` command interface.
 - Avoid unrelated rewrites.
-- Protect user/runtime data such as `.env`, `bot/secrets`, `bot/stats.db`, and generated dumps.
+- Protect user/runtime data such as `.env`, `bot/secrets`, and generated dumps.
 - Test queue and playback behavior carefully when touching music code.
 - Treat dashboard changes and Discord playback changes as connected because they communicate through Socket.IO events.
