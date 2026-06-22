@@ -2,15 +2,15 @@ import sqlite3
 import json
 import discord
 import re
-import yt_dlp
 import logging
 import validators
 
 from sqlite3 import IntegrityError
 from datetime import datetime
 from discord.ext import commands
-from bot import logger
-from bot.cogs.music import Music
+from bot import config
+from bot.core.checks import trusted_only
+from bot.core.youtube import create_ytdlp
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class Analytics(commands.Cog):
         self.client = client
 
         # Setting up SQLite
-        self.conn = sqlite3.connect("bot/stats.db", check_same_thread=False)
+        self.conn = sqlite3.connect(config.STATS_DB, check_same_thread=False)
         table = """
             CREATE TABLE IF NOT EXISTS tracks (
                 message_id VARCHAR(255) PRIMARY KEY,
@@ -171,6 +171,7 @@ class Analytics(commands.Cog):
         return guilds
 
     @commands.command()
+    @trusted_only
     async def analyze(self, ctx, complete: bool = False):
         """
         Analyzes the current text channel in which the command was issued and
@@ -195,11 +196,11 @@ class Analytics(commands.Cog):
         async for message in messages:
             match = re.search(PLAY_COMMAND_REGEX, message.content)
             if match is None:
-                print("No music command. Skipping...")
+                logger.debug("No music command. Skipping...")
                 continue
 
             query = match.group(2)
-            ydl = yt_dlp.YoutubeDL(Music.YDL_OPTIONS)
+            ydl = create_ytdlp()
 
             # Determine if query is a link or not
             is_link = validators.url(query)
@@ -216,6 +217,7 @@ class Analytics(commands.Cog):
                 logger.warning(
                     f"An error occurred while trying to qualify the query '{query}': {e}"
                 )
+                continue
 
             try:
                 if not (info.get("_type", None) == "playlist"):
@@ -245,11 +247,13 @@ class Analytics(commands.Cog):
         )
 
     @commands.command()
+    @trusted_only
     async def analytics(self, ctx):
         analytics_data = self.get_tracks()
-        with open("bot/stats.json", "w") as fp:
+        stats_json = config.BASE_DIR / "stats.json"
+        with open(stats_json, "w") as fp:
             json.dump(analytics_data, fp, indent=2)
-        with open("bot/stats.json") as fp:
+        with open(stats_json) as fp:
             await ctx.send(file=discord.File(fp))
 
 

@@ -62,7 +62,7 @@ class RestartHandler(FileSystemEventHandler):
                     print(result.stdout)
                 print(f"Finished: {' '.join(cmd)}")
                 if "Requirement already satisfied" not in result.stdout:
-                    # Something actually installed/upgraded → we’ll need a restart
+                    # Something actually installed/upgraded, so a restart is needed.
                     needs_restart = True
             except subprocess.CalledProcessError as e:
                 print(f"pip install failed ({' '.join(cmd)}):")

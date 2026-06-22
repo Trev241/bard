@@ -180,6 +180,6 @@ socket.on("playback_state", (state) => {
 });
 
 // socket.onAny((event, ...args) => {
-//   console.log(`📨 Received event: ${event}`, args);
+//   console.log(`Received event: ${event}`, args);
 // });
 // socket.on("call_list_update", updateCallMembers);

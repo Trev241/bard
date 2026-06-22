@@ -1,23 +1,23 @@
 import asyncio
-import logging
 import itertools
+import logging
 
-from discord.ext import commands, voice_recv
 import discord
+from discord.ext import commands, voice_recv
 
-from bot import EMBED_COLOR_THEME, socketio, public_url
-from bot.core.models import MusicRequest, Source, Song
-from bot.core.playback import PlaybackManager
-
-# from bot.cogs.assistant import Assistant
-from bot.core.events import events, SONG_START, SONG_COMPLETE
+from bot import EMBED_COLOR_THEME, config, public_url, socketio
+from bot.core.events import SONG_COMPLETE, SONG_START, events
 from bot.core.exceptions import (
-    UserNotInVoice,
     AlreadyConnected,
     AlreadyConnecting,
     CannotCompleteAction,
     ConnectionNotReady,
+    UserNotInVoice,
 )
+from bot.core.models import MusicRequest, Song, Source
+from bot.core.playback import PlaybackManager
+
+# from bot.cogs.assistant import Assistant
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ class Music(commands.Cog):
         self.voice_client: discord.VoiceProtocol = None
         self.voice_state = Music.VOICE_DISCONNECTED
 
-        # Register event listeners
         events.on(SONG_START, self.on_song_start)
         events.on(SONG_COMPLETE, self.on_song_complete)
 
@@ -44,9 +43,6 @@ class Music(commands.Cog):
         self.reset()
 
     def reset(self):
-        """Resets the state of the bot."""
-
-        # Bot state
         self.ctx = None
         self.voice_state = Music.VOICE_DISCONNECTED
         self._timeout_task = None
@@ -70,11 +66,10 @@ class Music(commands.Cog):
                     )
                 )
             )
-            task.add_done_callback(lambda _: on_handle_complete())
+            task.add_done_callback(self._socket_task_done)
 
         @socketio.on("playback_instruct_play")
         def handle_play(json=None):
-            # Create an async task to play/pause the current track
             is_playing = self.ctx.voice_client.is_playing()
             if is_playing:
                 self.pause(self.ctx)
@@ -84,18 +79,27 @@ class Music(commands.Cog):
 
         @socketio.on("playback_instruct_skip")
         def handle_skip(json=None):
-            # Create an async task to skip the current track
             self.skip(self.ctx)
             on_handle_complete()
 
         @socketio.on("playback_instruct_loop")
         def handle_loop(json=None):
-            # Create an async task to loop the current track
             self.loop()
             on_handle_complete({"is_looping": self.playback_manager.looping})
 
         def on_handle_complete(data=None):
             socketio.emit("playback_instruct_done", data)
+
+    @staticmethod
+    def _log_task_exception(task):
+        try:
+            task.result()
+        except Exception:
+            log.warning("Background music task failed.", exc_info=True)
+
+    def _socket_task_done(self, task):
+        self._log_task_exception(task)
+        socketio.emit("playback_instruct_done")
 
     @commands.command(name="join", aliases=["connect"])
     async def _join(self, ctx: commands.Context):
@@ -127,7 +131,7 @@ class Music(commands.Cog):
             await voice_channel.connect(cls=voice_recv.VoiceRecvClient, reconnect=False)
 
             if public_url:
-                await ctx.send(f"😊\tCheck out {public_url}/dashboard to manage me!")
+                await ctx.send(f"Check out {public_url}/dashboard to manage me!")
 
             # try:
             #     assistant_base: Assistant = self.client.get_cog("Assistant")
@@ -138,10 +142,10 @@ class Music(commands.Cog):
             #     # Handle this exception so that the bot can still connect.
             #     log.warning(f"Failed to enable assistant: {e}")
 
-            # Initialize PlaybackManager
             self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
-        except Exception as e:
+        except Exception:
             self.voice_state = Music.VOICE_DISCONNECTED
+            log.exception("Failed to join voice channel.")
             raise
 
         self.ctx = ctx
@@ -164,26 +168,29 @@ class Music(commands.Cog):
         # assistant_base: Assistant = self.client.get_cog("Assistant")
         # assistant_base.disable(ctx)
 
-        audio_path = "bot/resources/sounds/bard.disconnect.ogg"
+        audio_path = config.BASE_DIR / "resources" / "sounds" / "bard.disconnect.ogg"
         source = await discord.FFmpegOpusAudio.from_probe(audio_path)
 
         def after_callback(error):
+            if error:
+                log.warning("Disconnect sound failed: %s", error)
+
             coro = ctx.voice_client.disconnect()
             fut = asyncio.run_coroutine_threadsafe(coro, self.client.loop)
             try:
                 fut.result()
-            except:
-                pass
+            except Exception:
+                log.warning("Failed to disconnect after playback.", exc_info=True)
             self.voice_state = Music.VOICE_DISCONNECTED
 
-        # Only play the disconnect track if the bot is still live
         if ctx.voice_client:
             ctx.voice_client.play(source, after=after_callback)
 
         socketio.start_background_task(socketio.emit, "playback_stop")
 
     def on_song_complete(self, song: Song):
-        self.start_timeout_timer()
+        task = self.client.loop.create_task(self.start_timeout_timer())
+        task.add_done_callback(self._log_task_exception)
 
     def on_song_start(self, song: Song):
         socketio.emit(
@@ -197,12 +204,11 @@ class Music(commands.Cog):
             },
         )
 
-        self._timeout_task.cancel()
+        if self._timeout_task:
+            self._timeout_task.cancel()
+
         task = self.client.loop.create_task(self.send_song_dtls(song))
-        try:
-            task.result()
-        except:
-            pass
+        task.add_done_callback(self._log_task_exception)
 
     @commands.command(aliases=["playing", "nowplaying"])
     @is_connected()
@@ -218,7 +224,7 @@ class Music(commands.Cog):
 
         requester = song.requester
         footer_text = (
-            f"Played automatically by me. This song will be skipped as soon as you play something else!"
+            "Played automatically by me. This song will be skipped as soon as you play something else!"
             if song.requester == self.client.user
             else f"Song requested by {requester.display_name}"
         )
@@ -258,7 +264,6 @@ class Music(commands.Cog):
         if self.voice_state != Music.VOICE_CONNECTED:
             raise ConnectionNotReady("Voice connection is not ready")
 
-        # Qualify the message object of the request
         if request.source == Source.WEB:
             request.msg = await ctx.send(
                 f'Received on the web player: "{request.query}".'
@@ -270,29 +275,29 @@ class Music(commands.Cog):
 
         if not results:
             if results is None:
-                await ctx.message.reply("🎲\tPlaying a random song.")
+                await ctx.message.reply("Playing a random song.")
             else:
                 await ctx.message.reply(f'No results for "{request.query}" were found.')
                 return
         else:
             reply_msg = (
-                f"✅\tQueued {results[0].title}"
+                f"Queued {results[0].title}"
                 if len(results) == 1
-                else f"✅\tQueued {len(results)} tracks"
+                else f"Queued {len(results)} tracks"
             )
             await ctx.message.reply(reply_msg)
 
-            # Submit track analytics
             analytics = self.client.get_cog("Analytics")
-            for song in results:
-                analytics.submit_track(
-                    request.msg.id,
-                    request.msg.channel.id,
-                    request.msg.guild.id,
-                    song.title,
-                    request.author.id,
-                    request.msg.created_at,
-                )
+            if analytics:
+                for song in results:
+                    analytics.submit_track(
+                        request.msg.id,
+                        request.msg.channel.id,
+                        request.msg.guild.id,
+                        song.title,
+                        request.author.id,
+                        request.msg.created_at,
+                    )
 
         await self.playback_manager.play()
         socketio.emit(
@@ -305,8 +310,8 @@ class Music(commands.Cog):
         if self.voice_state == Music.VOICE_DISCONNECTED:
             await self.join(ctx)
 
-        self.ctx = ctx  # Update the context
-        await ctx.send("🔎\tSearching...")
+        self.ctx = ctx
+        await ctx.send("Searching...")
         await self.play(MusicRequest(query, ctx.author, self.ctx, Source.CMD))
 
     @staticmethod
@@ -342,14 +347,10 @@ class Music(commands.Cog):
             )
 
             if alone or idle:
-                await self.ctx.send("👋\tSee you later!")
-
-                # It is necessary to pass all required arguments to the function in order for it to execute
-                # Calling self.disconnect() alone without any parameters does not actually invoke the function
-                # This could be because of some pre-processing done by the decorators attached.
+                await self.ctx.send("See you later!")
                 await self.disconnect(self.ctx)
-        except:
-            pass
+        except Exception:
+            log.warning("Idle timeout check failed.", exc_info=True)
 
     def loop(self):
         self.playback_manager.loop()

@@ -2,30 +2,27 @@ import json
 import logging
 import hmac
 import hashlib
-import os
-import yt_dlp
 import random
 import asyncio
 
-from bot import client, app, socketio
+import yt_dlp
+
+from bot import client, app, config, socketio
 from flask import render_template, request, jsonify, abort
-from dotenv import load_dotenv
 from threading import Timer
 from bot.cogs.music import Music
+from bot.core.youtube import create_ytdlp
 
 logger = logging.getLogger(__name__)
-
-load_dotenv()
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 
 @app.context_processor
 def inject_client_info():
     head_commit = {}
     try:
-        fp = open("bot/resources/dumps/head-commit.json")
-    except:
-        logger.warning(f"Failed to open head-commit.json")
+        fp = open(config.HEAD_COMMIT_DUMP)
+    except FileNotFoundError:
+        logger.warning("Failed to open head-commit.json")
     else:
         with fp:
             head_commit = json.load(fp)
@@ -78,7 +75,6 @@ def analytics():
         year = request.args.get("year")
         guild_id = request.args.get("guild_id")
         guild = get_guild_dtls(guild_id)
-        # guild = client.get_guild(guild_id)
 
         top_tracks = analytics_base.get_tracks_by_freq(year, guild_id, limit=5)
         bot_tracks = analytics_base.get_tracks_by_freq(year, guild_id, False)
@@ -123,8 +119,8 @@ def analytics():
             logger.info(usr_id)
             full_usr_dtls = get_usr_dtls(int(usr_id))
             usr_dtls[usr_id] = {
-                "name": full_usr_dtls.display_name,
-                "avatar": full_usr_dtls.display_avatar.url,
+                "name": full_usr_dtls.display_name if full_usr_dtls else f"User {usr_id}",
+                "avatar": full_usr_dtls.display_avatar.url if full_usr_dtls else None,
                 "requests": usr[1],
             }
 
@@ -136,8 +132,8 @@ def analytics():
             "usr_dtls": usr_dtls,
             "year": request.args.get("year"),
             "guild": {
-                "name": guild.name,
-                "icon": guild.icon.url if guild.icon else None,
+                "name": guild.name if guild else f"Guild {guild_id}",
+                "icon": guild.icon.url if guild and guild.icon else None,
             },
         }
         return render_template("analytics.html", data=data)
@@ -151,12 +147,7 @@ def analytics():
 
 def get_track_dtls(title):
     """Return track details"""
-    ydl = yt_dlp.YoutubeDL(
-        {
-            "extract_flat": True,
-            "quiet": True,
-        }
-    )
+    ydl = create_ytdlp(flat=True)
     info = ydl.extract_info(f"ytsearch1:{title}", download=False, process=False)
     info["entries"] = list(info.get("entries", []))
     # We assume we need only the first entry
@@ -174,8 +165,8 @@ def get_guild_dtls(guild_id):
     fut = asyncio.run_coroutine_threadsafe(coro, client.loop)
     try:
         return fut.result()
-    except:
-        pass
+    except Exception:
+        logger.warning("Failed to fetch guild %s.", guild_id, exc_info=True)
 
     return None
 
@@ -186,20 +177,24 @@ def get_usr_dtls(user_id):
     fut = asyncio.run_coroutine_threadsafe(coro, client.loop)
     try:
         return fut.result()
-    except:
-        pass
+    except Exception:
+        logger.warning("Failed to fetch user %s.", user_id, exc_info=True)
 
     return None
 
 
 def _save_commit(payload):
-    with open("bot/resources/dumps/head-commit.json", "w") as fp:
+    with open(config.HEAD_COMMIT_DUMP, "w") as fp:
         json.dump(payload["head_commit"], fp)
     logger.info("Successfully saved head commit.")
 
 
 def verify_signature(payload_body, signature):
-    mac = hmac.new(WEBHOOK_SECRET.encode(), payload_body, hashlib.sha256)
+    if not config.WEBHOOK_SECRET:
+        logger.warning("Rejecting webhook because WEBHOOK_SECRET is not configured.")
+        return False
+
+    mac = hmac.new(config.WEBHOOK_SECRET.encode(), payload_body, hashlib.sha256)
     expected_signature = "sha256=" + mac.hexdigest()
 
     return hmac.compare_digest(expected_signature, signature)

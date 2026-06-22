@@ -10,41 +10,27 @@ import time
 from discord import FFmpegOpusAudio
 from discord import Client
 from discord.ext.voice_recv import VoiceRecvClient
-import yt_dlp
 import validators
 
+from bot import config
 from bot.core.models import MusicRequest, Song
 from bot.core.events import events, SONG_START
+from bot.core.youtube import create_ytdlp
 
 logger = logging.getLogger(__name__)
 
 
 class PlaybackManager:
     def __init__(self, client: Client, voice_client: VoiceRecvClient):
-        YDL_LOGGER = logging.getLogger("yt-dlp")
-        YDL_LOGGER.setLevel(logging.DEBUG)
-        YDL_LOG_HANDLER = logging.StreamHandler()
-        YDL_LOGGER.addHandler(YDL_LOG_HANDLER)
-
-        YDL_OPTIONS = {
-            "format": "bestaudio",
-            "cookiefile": "bot/secrets/cookies.txt",
-            "verbose": False,
-            "quiet": False,
-            "logger": YDL_LOGGER,
-        }
-
         self.ffmpeg_options = {
             "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
             "options": "-vn",
         }
 
-        self.auto_playlist_url = (
-            "https://www.youtube.com/playlist?list=PL7Akty-aEXMq8x9ToQy7v4TxLsi42MHSd"
-        )
+        self.auto_playlist_url = config.AUTOPLAY_PLAYLIST_URL
 
         # Core
-        self.yt = yt_dlp.YoutubeDL(YDL_OPTIONS)
+        self.yt = create_ytdlp()
         self.queue: deque[Song] = deque()
         self.voice_client = voice_client
         self.client = client
@@ -86,7 +72,7 @@ class PlaybackManager:
         entries = info["entries"] if info.get("_type", None) == "playlist" else [info]
         results = []
         for entry in entries:
-            with open("bot/resources/dumps/entries.json", "w") as fp:
+            with open(config.ENTRIES_DUMP, "w") as fp:
                 json.dump(self.yt.sanitize_info(entry), fp)
 
             try:
@@ -109,9 +95,11 @@ class PlaybackManager:
                     thumbnail=thumbnail_url,
                 )
                 results.append(song)
-            except:
+            except Exception:
                 logger.warning(
-                    f"Failed to process entry - {entry['title']}. This entry will be skipped."
+                    "Failed to process entry - %s. This entry will be skipped.",
+                    entry.get("title", "Unknown title"),
+                    exc_info=True,
                 )
 
         return results
@@ -184,7 +172,8 @@ class PlaybackManager:
 
             try:
                 future.result()
-            except:
+            except Exception:
+                logger.warning("Failed to schedule next track after playback.", exc_info=True)
                 pass
 
         self.skip_songs = 0
@@ -217,7 +206,7 @@ class PlaybackManager:
             )
             song.url = format.get("url")
 
-            with open("bot/resources/dumps/yt-dlp.json", "w") as fp:
+            with open(config.YTDLP_DUMP, "w") as fp:
                 json.dump(self.yt.sanitize_info(info), fp, indent=2)
 
         # Wait if playback is suspended

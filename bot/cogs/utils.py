@@ -1,10 +1,13 @@
-import discord
 import asyncio
-import sys
 import logging
-
-from discord.ext import commands
+import sys
 from datetime import datetime
+
+import discord
+from discord.ext import commands
+
+from bot import config
+from bot.core.checks import trusted_only
 
 log = logging.getLogger(__name__)
 
@@ -14,37 +17,34 @@ class Utils(commands.Cog):
 
     def __init__(self, client):
         self.client = client
-
-        # Pinging-related utils
         self.is_pinging = False
         self.channel = None
         self.ping_who = {}
+        self.pinging_task = None
 
     @commands.group(name="ping", invoke_without_command=True)
+    @trusted_only
     async def issue_ping(self, ctx, who: discord.Member, limit: int = 100):
         await self.ping(ctx.message.channel, [who], limit)
 
     async def ping(self, channel, who, limit: int = 100):
-        # Set a ping limit for all new members to be pinged
         for member in who:
             self.ping_who[member] = limit
 
-        # Find out who will be pinged last
         self.ping_limit = max(self.ping_who.values())
         self.ping_count = 0
         self.channel = channel
 
-        # Start a new pinging task if it does not already exist
         if not self.is_pinging:
-            el = asyncio.get_event_loop()
-            self.pinging_task = el.create_task(self.pinging(channel))
+            loop = asyncio.get_event_loop()
+            self.pinging_task = loop.create_task(self.pinging(channel))
 
     @issue_ping.command(
         name="stop",
         aliases=["halt", "remove", "terminate", "end", "done", "finish", "over"],
     )
+    @trusted_only
     async def ping_stop(self, ctx):
-        # Reset everything
         self.is_pinging = False
         self.ping_who = {}
 
@@ -64,7 +64,6 @@ class Utils(commands.Cog):
                     ping_message += f"{member.mention} ({count}) "
                     self.ping_who[member] -= 1
 
-            # It's possible that everyone might reply leaving the ping string empty
             if ping_message == "":
                 break
 
@@ -76,16 +75,20 @@ class Utils(commands.Cog):
         self.ping_who = {}
 
     @commands.command()
+    @trusted_only
     async def restart(self, ctx):
-        await ctx.send("🔄\tRestarting...")
-        with open("bot/restart_signal_trigger.flag", "w") as fp:
+        await ctx.send("Restarting...")
+        with open(config.RESTART_SIGNAL_TRIGGER_FILE, "w") as fp:
             fp.write("restart")
 
     @commands.command()
+    @trusted_only
     async def logs(self, ctx):
-        await ctx.send(file=discord.File(f"logs/{datetime.date(datetime.now())}.txt"))
+        log_file = config.LOG_DIR / f"{datetime.date(datetime.now())}.txt"
+        await ctx.send(file=discord.File(log_file))
 
     @commands.command()
+    @trusted_only
     async def shutdown(self, ctx):
         await ctx.send("Going to sleep...")
         sys.exit(0)

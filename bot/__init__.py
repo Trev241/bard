@@ -1,5 +1,4 @@
 from datetime import datetime
-from pathlib import Path
 import sys
 import os
 import logging
@@ -10,7 +9,12 @@ from flask_socketio import SocketIO
 from discord.ext import commands
 import discord
 
-client = commands.Bot(command_prefix="?", intents=discord.Intents.all())
+from bot import config
+
+
+config.ensure_runtime_dirs()
+
+client = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=discord.Intents.all())
 app = Flask(
     __name__,
     template_folder=os.path.join("dashboard", "templates"),
@@ -18,24 +22,18 @@ app = Flask(
 )
 socketio = SocketIO(app)
 
-public_url = "http://127.0.0.1:5000"
+public_url = config.DEFAULT_PUBLIC_URL
 try:
     r = requests.get("http://127.0.0.1:4040/api/tunnels")
     if r.status_code == 200:
         js = r.json()
         public_url = js["tunnels"][0]["public_url"]
-except:
+except requests.RequestException:
     pass
 
 # Constants
 EMBED_COLOR_THEME = 15844367
-BOT_SPAM_CHANNEL = 423774455332864011
-
-# Create required folders
-Path("bot/logs").mkdir(parents=True, exist_ok=True)
-Path("bot/resources/dumps").mkdir(parents=True, exist_ok=True)
-Path("bot/resources/stickers").mkdir(parents=True, exist_ok=True)
-Path("bot/secrets").mkdir(parents=True, exist_ok=True)
+BOT_SPAM_CHANNEL = config.BOT_SPAM_CHANNEL
 
 
 class StdoutHandler:
@@ -85,7 +83,7 @@ log_formatter = logging.Formatter(
 
 log_handlers = {
     "strm": logging.StreamHandler(sys.stdout),
-    "file": logging.FileHandler(f"bot/logs/{datetime.date(datetime.now())}.txt"),
+    "file": logging.FileHandler(config.LOG_DIR / f"{datetime.date(datetime.now())}.txt"),
 }
 for log_handler in log_handlers.values():
     log_handler.setLevel(logging.DEBUG)

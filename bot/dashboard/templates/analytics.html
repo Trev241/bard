@@ -85,7 +85,11 @@
         class="{{ 'bg-[#7E3924]' if loop.index % 2 == 0 else 'bg-[#A76E3A]' }} flex justify-center items-center p-4">
         <div class="max-w-screen-xl w-full mx-auto">
             <div class="w-full flex flex-col justify-center items-center my-24">
+                {% if data['usr_dtls'][usr]['avatar'] is not none %}
                 <img class="rounded-full mb-2 w-1/2 md:w-1/6" src="{{ data['usr_dtls'][usr]['avatar'] }}">
+                {% else %}
+                <img class="rounded-full mb-2 w-1/2 md:w-1/6" src="{{ url_for('static', filename='placeholder_icon.png') }}">
+                {% endif %}
                 <h1 class="text-3xl md:text-5xl font-bold mb-2">{{ data['usr_dtls'][usr]['name'] }}</h1>
                 <h2 class="text-xl md:text-2xl">You made {{ data['usr_dtls'][usr]['requests'] }} request{{ 's' if
                     data['usr_dtls'][usr]['requests'] > 1 else '' }} this year</h2>
