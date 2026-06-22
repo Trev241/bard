@@ -7,6 +7,8 @@ from discord.ext import commands
 
 from bot import config
 from bot.core.checks import trusted_only
+from bot.core.github_issues import GitHubIssueClient
+from bot.core.issue_report_ui import IssueReportView, issue_context_from_message
 from bot.core.logging_service import recent_log_text
 
 log = logging.getLogger(__name__)
@@ -21,6 +23,7 @@ class Utils(commands.Cog):
         self.channel = None
         self.ping_who = {}
         self.pinging_task = None
+        self.github_issues = GitHubIssueClient()
 
     @commands.group(name="ping", invoke_without_command=True)
     @trusted_only
@@ -105,6 +108,17 @@ class Utils(commands.Cog):
             return
 
         await ctx.send(file=discord.File(config.LOG_FILE))
+
+    @commands.command(name="report", aliases=["issue", "bug"])
+    async def report_issue(self, ctx):
+        if not self.github_issues.configured:
+            await ctx.send(
+                "Issue reporting is not configured. Set GITHUB_REPO and GITHUB_TOKEN."
+            )
+            return
+
+        view = IssueReportView(self.github_issues, issue_context_from_message(ctx.message))
+        await ctx.send("Open a report form for this Bard issue.", view=view)
 
     @commands.command()
     @trusted_only

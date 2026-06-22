@@ -46,6 +46,13 @@ WATCHER_YTDLP_UPDATE_TIMEOUT = parse_int_env("WATCHER_YTDLP_UPDATE_TIMEOUT", 120
 LOG_MAX_BYTES = parse_int_env("LOG_MAX_BYTES", 5 * 1024 * 1024)
 LOG_BACKUP_COUNT = parse_int_env("LOG_BACKUP_COUNT", 5)
 LOG_SNIPPET_LINES = parse_int_env("LOG_SNIPPET_LINES", 120)
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_ISSUE_LABELS = [
+    label.strip()
+    for label in os.getenv("GITHUB_ISSUE_LABELS", "bug,user-report").split(",")
+    if label.strip()
+]
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "bard.log"

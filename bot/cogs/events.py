@@ -15,6 +15,8 @@ from bot.core.exceptions import (
     ConnectionNotReady,
     UserNotInVoice,
 )
+from bot.core.github_issues import GitHubIssueClient
+from bot.core.issue_report_ui import IssueReportView, issue_context_from_message
 from bot.core.message_features import (
     CookieUpdater,
     PingAutomation,
@@ -34,6 +36,7 @@ class Events(commands.Cog):
         self.timezone_responder = TimezoneResponder()
         self.cookie_updater = CookieUpdater(client)
         self.voice_auto_join = VoiceAutoJoin(client)
+        self.github_issues = GitHubIssueClient()
 
     @commands.Cog.listener()
     async def on_message(self, message: Message):
@@ -74,10 +77,20 @@ class Events(commands.Cog):
         else:
             full_error = "".join(traceback.format_exception(error))
             log.error(full_error)
-            await ctx.send(
+            error_message = await ctx.send(
                 f"```py\n{full_error[:1900]}```\n"
-                f"**An exception has occurred!** This incident will be reported.\n"
+                f"**An exception has occurred!** You can report this issue below.\n"
             )
+            if self.github_issues.configured:
+                view = IssueReportView(
+                    self.github_issues,
+                    issue_context_from_message(
+                        ctx.message,
+                        referenced_message=error_message,
+                    ),
+                    error_text=full_error,
+                )
+                await error_message.edit(view=view)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: RawReactionActionEvent):

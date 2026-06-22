@@ -148,8 +148,11 @@ Bard may provide convenience utilities, including:
 - Timezone conversion based on role names.
 - Cookie-file updates through trusted Discord interactions.
 - Logs, restart, and shutdown commands.
+- User issue reports through Discord UI forms that create GitHub issues.
 
 Sensitive utilities must be limited to trusted users or admins.
+
+Issue reporting may be available to normal users, but it must not expose secrets. It should include Discord context and user-provided reproduction details.
 
 ### Logging And Debugging
 
@@ -208,6 +211,7 @@ Bard should use centralized configuration for:
 - Feature flags for optional modules.
 - Whether the watcher refreshes `yt-dlp` before restart.
 - Log rotation size, backup count, and default snippet length.
+- GitHub repository, issue labels, and token for issue-report creation.
 
 Secrets must not be committed.
 
@@ -220,6 +224,7 @@ The following actions should require owner or admin permission:
 - Shutdown.
 - Restart.
 - Log access.
+- GitHub issue-report submission should validate configuration and avoid exposing tokens.
 - Cookie updates.
 - Mass pinging.
 - Any future command that reads secrets, writes runtime files, or affects deployment.

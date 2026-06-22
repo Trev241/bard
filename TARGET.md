@@ -77,11 +77,13 @@ Bard includes extra Discord helper behavior:
 - Save YouTube cookie files when a message attachment is reacted to with the configured cookie emoji.
 - Restart or shut down the bot from Discord commands.
 - Read recent runtime log snippets from Discord for debugging.
+- Let users submit issue reports through a Discord form that creates GitHub issues.
 
 Important files:
 
 - `bot/cogs/utils.py`
 - `bot/cogs/events.py`
+- `bot/core/github_issues.py`
 
 ### Logging And Debugging
 
