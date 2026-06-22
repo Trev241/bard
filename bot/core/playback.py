@@ -51,6 +51,7 @@ class PlaybackManager:
 
         # Auto-play properties
         self.auto_play = True
+        self._prefetch_tasks = {}
 
     def search(self, request: MusicRequest, auto_play: bool = False) -> list[Song]:
         return self.resolver.search(request, auto_play)
@@ -147,7 +148,7 @@ class PlaybackManager:
             song = self.queue[0]
 
             try:
-                self.resolver.hydrate(song)
+                await self.hydrate(song)
 
                 # Wait if playback is suspended
                 await self.playback_enabled.wait()
@@ -155,7 +156,7 @@ class PlaybackManager:
                 self.curr_song = song
                 ffmpeg_options = self.ffmpeg_options.copy()
                 ffmpeg_options["options"] += f" -ss {song.start_at}"
-                audio = await FFmpegOpusAudio.from_probe(song.url, **ffmpeg_options)
+                audio = await self.create_audio_source(song, ffmpeg_options)
                 self.voice_client.play(audio, after=self.after_playback)
             except Exception:
                 failed_song = self.queue.popleft()
@@ -173,10 +174,54 @@ class PlaybackManager:
             # Save the timestamp at which this track started
             self.curr_song_start_time = time.time() - song.start_at
             self.idle = False
+            self.prefetch_next_track()
             return
 
         self.curr_song = None
         self.idle = True
+
+    async def hydrate(self, song: Song):
+        self._prefetch_tasks = getattr(self, "_prefetch_tasks", {})
+        task = self._prefetch_tasks.pop(id(song), None)
+        if task:
+            await task
+            if song.url:
+                return song
+
+        return await asyncio.to_thread(self.resolver.hydrate, song)
+
+    async def create_audio_source(self, song: Song, ffmpeg_options):
+        if (song.audio_codec or "").lower() == "opus":
+            logger.debug("Starting %s without FFmpeg probe; codec is Opus.", song.title)
+            return FFmpegOpusAudio(song.url, codec="copy", **ffmpeg_options)
+
+        logger.debug("Starting %s with FFmpeg probe; codec is %s.", song.title, song.audio_codec)
+        return await FFmpegOpusAudio.from_probe(song.url, **ffmpeg_options)
+
+    def prefetch_next_track(self):
+        self._prefetch_tasks = getattr(self, "_prefetch_tasks", {})
+        if len(self.queue) < 2:
+            return
+
+        song = self.queue[1]
+        if song.url:
+            return
+
+        key = id(song)
+        if key in self._prefetch_tasks:
+            return
+
+        task = self.client.loop.create_task(self._prefetch_track(song, key))
+        self._prefetch_tasks[key] = task
+
+    async def _prefetch_track(self, song: Song, key):
+        try:
+            await asyncio.to_thread(self.resolver.hydrate, song)
+            logger.debug("Prefetched next track: %s.", song.title)
+        except Exception:
+            logger.debug("Failed to prefetch next track: %s.", song.title, exc_info=True)
+        finally:
+            self._prefetch_tasks.pop(key, None)
 
     def stop(self):
         """
@@ -186,8 +231,15 @@ class PlaybackManager:
         self.queue.clear()
         self.curr_song = None
         self.looping = self.auto_play = False
+        self.cancel_prefetch_tasks()
         self.voice_client.stop_playing()
         self.idle = True
+
+    def cancel_prefetch_tasks(self):
+        self._prefetch_tasks = getattr(self, "_prefetch_tasks", {})
+        for task in self._prefetch_tasks.values():
+            task.cancel()
+        self._prefetch_tasks.clear()
 
     async def play(self):
         if self.idle:

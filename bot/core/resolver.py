@@ -29,7 +29,7 @@ class TrackResolver:
                 (
                     request.query
                     if validators.url(request.query)
-                    else f"ytsearch:{request.query}"
+                    else f"ytsearch1:{request.query}"
                 ),
                 download=False,
                 process=False,
@@ -121,6 +121,7 @@ class TrackResolver:
             None,
         ) or next((fmt for fmt in formats if fmt.get("url")), None)
         song.url = selected_format.get("url") if selected_format else None
+        song.audio_codec = selected_format.get("acodec") if selected_format else None
         if not song.url:
             raise ValueError(f"No playable format found for {song.title}")
 

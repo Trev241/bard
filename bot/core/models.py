@@ -27,6 +27,7 @@ class Song:
     ie_result: dict
     auto_play: bool = False
     url: str = None
+    audio_codec: str = None
     thumbnail: str = None
     webpage: str = None
     start_at: int = 0

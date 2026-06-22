@@ -19,7 +19,11 @@ class FakeYt:
             "thumbnails": [{"url": "https://example.test/thumb.jpg"}],
             "formats": [
                 {"format_id": "140", "url": "https://example.test/audio-low.m4a"},
-                {"format_id": "251", "url": "https://example.test/audio.webm"},
+                {
+                    "format_id": "251",
+                    "url": "https://example.test/audio.webm",
+                    "acodec": "opus",
+                },
             ],
         }
 
@@ -54,7 +58,26 @@ def test_resolver_hydrates_playable_metadata(monkeypatch, tmp_path):
 
     assert song.webpage == "https://example.test/watch"
     assert song.url == "https://example.test/audio.webm"
+    assert song.audio_codec == "opus"
     assert song.thumbnail == "https://example.test/thumb.jpg"
+
+
+def test_resolver_limits_text_search_to_one_result():
+    class SearchYt(FakeYt):
+        def __init__(self):
+            self.query = None
+
+        def extract_info(self, query, download=False, process=False):
+            self.query = query
+            return {"entries": []}
+
+    yt = SearchYt()
+    requester = SimpleNamespace(display_name="tester")
+    resolver = TrackResolver(SimpleNamespace(user=SimpleNamespace()), yt=yt)
+
+    resolver.search(MusicRequest("slow song", requester))
+
+    assert yt.query == "ytsearch1:slow song"
 
 
 def test_resolver_rejects_missing_playable_format(monkeypatch, tmp_path):

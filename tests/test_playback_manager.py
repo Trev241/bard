@@ -56,6 +56,7 @@ def make_manager(*songs):
     manager.auto_play = False
     manager.auto_play_songs = None
     manager.resolver = SimpleNamespace(hydrate=lambda song: song)
+    manager._prefetch_tasks = {}
     return manager
 
 
@@ -144,6 +145,85 @@ async def test_next_skips_track_when_hydration_fails():
     assert list(manager.queue) == []
     assert manager.curr_song is None
     assert manager.idle is True
+
+
+@pytest.mark.asyncio
+async def test_opus_track_starts_without_ffmpeg_probe(monkeypatch):
+    calls = []
+
+    class FakeFFmpegOpusAudio:
+        def __init__(self, source, **kwargs):
+            calls.append(("direct", source, kwargs))
+
+        @classmethod
+        async def from_probe(cls, source, **kwargs):
+            calls.append(("probe", source, kwargs))
+            return cls(source, **kwargs)
+
+    monkeypatch.setattr("bot.core.playback.FFmpegOpusAudio", FakeFFmpegOpusAudio)
+    manager = make_manager()
+    song = make_song("Track A")
+    song.url = "https://example.test/audio.webm"
+    song.audio_codec = "opus"
+
+    await manager.create_audio_source(song, {"options": "-vn"})
+
+    assert calls == [
+        (
+            "direct",
+            "https://example.test/audio.webm",
+            {"codec": "copy", "options": "-vn"},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_non_opus_track_uses_ffmpeg_probe(monkeypatch):
+    calls = []
+
+    class FakeFFmpegOpusAudio:
+        def __init__(self, source, **kwargs):
+            calls.append(("direct", source, kwargs))
+
+        @classmethod
+        async def from_probe(cls, source, **kwargs):
+            calls.append(("probe", source, kwargs))
+            return cls(source, **kwargs)
+
+    monkeypatch.setattr("bot.core.playback.FFmpegOpusAudio", FakeFFmpegOpusAudio)
+    manager = make_manager()
+    song = make_song("Track A")
+    song.url = "https://example.test/audio.m4a"
+    song.audio_codec = "mp4a.40.2"
+
+    await manager.create_audio_source(song, {"options": "-vn"})
+
+    assert calls[0] == (
+        "probe",
+        "https://example.test/audio.m4a",
+        {"options": "-vn"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefetch_next_track_hydrates_second_song():
+    first = make_song("Track A")
+    second = make_song("Track B")
+    manager = make_manager(first, second)
+    manager.client = SimpleNamespace(loop=asyncio.get_running_loop())
+
+    def hydrate(song):
+        song.url = f"https://example.test/{song.title}.webm"
+        song.audio_codec = "opus"
+        return song
+
+    manager.resolver = SimpleNamespace(hydrate=hydrate)
+
+    manager.prefetch_next_track()
+    await asyncio.gather(*list(manager._prefetch_tasks.values()))
+
+    assert second.url == "https://example.test/Track B.webm"
+    assert second.audio_codec == "opus"
 
 
 def test_remove_queued_song_by_one_based_index():

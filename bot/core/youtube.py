@@ -19,7 +19,7 @@ def youtube_logger():
 
 def ytdlp_options():
     return {
-        "format": "bestaudio",
+        "format": "bestaudio[acodec=opus]/bestaudio",
         "cookiefile": str(config.COOKIES_FILE),
         "verbose": False,
         "quiet": False,
@@ -37,4 +37,3 @@ def flat_ytdlp_options():
 def create_ytdlp(flat=False):
     options = flat_ytdlp_options() if flat else ytdlp_options()
     return yt_dlp.YoutubeDL(options)
-
