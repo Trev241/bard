@@ -21,6 +21,11 @@ if config.ASSISTANT_ENABLED:
 
     cogs.append(assistant)
 
+if config.TRANSLATION_ENABLED:
+    import bot.cogs.translation as translation
+
+    cogs.append(translation)
+
 
 async def load_extensions():
     """Load all extensions asynchronously by inovking the setup method of each cog."""

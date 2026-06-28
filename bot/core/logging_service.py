@@ -24,7 +24,7 @@ def sensitive_values():
     return [
         config.TOKEN,
         config.WEBHOOK_SECRET,
-        config.PV_ACCESS_KEY,
+        config.ASSISTANT_OPENROUTER_API_KEY,
     ]
 
 

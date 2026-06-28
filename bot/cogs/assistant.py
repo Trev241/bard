@@ -1,28 +1,29 @@
 import array
-import time
 import asyncio
 import json
-import random
-import yaml
-import platform
-
-import numpy as np
 import logging
-import discord
+import random
+import time
+from collections import defaultdict, namedtuple
+
 import audioop
-
+import discord
+import numpy as np
 import pyttsx3
-import pvporcupine
-import pvrhino
-
 import speech_recognition as sr
-
-from resampy.core import resample
+import yaml
 from discord.ext import commands, voice_recv
 from discord.ext.commands import Context
-from collections import defaultdict, deque, namedtuple
+from resampy.core import resample
 
 from bot import config
+from bot.core.assistant import (
+    AssistantController,
+    IntentParserChain,
+    OpenRouterIntentParser,
+    RuleBasedIntentParser,
+)
+from bot.core.assistant.wake import OpenWakeWordDetector
 
 log = logging.getLogger(__name__)
 
@@ -31,93 +32,37 @@ class Assistant(commands.Cog):
     Utterance = namedtuple("Utterance", ["content", "after", "quiet_after"])
 
     def __init__(self, client):
-        # Bot state
         self.client = client
-        self.intents = self.load_intents()
         self.dialogs = self.load_dialogs()
+        self.intents = self.load_intents()
         self.recognizer = sr.Recognizer()
+        self.controller = AssistantController(client)
+        self.parser = self.build_parser()
+
         self.enabled = False
         self.always_awake = False
-
-        self._ctx = None
-        self._is_awake = False
-        self._query = None
-        self._transcription_required = False
+        self._ctx: Context = None
+        self._voice_client: discord.VoiceClient = None
+        self._priority_speaker = None
         self._services_available = True
 
-        # Events
-        self._events = {
-            event_type: asyncio.Event()
-            for event_type in [
-                "UTTERANCE_REQUIRED",
-                "INTENT_DETECTED",
-                "QUERY_DETECTED",
-                "UTTERANCE_FINISHED",
-            ]
-        }
-        self._events["UTTERANCE_FINISHED"].set()
-
         self._loop = asyncio.get_event_loop()
-        self._voice_client: discord.VoiceClient = None
-        self._resampled_stream = []
+        self._message_queue = asyncio.Queue()
+        self._msg_queue_task = None
+
+        self._turn_active = False
+        self._transcription_user_id = None
+        self._query_future = None
         self._stream_data = defaultdict(
             lambda: {"stopper": None, "buffer": array.array("B")}
         )
 
-        # Porcupine wake-word
-        self._priority_speaker = None
-        porcupine_mdl = (
-            "Okay-Bard_en_linux_v3_0_0.ppn"
-            if platform.system() == "Linux"
-            else "Okay-Bard_en_windows_v3_0_0.ppn"
-        )
+        self._resampled_stream = []
+        self._wake_word = None
+        self._tts_engine = None
 
-        try:
-            self.porcupine = pvporcupine.create(
-                access_key=config.PV_ACCESS_KEY,
-                keyword_paths=[str(config.ASSISTANT_RESOURCES_DIR / porcupine_mdl)],
-            )
-        except Exception as e:
-            self._services_available = False
-            log.error(
-                f"Failed to launch porcupine service. It is possible that the service has exceeded its usage for this month: {e}"
-            )
-            log.error("Wake word services will not be available!")
-
-        # TTS
-        try:
-            self._tts_engine = pyttsx3.init()
-            voices = self._tts_engine.getProperty("voices")
-            if len(voices) > 1:
-                self._tts_engine.setProperty("voice", voices[1].id)
-        except Exception:
-            self._tts_engine = None
-            self._services_available = False
-            log.error("Text-to-speech services will not be available.", exc_info=True)
-        self._message_queue = deque()
-        self._msg_queue_task = None
-
-        # Rhino speech-to-intent
-        self._intent_queue = deque()
-        self._loop.create_task(self._process_intent())
-        rhino_mdl = (
-            "Bard-Assistant_en_linux_v3_0_0.rhn"
-            if platform.system() == "Linux"
-            else "Bard-Assistant_en_windows_v3_0_0.rhn"
-        )
-
-        try:
-            self.rhino = pvrhino.create(
-                access_key=config.PV_ACCESS_KEY,
-                context_path=str(config.ASSISTANT_RESOURCES_DIR / rhino_mdl),
-                # require_endpoint=False,  # Rhino will not require an chunk of silence at the end
-            )
-        except Exception as e:
-            self._services_available = False
-            log.error(
-                f"Failed to launch rhino service. It is possible that the service has exceeded its usage for this month: {e}"
-            )
-            log.error("Intent intepretation services will not be available!")
+        self._init_wake_word()
+        self._init_tts()
 
     @commands.command()
     async def intents(self, ctx):
@@ -133,353 +78,335 @@ class Assistant(commands.Cog):
         with open(config.ASSISTANT_DIALOGS) as fp:
             return json.load(fp)
 
-    def _detect_intent(self, audio_frame):
-        """
-        Detects intent. Inferred intent is pushed to the intent
-        queue to be processed.
-        """
-
-        # Determine intent from speech
-        is_finalized = self.rhino.process(audio_frame)
-        if is_finalized:
-            inference = self.rhino.get_inference()
-
-            if inference.is_understood:
-                self._is_awake = False
-                self._resampled_stream = []
-
-                # Add intent to queue and set event for processing
-                log.info(inference.intent)
-                self._intent_queue.append(inference)
-                self._loop.call_soon_threadsafe(self._events["INTENT_DETECTED"].set)
-
-    def say(self, message, quiet_after, after=None):
-        """
-        Adds a message to the assistant's message queue which will be
-        played over the bot's voice client connection using TTS along with
-        a text message.
-
-        Audio for the message will only be played if there is no audio
-        currently playing. Otherwise, only a text message will be displayed
-
-        Messages will not play over each other and can only played if
-        a coroutine to process them exists. In other words, the assistant
-        should be enabled for the assistant to broadcast messages.
-        """
-
-        utterance = Assistant.Utterance(message, after, quiet_after)
-        self._message_queue.append(utterance)
-
-        # Modify the event from another thread using call_soon_threadsafe
-        # Reference: https://stackoverflow.com/questions/64651519/how-to-pass-an-event-into-an-async-task-from-another-thread
-        self._loop.call_soon_threadsafe(self._events["UTTERANCE_REQUIRED"].set)
-
-    async def _process_message_queue(self):
-        """
-        A repeating coroutine service that generates speech for
-        messages added to message_queue. There should be only one instance
-        of this task running.
-        """
-
-        while True:
-            await self._events["UTTERANCE_FINISHED"].wait()
-            await self._events["UTTERANCE_REQUIRED"].wait()
-
-            if len(self._message_queue) > 0:
-                # Clear this flag so that coroutines will correctly wait for this event
-                self._events["UTTERANCE_FINISHED"].clear()
-
-                log.info("Converting pending message to utterance.")
-
-                utterance: Assistant.Utterance = self._message_queue.popleft()
-                music_base = self.client.get_cog("Music")
-                audio = await self.get_audio_from_text(utterance.content)
-                await music_base.suspend(self._ctx)
-                log.info("Playback from music cog paused.")
-                await self._ctx.send(utterance.content)
-                self._voice_client.play(
-                    audio,
-                    after=lambda _: self._process_message_queue_cb(
-                        utterance.quiet_after, utterance.after
-                    ),
+    @staticmethod
+    def build_parser():
+        parsers = [RuleBasedIntentParser()]
+        if config.ASSISTANT_LLM_PROVIDER == "openrouter":
+            parsers.append(
+                OpenRouterIntentParser(
+                    api_key=config.ASSISTANT_OPENROUTER_API_KEY,
+                    model=config.ASSISTANT_OPENROUTER_MODEL,
+                    timeout_seconds=config.ASSISTANT_LLM_TIMEOUT_SECONDS,
                 )
+            )
+        elif config.ASSISTANT_LLM_PROVIDER not in {"", "none"}:
+            log.warning(
+                "Unsupported ASSISTANT_LLM_PROVIDER=%s. Falling back to rules only.",
+                config.ASSISTANT_LLM_PROVIDER,
+            )
 
-            self._events["UTTERANCE_REQUIRED"].clear()
-
-    def _process_message_queue_cb(self, quiet_after=False, callback=None):
-        if callback:
-            callback()
-
-        self._events["UTTERANCE_FINISHED"].set()
-
-        if quiet_after:
-            return
-
-        # Resume music if no silence is required after the message
-        music_base = self.client.get_cog("Music")
-        music_base.remove_suspension()
-
-        log.info(f"Success. Utterance transmitted successfully.")
-
-    async def get_audio_from_text(self, message):
-        """Converts and returns an Opus-ready audio source from the given message"""
-
-        if not self._tts_engine:
-            raise RuntimeError("Text-to-speech service is unavailable.")
-
-        self._tts_engine.save_to_file(message, str(config.ASSISTANT_REPLY_AUDIO))
-        self._tts_engine.runAndWait()
-        return await discord.FFmpegOpusAudio.from_probe(
-            config.ASSISTANT_REPLY_AUDIO
+        return IntentParserChain(
+            parsers,
+            min_confidence=config.ASSISTANT_LLM_MIN_CONFIDENCE,
         )
 
-    async def transcribe(self, prompt):
-        """Enables the transcription service and returns the transcription of the shortest phrase captured"""
-        self._events["QUERY_DETECTED"].clear()
+    def _init_wake_word(self):
+        try:
+            self._wake_word = OpenWakeWordDetector(
+                models=config.ASSISTANT_WAKEWORD_MODELS,
+                threshold=config.ASSISTANT_WAKEWORD_THRESHOLD,
+            )
+        except Exception as exc:
+            self._services_available = False
+            log.error("Wake word services will not be available: %s", exc, exc_info=True)
 
-        music_base = self.client.get_cog("Music")
-        await music_base.suspend(self._ctx)
-        audio = await self.get_audio_from_text(prompt)
-        prompt_msg: discord.Message = await self._ctx.send(prompt)
-        self._voice_client.play(audio, after=lambda _: self._transcribe_cb())
-
-        log.info("Waiting for transcription to complete")
-        await self._events["QUERY_DETECTED"].wait()
-
-        # Stop background whisper transcriber and delete stopper callback
-        self._transcription_required = False
-        stopper_cb = self._stream_data[self._priority_speaker.id]["stopper"]
-        stopper_cb(False)
-
-        music_base.remove_suspension()
-        await prompt_msg.edit(content=f'{prompt} "*{self._query.strip()}*"')
-
-        log.info("Returning transcription.")
-        return self._query
-
-    def _transcribe_cb(self):
-        self._query = None
-        self._stream_data[self._priority_speaker.id] = {
-            "stopper": None,
-            "buffer": array.array("B"),
-        }
-        self._transcription_required = True
-
-    async def _process_intent(self):
-        """A repeating coroutine service to process intents one at a time."""
-
-        while True:
-            await self._events["INTENT_DETECTED"].wait()
-
-            if len(self._intent_queue) == 0:
-                return
-
-            inference = self._intent_queue.popleft()
-            command = self.client.get_command(inference.intent)
-            log.info(f"Executing intent: {command}")
-
-            if inference.intent == "play":
-                # Additional transcription is required
-                prompt_dialog = random.choice(
-                    self.dialogs["prompts"]["music_selection"]
-                )
-                query = await self.transcribe(prompt_dialog)
-                await command(self._ctx, query=query)
-            else:
-                # self.say(f"Okay, I will {inference.intent}")
-                await command(self._ctx)
-
-            self._events["INTENT_DETECTED"].clear()
-
-    def restore(self, ctx: Context):
-        """
-        Restores the listening state of the bot.
-        Should always be invoked if stop() is called on the voice_client
-        """
-
-        self._apply_sink(ctx)
-
-    def _apply_sink(self, ctx: Context):
-        """Registers a callback to a BasicSink which is later applied on the bot."""
-
-        def callback(user: discord.User, data: voice_recv.VoiceData):
-            # Only process packets from the priority speaker
-            if user is None or user.id != self._priority_speaker.id:
-                return
-
-            """
-            Porcupine expects a frame of 512 samples.
-
-            Each data.pcm array has 3840 bytes. This is because Discord
-            is streaming stereo audio at a samplerate of 48kHz at 16 bits.
-            The value of 3840 is calculated in the following manner
-                (48000 samples * 0.02 seconds * 16 bit depth * 2 channels) / 8
-                    = 3840 bytes
-
-            In this case, the bytes of the PCM stream are stored in the format
-            below:
-                L L R R L L R R L L R R L L R R
-
-            Here, each individual letter represents a single byte. Since each
-            sample is measured with 16 bits, two bytes are needed for each
-            sample. Additionally, because this PCM stream is stereo (has 2
-            channels), the samples of both channels are interleaved such that
-            the first sample belongs to the left channel followed by a sample
-            belonging to the right and so on.
-
-            Reference:
-            https://stackoverflow.com/questions/32128206/what-does-interleaved-stereo-pcm-linear-int16-big-endian-audio-look-like
-            """
-
-            log.debug(len(self._resampled_stream))
-
-            if self._transcription_required:
-                # Additional speech transcription is required
-                sdata = self._stream_data[user.id]
-                sdata["buffer"].extend(data.pcm)
-
-                if not sdata["stopper"]:
-                    sdata["stopper"] = self.recognizer.listen_in_background(
-                        DiscordSRAudioSource(sdata["buffer"]),
-                        self._get_bg_listener_callback(user),
-                        phrase_time_limit=15,
-                    )
-            else:
-                # Direct all PCM packets to porcupine or rhino if
-                # transcription is not required
-
-                # The PCM stream from Discord arrives in bytes in Little Endian format
-                values = np.frombuffer(data.pcm, dtype=np.int16)
-                value_matrix = np.array((values[::2], values[1::2]))
-
-                # Downsample the audio stream from 48kHz to 16kHz
-                resampled_values = resample(value_matrix, 48_000, 16_000).astype(
-                    np.int16
-                )
-
-                # Extend the buffer with the samples for the current user collected
-                # at this instance and choose the left channel only
-                self._resampled_stream.extend(resampled_values[0])
-                resampled_buffer = self._resampled_stream
-
-                # log.info(self._resampled_stream)
-
-                if len(resampled_buffer) >= 512:
-                    # Buffer has >512 bytes
-                    audio_frame = resampled_buffer[:512]
-                    self._resampled_stream = resampled_buffer[512:]
-
-                    if self.always_awake or self._is_awake:
-                        # Determine intent from speech
-                        self._detect_intent(audio_frame)
-                    else:
-                        # Listen for wake word
-                        result = self.porcupine.process(audio_frame)
-                        # log.info(result)
-
-                        if result >= 0:
-                            # Set awake
-                            self._is_awake = True
-                            self._resampled_stream = []
-
-                            log.info("Detected wake word")
-                            dialog = random.choice(
-                                self.dialogs["prompts"]["general"]
-                            )
-                            self.say(
-                                f"Hi {user.display_name}. {dialog}", quiet_after=True
-                            )
-
-        assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
-        ctx.voice_client.listen(assistant_sink)
+    def _init_tts(self):
+        try:
+            self._tts_engine = pyttsx3.init()
+            voices = self._tts_engine.getProperty("voices")
+            if len(voices) > 1:
+                self._tts_engine.setProperty("voice", voices[1].id)
+        except Exception:
+            self._tts_engine = None
+            self._services_available = False
+            log.error("Text-to-speech services will not be available.", exc_info=True)
 
     def enable(self, ctx: Context):
-        """
-        Enables the assistant. When in listening mode, the assistant waits
-        for the wake word to trigger command mode. In command mode, the
-        assistant will interpret the intent of the speaker who woke the assistant
-
-        :returns: True if the service is enabled or false otherwise
-        """
-
         if not self._services_available:
-            log.info(
-                "Assistant cannot be enabled because either rhino or porcupine is unavailable."
-            )
+            log.info("Assistant cannot be enabled because a required service is unavailable.")
             return False
 
         if self.enabled:
-            log.info("Assistant is already enabled")
+            log.info("Assistant is already enabled.")
             return False
 
         self.enabled = True
-
-        # Caching important properties
         self._ctx = ctx
         self._voice_client = ctx.voice_client
         self._priority_speaker = ctx.author
-
-        el = asyncio.get_event_loop()
-        self._msg_queue_task = el.create_task(self._process_message_queue())
+        self._msg_queue_task = self.client.loop.create_task(self._process_message_queue())
         self._apply_sink(ctx)
-
-        log.info("Enabled assistant")
+        log.info("Enabled assistant.")
         return True
 
-    def disable(self, ctx: Context):
-        """
-        Disables the assistant and cancels any connections and related tasks
-        """
-
-        if not self._services_available:
+    def disable(self, ctx: Context = None):
+        if not self.enabled:
             return
 
         self.enabled = False
-        self._ctx = ctx
-        ctx.voice_client.stop_listening()
-        self.cleanup()
+        self._ctx = ctx or self._ctx
 
-        log.info("Disabled assistant")
+        voice_client = getattr(self._ctx, "voice_client", None) if self._ctx else None
+        if voice_client:
+            try:
+                voice_client.stop_listening()
+            except Exception:
+                log.debug("Voice client was not listening.", exc_info=True)
+
+        self.cleanup()
+        log.info("Disabled assistant.")
+
+    def restore(self, ctx: Context):
+        if self.enabled:
+            self._apply_sink(ctx)
 
     def cleanup(self):
-        # Reset events
-        for event in self._events.values():
-            event.clear()
-        self._events["UTTERANCE_FINISHED"].set()
-
-        # Clean up tasks
         if self._msg_queue_task:
             self._msg_queue_task.cancel()
             self._msg_queue_task = None
 
-        # Clear queues
-        self._message_queue.clear()
-        self._intent_queue.clear()
+        if self._query_future and not self._query_future.done():
+            self._query_future.cancel()
+
+        self._stop_transcription()
+        self._release_music_suspension()
+        while not self._message_queue.empty():
+            self._message_queue.get_nowait()
+            self._message_queue.task_done()
+        self._resampled_stream = []
+        self._turn_active = False
+
+    def cog_unload(self):
+        self.disable()
+        if self._wake_word:
+            self._wake_word.close()
+
+    def _apply_sink(self, ctx: Context):
+        def callback(user: discord.User, data: voice_recv.VoiceData):
+            if not self.enabled or user is None or self._priority_speaker is None:
+                return
+            if user.id != self._priority_speaker.id:
+                return
+
+            if self._transcription_user_id == user.id:
+                self._buffer_transcription_audio(user, data)
+                return
+
+            self._process_wake_audio(user, data)
+
+        assistant_sink = voice_recv.SilenceGeneratorSink(voice_recv.BasicSink(callback))
+        ctx.voice_client.listen(assistant_sink)
+
+    def _process_wake_audio(self, user: discord.User, data: voice_recv.VoiceData):
+        values = np.frombuffer(data.pcm, dtype=np.int16)
+        value_matrix = np.array((values[::2], values[1::2]))
+        resampled_values = resample(value_matrix, 48_000, 16_000).astype(np.int16)
+
+        self._resampled_stream.extend(resampled_values[0])
+        if len(self._resampled_stream) < 512:
+            return
+
+        audio_frame = self._resampled_stream[:512]
+        self._resampled_stream = self._resampled_stream[512:]
+
+        if self.always_awake:
+            self._loop.call_soon_threadsafe(self._schedule_turn, user)
+            return
+
+        if self._wake_word.process(audio_frame):
+            log.info("Detected wake word from %s.", user.display_name)
+            self._resampled_stream = []
+            self._loop.call_soon_threadsafe(self._schedule_turn, user)
+
+    def _schedule_turn(self, user: discord.User):
+        if self._turn_active:
+            return
+
+        self._turn_active = True
+        prompt = random.choice(self.dialogs["prompts"]["general"])
+        self.say(
+            f"Hi {user.display_name}. {prompt}",
+            quiet_after=True,
+            after=lambda: self.client.loop.create_task(self._capture_and_handle(user)),
+        )
+
+    async def _capture_and_handle(self, user: discord.User):
+        try:
+            self._begin_transcription(user)
+
+            try:
+                text = await asyncio.wait_for(
+                    self._query_future,
+                    timeout=config.ASSISTANT_TRANSCRIPTION_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                log.info("Assistant transcription timed out.")
+                self._release_music_suspension()
+                self.say("I did not catch that.", quiet_after=False)
+                return
+            finally:
+                self._stop_transcription()
+
+            self._release_music_suspension()
+            text = (text or "").strip()
+            if not text:
+                self.say("I did not catch that.", quiet_after=False)
+                return
+
+            log.info('%s said "%s".', user.display_name, text)
+            intent = await self.parser.parse(text)
+            log.info(
+                "Assistant intent: action=%s confidence=%.2f source=%s query=%r.",
+                intent.action.value,
+                intent.confidence,
+                intent.source,
+                intent.query,
+            )
+
+            result = await self.controller.execute(self._ctx, intent)
+            if result.speak and result.message:
+                self.say(result.message, quiet_after=False)
+        except Exception:
+            log.warning("Assistant turn failed.", exc_info=True)
+            self._release_music_suspension()
+            self.say("Something went wrong.", quiet_after=False)
+        finally:
+            self._turn_active = False
+
+    def _begin_transcription(self, user: discord.User):
+        self._query_future = self.client.loop.create_future()
+        self._stream_data[user.id] = {
+            "stopper": None,
+            "buffer": array.array("B"),
+        }
+        self._transcription_user_id = user.id
+
+    def _stop_transcription(self):
+        user_id = self._transcription_user_id
+        self._transcription_user_id = None
+
+        if user_id is None:
+            return
+
+        stopper = self._stream_data[user_id].get("stopper")
+        if stopper:
+            try:
+                stopper(False)
+            except Exception:
+                log.debug("Failed to stop background transcription listener.", exc_info=True)
+
+        self._stream_data[user_id] = {
+            "stopper": None,
+            "buffer": array.array("B"),
+        }
+
+    def _buffer_transcription_audio(self, user: discord.User, data: voice_recv.VoiceData):
+        sdata = self._stream_data[user.id]
+        sdata["buffer"].extend(data.pcm)
+
+        if sdata["stopper"]:
+            return
+
+        sdata["stopper"] = self.recognizer.listen_in_background(
+            DiscordSRAudioSource(sdata["buffer"]),
+            self._get_bg_listener_callback(user),
+            phrase_time_limit=8,
+        )
 
     def _get_bg_listener_callback(self, user: discord.User):
         def callback(recognizer: sr.Recognizer, audio: sr.AudioData):
-            if self._query is None:
-                # AssemblyAI
-                audio_path = config.ASSISTANT_INCOMING_AUDIO
-                with open(audio_path, "wb") as fp:
+            text = ""
+            try:
+                with open(config.ASSISTANT_INCOMING_AUDIO, "wb") as fp:
                     fp.write(audio.get_wav_data())
 
-                # self._query = self._transcriber.transcribe(audio_path).text
-
-                # Vosk
-                # self.recognizer.vosk_model = vosk.Model("assistant/model")
-                # result = json.loads(recognizer.recognize_vosk(audio))
-                # self._query = result["text"]
-
-                # Whisper
-                self._query = recognizer.recognize_whisper(
-                    audio, model="small", language="english"
+                text = recognizer.recognize_whisper(
+                    audio,
+                    model="small",
+                    language="english",
                 )
+            except Exception:
+                log.warning("Failed to transcribe assistant utterance.", exc_info=True)
 
-                self._loop.call_soon_threadsafe(self._events["QUERY_DETECTED"].set)
-                log.info(f'{user.display_name} said "{self._query}"')
+            def complete_future():
+                if self._query_future and not self._query_future.done():
+                    self._query_future.set_result(text)
+
+            self._loop.call_soon_threadsafe(complete_future)
 
         return callback
+
+    def say(self, message, quiet_after=False, after=None):
+        utterance = Assistant.Utterance(message, after, quiet_after)
+        self._loop.call_soon_threadsafe(self._enqueue_utterance, utterance)
+
+    def _enqueue_utterance(self, utterance):
+        self._message_queue.put_nowait(utterance)
+
+    async def _process_message_queue(self):
+        while True:
+            utterance: Assistant.Utterance = await self._message_queue.get()
+            try:
+                await self._play_utterance(utterance)
+            finally:
+                self._message_queue.task_done()
+
+    async def _play_utterance(self, utterance):
+        if not self._ctx or not self._voice_client:
+            log.warning("Dropping assistant utterance because voice context is unavailable.")
+            return
+
+        music = self.client.get_cog("Music")
+        if music:
+            try:
+                await music.suspend(self._ctx)
+            except Exception:
+                log.debug("Could not suspend music playback before assistant speech.", exc_info=True)
+
+        audio = await self.get_audio_from_text(utterance.content)
+        await self._ctx.send(utterance.content)
+
+        done = self.client.loop.create_future()
+
+        def after_playback(error):
+            if error:
+                log.warning("Assistant utterance playback failed: %s", error)
+            self.client.loop.call_soon_threadsafe(self._finish_playback_future, done, error)
+
+        self._voice_client.play(audio, after=after_playback)
+        await done
+
+        if utterance.after:
+            utterance.after()
+
+        if not utterance.quiet_after:
+            self._release_music_suspension()
+
+    async def get_audio_from_text(self, message):
+        if not self._tts_engine:
+            raise RuntimeError("Text-to-speech service is unavailable.")
+
+        await asyncio.to_thread(self._save_tts_audio, message)
+        return await discord.FFmpegOpusAudio.from_probe(config.ASSISTANT_REPLY_AUDIO)
+
+    def _save_tts_audio(self, message):
+        self._tts_engine.save_to_file(message, str(config.ASSISTANT_REPLY_AUDIO))
+        self._tts_engine.runAndWait()
+
+    def _release_music_suspension(self):
+        music = self.client.get_cog("Music")
+        if not music:
+            return
+
+        try:
+            music.remove_suspension()
+        except Exception:
+            log.debug("Could not release music suspension.", exc_info=True)
+
+    @staticmethod
+    def _finish_playback_future(future, result):
+        if not future.done():
+            future.set_result(result)
 
 
 class DiscordSRAudioSource(sr.AudioSource):
@@ -491,7 +418,7 @@ class DiscordSRAudioSource(sr.AudioSource):
 
     def __init__(self, buffer: array.array):
         self.buffer = buffer
-        self._entered: bool = False
+        self._entered = False
 
     @property
     def stream(self):
@@ -499,17 +426,16 @@ class DiscordSRAudioSource(sr.AudioSource):
 
     def __enter__(self):
         if self._entered:
-            log.warning("Already entered sr audio source")
+            log.warning("Already entered speech-recognition audio source.")
         self._entered = True
         return self
 
     def __exit__(self, *exc) -> None:
         self._entered = False
         if any(exc):
-            log.exception("Error closing sr audio source")
+            log.exception("Error closing speech-recognition audio source.")
 
     def read(self, size: int) -> bytes:
-        # TODO: make this timeout configurable
         for _ in range(10):
             if len(self.buffer) < size * self.CHANNELS:
                 time.sleep(0.1)
@@ -522,8 +448,7 @@ class DiscordSRAudioSource(sr.AudioSource):
         chunksize = size * self.CHANNELS
         audiochunk = self.buffer[:chunksize].tobytes()
         del self.buffer[: min(chunksize, len(audiochunk))]
-        audiochunk = audioop.tomono(audiochunk, 2, 1, 1)
-        return audiochunk
+        return audioop.tomono(audiochunk, self.SAMPLE_WIDTH, 1, 1)
 
     def close(self) -> None:
         self.buffer.clear()

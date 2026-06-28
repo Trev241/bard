@@ -24,6 +24,17 @@ def parse_int_env(name, default):
         raise ValueError(f"{name} must be an integer, got {value!r}") from exc
 
 
+def parse_float_env(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a float, got {value!r}") from exc
+
+
 def parse_bool_env(name, default=False):
     value = os.getenv(name)
     if value is None:
@@ -40,7 +51,20 @@ DEFAULT_PUBLIC_URL = os.getenv(
 BOT_SPAM_CHANNEL = parse_int_env("BOT_SPAM_CHANNEL", 423774455332864011)
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "?")
 ASSISTANT_ENABLED = parse_bool_env("ASSISTANT_ENABLED", False)
-PV_ACCESS_KEY = os.getenv("PV_ACCESS_KEY")
+ASSISTANT_LLM_PROVIDER = os.getenv("ASSISTANT_LLM_PROVIDER", "none").strip().casefold()
+ASSISTANT_LLM_TIMEOUT_SECONDS = parse_float_env("ASSISTANT_LLM_TIMEOUT_SECONDS", 2.0)
+ASSISTANT_LLM_MIN_CONFIDENCE = parse_float_env("ASSISTANT_LLM_MIN_CONFIDENCE", 0.75)
+ASSISTANT_TRANSCRIPTION_TIMEOUT_SECONDS = parse_float_env(
+    "ASSISTANT_TRANSCRIPTION_TIMEOUT_SECONDS", 12.0
+)
+ASSISTANT_WAKEWORD_MODELS = [
+    model.strip()
+    for model in os.getenv("ASSISTANT_WAKEWORD_MODELS", "hey jarvis").split(",")
+    if model.strip()
+]
+ASSISTANT_WAKEWORD_THRESHOLD = parse_float_env("ASSISTANT_WAKEWORD_THRESHOLD", 0.5)
+ASSISTANT_OPENROUTER_API_KEY = os.getenv("ASSISTANT_OPENROUTER_API_KEY", "")
+ASSISTANT_OPENROUTER_MODEL = os.getenv("ASSISTANT_OPENROUTER_MODEL", "")
 WATCHER_UPDATE_YTDLP_ON_RESTART = parse_bool_env("WATCHER_UPDATE_YTDLP_ON_RESTART", True)
 WATCHER_YTDLP_UPDATE_TIMEOUT = parse_int_env("WATCHER_YTDLP_UPDATE_TIMEOUT", 120)
 LOG_MAX_BYTES = parse_int_env("LOG_MAX_BYTES", 5 * 1024 * 1024)
@@ -53,10 +77,46 @@ GITHUB_ISSUE_LABELS = [
     for label in os.getenv("GITHUB_ISSUE_LABELS", "bug,user-report").split(",")
     if label.strip()
 ]
+TRANSLATION_ENABLED = parse_bool_env("TRANSLATION_ENABLED", False)
+TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "argos").strip().casefold()
+TRANSLATION_CHANNEL_PAIRS = os.getenv("TRANSLATION_CHANNEL_PAIRS", "")
+TRANSLATION_CACHE_SIZE = parse_int_env("TRANSLATION_CACHE_SIZE", 1000)
+TRANSLATION_MAX_CONCURRENCY = parse_int_env("TRANSLATION_MAX_CONCURRENCY", 1)
+TRANSLATION_MAX_MESSAGE_LENGTH = parse_int_env("TRANSLATION_MAX_MESSAGE_LENGTH", 1500)
+
+
+def parse_translation_channel_pairs(value=None):
+    raw_value = TRANSLATION_CHANNEL_PAIRS if value is None else value
+    pairs = []
+
+    for raw_pair in raw_value.split(","):
+        raw_pair = raw_pair.strip()
+        if not raw_pair:
+            continue
+
+        parts = [part.strip() for part in raw_pair.split(":")]
+        if len(parts) != 4:
+            raise ValueError(
+                "TRANSLATION_CHANNEL_PAIRS entries must use "
+                "source_channel_id:mirror_channel_id:source_lang:mirror_lang"
+            )
+
+        source_channel_id, mirror_channel_id, source_lang, mirror_lang = parts
+        pairs.append(
+            {
+                "source_channel_id": int(source_channel_id),
+                "mirror_channel_id": int(mirror_channel_id),
+                "source_lang": source_lang,
+                "mirror_lang": mirror_lang,
+            }
+        )
+
+    return pairs
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "bard.log"
 DUMPS_DIR = BASE_DIR / "resources" / "dumps"
+ASSISTANT_RUNTIME_DIR = DUMPS_DIR / "assistant"
 STICKERS_DIR = BASE_DIR / "resources" / "stickers"
 SECRETS_DIR = BASE_DIR / "secrets"
 ASSISTANT_RESOURCES_DIR = BASE_DIR / "resources" / "assistant"
@@ -76,8 +136,8 @@ DISCONNECT_SOUND = SOUNDS_DIR / "bard.disconnect.ogg"
 
 ASSISTANT_DIALOGS = ASSISTANT_RESOURCES_DIR / "dialogs.json"
 ASSISTANT_CONTEXT = ASSISTANT_RESOURCES_DIR / "Bard Assistant.yml"
-ASSISTANT_REPLY_AUDIO = ASSISTANT_RESOURCES_DIR / "reply.wav"
-ASSISTANT_INCOMING_AUDIO = ASSISTANT_RESOURCES_DIR / "incoming.wav"
+ASSISTANT_REPLY_AUDIO = ASSISTANT_RUNTIME_DIR / "reply.wav"
+ASSISTANT_INCOMING_AUDIO = ASSISTANT_RUNTIME_DIR / "incoming.wav"
 
 AUTOPLAY_PLAYLIST_URL = os.getenv(
     "AUTOPLAY_PLAYLIST_URL",
@@ -92,5 +152,5 @@ ADMIN_IDS = {
 
 
 def ensure_runtime_dirs():
-    for path in (LOG_DIR, DUMPS_DIR, STICKERS_DIR, SECRETS_DIR):
+    for path in (LOG_DIR, DUMPS_DIR, ASSISTANT_RUNTIME_DIR, STICKERS_DIR, SECRETS_DIR):
         path.mkdir(parents=True, exist_ok=True)

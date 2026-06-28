@@ -36,18 +36,41 @@ Bard hosts a web dashboard that is accessible on your machine's IP address on po
 
 ### Vocal Commands
 
-**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained! You also need a picovoice account_.
+**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained._
 
-Bard uses wake words supported by [picovoice's Porcupine](https://picovoice.ai/docs/porcupine/) to avoid misinterpreting normal speech as commands. You must always wake Bard up first by saying "Okay, Bard" before you issue any other command.
+Bard uses local wake words powered by openWakeWord to avoid misinterpreting normal speech as commands. The default wake phrase is "hey jarvis" because it is one of openWakeWord's built-in models. You can configure wake models with `ASSISTANT_WAKEWORD_MODELS`, or point that setting at a custom trained model.
 
-You can instruct Bard by issuing your commands vocally while on a call with her. First type `?join` while on a call and then say out loud "Okay, Bard". If Bard heard you correctly, you will hear a reply. Bard will then try to decipher intent from your speech using [picovoice's Rhino](https://picovoice.ai/platform/rhino/). You can get a list of all speech to intent patterns by typing out the command `?intents`.
+Voice commands are disabled by default. Set `ASSISTANT_ENABLED=true` to enable the assistant module. You can instruct Bard by issuing your commands vocally while on a call with her. First type `?join` while on a call and then say the configured wake phrase. If Bard heard you correctly, you will hear a reply. Bard will listen for one command, transcribe it, and parse it with local rules. The parser understands common music-control requests like "play Daft Punk", "can you play some jazz", "pause the song", "resume", "skip this", "what song is this", "loop this song", and "disconnect".
 
-To ask Bard to play a song, say "Play some music". She will reply asking you to name the song that you want to play followed by silence. This silence is your cue to speak. After saying the name of your song, wait patiently since
-transcription can take time. Once Bard is done trying to make sense of your query, she will look it up on YouTube and queue the most relevant result. All of this is essentially the same as typing out the `?play` command but instead done vocally with zero keyboard interaction.
+Bard can optionally use OpenRouter as a fallback parser when local rules do not understand a command. Set `ASSISTANT_LLM_PROVIDER=openrouter`, `ASSISTANT_OPENROUTER_API_KEY=<key>`, and `ASSISTANT_OPENROUTER_MODEL=<model id>` to enable it. If the LLM is unavailable, slow, or returns an unclear result, Bard falls back to asking for clarification rather than guessing.
 
 _Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the
 voice channel. So to make yourself the priority speaker, just disconnect Bard and invite her to the call
 yourself using_ `?join`.
+
+### Translation Mirrors
+
+Bard can mirror text between paired channels in different languages. Translation is disabled by default and currently supports the local Argos Translate provider.
+
+Example `.env` configuration:
+
+```env
+TRANSLATION_ENABLED=true
+TRANSLATION_PROVIDER=argos
+TRANSLATION_CHANNEL_PAIRS=123456789012345678:234567890123456789:en:fr
+TRANSLATION_MAX_CONCURRENCY=1
+TRANSLATION_CACHE_SIZE=1000
+```
+
+`TRANSLATION_CHANNEL_PAIRS` uses `source_channel_id:mirror_channel_id:source_lang:mirror_lang`. Bard mirrors both directions, so the example above translates English messages into French in the mirror channel and French replies back into English in the source channel.
+
+Install the Argos package with `pip install -r requirements.txt`, then install the required language models on the host running Bard:
+
+```bash
+argospm update
+argospm install translate-en_fr
+argospm install translate-fr_en
+```
 
 ## List of available commands
 

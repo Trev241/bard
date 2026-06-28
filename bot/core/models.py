@@ -8,6 +8,7 @@ from discord import User, Message
 class Source(Enum):
     CMD = "COMMMAND"
     WEB = "WEBPLAYR"
+    VOICE = "VOICE"
 
 
 @dataclass

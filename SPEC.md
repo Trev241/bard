@@ -195,6 +195,8 @@ The project should explicitly decide whether this module is:
 
 If active, it should be guarded by configuration and should not interfere with normal music playback when unavailable.
 
+The maintained direction is wake-word activation, one-shot transcription, deterministic parsing for common music controls, and optional LLM fallback parsing for ambiguous language. LLM parsing must remain optional so basic voice controls can work without internet-hosted inference.
+
 ## Configuration Requirements
 
 Bard should use centralized configuration for:

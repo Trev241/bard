@@ -1,14 +1,15 @@
 beautifulsoup4
+argostranslate
 git+https://github.com/Rapptz/discord.py.git
 discord-ext-voice-recv
 Pillow
-pvporcupine
-pvrhino
+openwakeword
 python-dotenv
 pyttsx3
 PyYAML
 Requests
 SpeechRecognition
+openai-whisper
 yt_dlp
 PyNaCl
 numpy

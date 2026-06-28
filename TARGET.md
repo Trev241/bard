@@ -115,17 +115,19 @@ Important file:
 
 There is an experimental voice assistant module using:
 
-- Picovoice Porcupine for wake-word detection.
-- Picovoice Rhino for speech-to-intent.
+- openWakeWord for local wake-word detection.
 - `SpeechRecognition` and Whisper for transcription.
+- Local deterministic rules for common music-control intent parsing.
+- Optional OpenRouter fallback parsing.
 - `pyttsx3` for text-to-speech.
 - `discord-ext-voice-recv` for receiving voice audio.
 
-This module appears to be disabled in `bot/main.py` at the moment.
+This module is controlled by `ASSISTANT_ENABLED`, which defaults to disabled. Set `ASSISTANT_ENABLED=true` to enable it.
 
-Important file:
+Important files:
 
 - `bot/cogs/assistant.py`
+- `bot/core/assistant/`
 
 ## Runtime Shape
 

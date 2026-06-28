@@ -18,8 +18,6 @@ from bot.core.music_service import MusicService, QueueOutcome
 from bot.core.models import MusicRequest, Song, Source
 from bot.core.playback import PlaybackManager
 
-# from bot.cogs.assistant import Assistant
-
 log = logging.getLogger(__name__)
 
 
@@ -177,14 +175,14 @@ class Music(commands.Cog):
             if public_url:
                 await ctx.send(f"Check out {public_url}/dashboard to manage me!")
 
-            # try:
-            #     assistant_base: Assistant = self.client.get_cog("Assistant")
-            #     assistant_connected = assistant_base.enable(ctx)
-            #     if assistant_connected:
-            #         await ctx.send('Say "OK, Bard" if you need help!')
-            # except Exception as e:
-            #     # Handle this exception so that the bot can still connect.
-            #     log.warning(f"Failed to enable assistant: {e}")
+            assistant_base = self.client.get_cog("Assistant")
+            if assistant_base:
+                try:
+                    assistant_connected = assistant_base.enable(ctx)
+                    if assistant_connected:
+                        await ctx.send('Say "OK, Bard" if you need help.')
+                except Exception:
+                    log.warning("Failed to enable assistant.", exc_info=True)
 
             self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
             self.service.attach_playback(self.playback_manager)
@@ -210,8 +208,9 @@ class Music(commands.Cog):
         self.voice_state = Music.VOICE_DISCONNECTING
 
         self.service.stop()
-        # assistant_base: Assistant = self.client.get_cog("Assistant")
-        # assistant_base.disable(ctx)
+        assistant_base = self.client.get_cog("Assistant")
+        if assistant_base:
+            assistant_base.disable(ctx)
 
         voice_client = ctx.voice_client
 
@@ -331,6 +330,8 @@ class Music(commands.Cog):
             request.msg = await ctx.send(
                 f'Received on the web player: "{request.query}".'
             )
+        elif request.source == Source.VOICE:
+            request.msg = await ctx.send(f'Received by voice: "{request.query}".')
         else:
             request.msg = ctx.message
 
