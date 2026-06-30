@@ -47,6 +47,8 @@ class WritingFeedbackResult:
     provider: str
     issues: Tuple[WritingFeedbackIssue, ...] = ()
     recommendation: Optional[str] = None
+    rewrite_notes: Tuple[str, ...] = ()
+    llm_rewrite: bool = False
 
     @property
     def needs_feedback(self) -> bool:
@@ -60,6 +62,13 @@ class WritingRewriteRequest:
     score: int
     issues: Tuple[WritingFeedbackIssue, ...] = ()
     conversation_context: Tuple[str, ...] = ()
+    include_notes: bool = False
+
+
+@dataclass(frozen=True)
+class WritingRewriteResult:
+    recommendation: str
+    notes: Tuple[str, ...] = ()
 
 
 class WritingFeedbackProvider(Protocol):
@@ -75,7 +84,9 @@ class WritingFeedbackProvider(Protocol):
 class WritingRewriteProvider(Protocol):
     name: str
 
-    def rewrite_sync(self, request: WritingRewriteRequest) -> Optional[str]:
+    def rewrite_sync(
+        self, request: WritingRewriteRequest
+    ) -> Optional[WritingRewriteResult]:
         ...
 
 
@@ -87,11 +98,13 @@ class WritingFeedbackService:
         rewrite_provider: Optional[WritingRewriteProvider] = None,
         score_threshold: int = 75,
         recommend_threshold: int = 45,
+        auto_rewrite_threshold: int = 25,
     ):
         self.providers = list(providers)
         self.rewrite_provider = rewrite_provider
         self.score_threshold = _clamp_score(score_threshold)
         self.recommend_threshold = _clamp_score(recommend_threshold)
+        self.auto_rewrite_threshold = _clamp_score(auto_rewrite_threshold)
 
     async def check(
         self, request: WritingFeedbackRequest
@@ -103,6 +116,9 @@ class WritingFeedbackService:
         if result.score > self.score_threshold:
             return None
 
+        if result.score <= self.auto_rewrite_threshold:
+            return await self.assess(request, force_rewrite=True)
+
         if result.score > self.recommend_threshold:
             return WritingFeedbackResult(
                 score=result.score,
@@ -111,6 +127,8 @@ class WritingFeedbackService:
                 provider=result.provider,
                 issues=result.issues,
                 recommendation=None,
+                rewrite_notes=(),
+                llm_rewrite=False,
             )
 
         return result
@@ -134,10 +152,24 @@ class WritingFeedbackService:
         result = await asyncio.to_thread(provider.check_sync, normalized_request)
 
         recommendation = result.recommendation
-        if force_rewrite or result.score <= self.recommend_threshold:
-            recommendation = await self._rewrite(result, normalized_request.context)
+        rewrite_notes = result.rewrite_notes
+        llm_rewrite = result.llm_rewrite
+        if force_rewrite:
+            rewrite = await self._rewrite(
+                result,
+                normalized_request.context,
+                include_notes=True,
+            )
+            if rewrite.recommendation:
+                recommendation = rewrite.recommendation
+                llm_rewrite = True
+            rewrite_notes = rewrite.notes
 
-        if recommendation != result.recommendation:
+        if (
+            recommendation != result.recommendation
+            or rewrite_notes != result.rewrite_notes
+            or llm_rewrite != result.llm_rewrite
+        ):
             return WritingFeedbackResult(
                 score=result.score,
                 language=result.language,
@@ -145,6 +177,8 @@ class WritingFeedbackService:
                 provider=result.provider,
                 issues=result.issues,
                 recommendation=recommendation,
+                rewrite_notes=rewrite_notes,
+                llm_rewrite=llm_rewrite,
             )
 
         return result
@@ -159,10 +193,14 @@ class WritingFeedbackService:
         )
 
     async def _rewrite(
-        self, result: WritingFeedbackResult, context: dict
-    ) -> Optional[str]:
+        self,
+        result: WritingFeedbackResult,
+        context: dict,
+        *,
+        include_notes: bool = False,
+    ) -> WritingRewriteResult:
         if self.rewrite_provider is None:
-            return result.recommendation
+            return WritingRewriteResult(result.recommendation or "", ())
 
         request = WritingRewriteRequest(
             text=result.source_text,
@@ -170,29 +208,38 @@ class WritingFeedbackService:
             score=result.score,
             issues=result.issues,
             conversation_context=tuple(context.get("conversation_context") or ()),
+            include_notes=include_notes,
         )
 
         try:
-            recommendation = await asyncio.to_thread(
+            rewrite = await asyncio.to_thread(
                 self.rewrite_provider.rewrite_sync,
                 request,
             )
         except WritingRewriteUnavailable as exc:
             log.info("Writing rewrite skipped: %s", exc)
-            return result.recommendation
+            return WritingRewriteResult(result.recommendation or "", ())
         except WritingRewriteInvalidResponse as exc:
             log.info("Writing rewrite returned unusable response: %s", exc)
-            return result.recommendation
+            return WritingRewriteResult(result.recommendation or "", ())
         except requests.RequestException as exc:
             log.info("Writing rewrite request failed: %s", exc)
-            return result.recommendation
+            return WritingRewriteResult(result.recommendation or "", ())
         except Exception:
             log.warning("Unexpected writing rewrite provider failure.", exc_info=True)
-            return result.recommendation
+            return WritingRewriteResult(result.recommendation or "", ())
 
-        if recommendation and recommendation.strip() != result.source_text.strip():
-            return recommendation.strip()
-        return result.recommendation
+        if rewrite is None:
+            return WritingRewriteResult(result.recommendation or "", ())
+
+        recommendation = rewrite.recommendation.strip()
+        if not recommendation or recommendation == result.source_text.strip():
+            return WritingRewriteResult(result.recommendation or "", ())
+
+        return WritingRewriteResult(
+            recommendation=recommendation,
+            notes=tuple(note.strip() for note in rewrite.notes if note.strip()),
+        )
 
 
 class GrammalecteWritingFeedbackProvider:
@@ -274,7 +321,9 @@ class GeminiWritingRewriteProvider:
     def available(self):
         return bool(self.api_key and self.models)
 
-    def rewrite_sync(self, request: WritingRewriteRequest) -> Optional[str]:
+    def rewrite_sync(
+        self, request: WritingRewriteRequest
+    ) -> Optional[WritingRewriteResult]:
         if not self.available:
             return None
         if self._is_cooling_down():
@@ -284,13 +333,25 @@ class GeminiWritingRewriteProvider:
             )
 
         rate_limited_models = []
+        transient_failed_models = []
         last_error = None
         for model in self.models:
             try:
                 return self._rewrite_with_model(request, model)
+            except requests.Timeout as exc:
+                transient_failed_models.append(model)
+                last_error = exc
+                continue
             except requests.HTTPError as exc:
-                if exc.response is not None and exc.response.status_code == 429:
+                status_code = (
+                    exc.response.status_code if exc.response is not None else None
+                )
+                if status_code == 429:
                     rate_limited_models.append(model)
+                    last_error = exc
+                    continue
+                if status_code in {502, 503, 504}:
+                    transient_failed_models.append(model)
                     last_error = exc
                     continue
                 raise
@@ -304,11 +365,17 @@ class GeminiWritingRewriteProvider:
                 f"rewrite models: {', '.join(rate_limited_models)}"
             ) from last_error
 
+        if transient_failed_models:
+            raise WritingRewriteUnavailable(
+                "Gemini rewrite models were temporarily unavailable: "
+                f"{', '.join(transient_failed_models)}"
+            ) from last_error
+
         return None
 
     def _rewrite_with_model(
         self, request: WritingRewriteRequest, model: str
-    ) -> Optional[str]:
+    ) -> Optional[WritingRewriteResult]:
         response = requests.post(
             self.endpoint_for_model(model),
             headers={
@@ -327,20 +394,9 @@ class GeminiWritingRewriteProvider:
                 ],
                 "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": 180,
+                    "maxOutputTokens": 768 if request.include_notes else 256,
                     "responseMimeType": "application/json",
-                    "responseSchema": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "recommendation": {
-                                "type": "STRING",
-                                "description": (
-                                    "One complete rewrite in the requested language."
-                                ),
-                            },
-                        },
-                        "required": ["recommendation"],
-                    },
+                    "responseSchema": self.response_schema(request.include_notes),
                 },
             },
             timeout=self.timeout_seconds,
@@ -353,10 +409,16 @@ class GeminiWritingRewriteProvider:
         payload = response.json()
         content = self.content_from_payload(payload)
         try:
-            data = json.loads(content)
+            data = self.json_from_content(content)
         except json.JSONDecodeError as exc:
-            raise WritingRewriteInvalidResponse("Gemini returned non-JSON content") from exc
-        return self.recommendation_from_data(data)
+            snippet = " ".join(content.split())[:120]
+            finish_reason = self.finish_reason_from_payload(payload)
+            if finish_reason:
+                snippet = f"{snippet} [finishReason={finish_reason}]"
+            raise WritingRewriteInvalidResponse(
+                f"Gemini returned non-JSON content: {snippet!r}"
+            ) from exc
+        return self.rewrite_result_from_data(data, include_notes=request.include_notes)
 
     def _is_cooling_down(self) -> bool:
         return time.monotonic() < self._cooldown_until
@@ -377,11 +439,10 @@ class GeminiWritingRewriteProvider:
     def system_prompt():
         return (
             "You help French learners write natural, correct French. "
-            "Return only JSON with key recommendation. "
+            "Return only JSON. "
             "The recommendation must be one complete French rewrite of the user's "
             "sentence. Preserve the original meaning, person, tense, tone, names, "
-            "and Discord-style casualness. Do not translate to English. Do not add "
-            "explanations."
+            "and Discord-style casualness. Do not translate to English."
         )
 
     @staticmethod
@@ -401,6 +462,14 @@ class GeminiWritingRewriteProvider:
             if context
             else "Conversation context:\n- None\n\n"
         )
+        note_instruction = (
+            "Also include notes: 1 to 3 brief English bullet-style explanations. "
+            "Focus primarily on the corrections and the reasoning behind each "
+            "correction. Return exactly this JSON shape: "
+            '{"recommendation":"...","notes":["..."]}.'
+            if request.include_notes
+            else 'Return exactly this JSON shape: {"recommendation":"..."}.'
+        )
         return (
             f"Language: {request.language}\n"
             f"Score: {request.score}/100\n"
@@ -408,7 +477,8 @@ class GeminiWritingRewriteProvider:
             f"Original sentence:\n{request.text}\n\n"
             f"Detected issues:\n{issues}\n\n"
             "Rewrite only the original sentence in natural, correct French. "
-            "Use the context only to preserve meaning; do not answer the conversation."
+            "Use the context only to preserve meaning; do not answer the conversation. "
+            f"{note_instruction}"
         )
 
     @staticmethod
@@ -417,6 +487,27 @@ class GeminiWritingRewriteProvider:
         if not recommendation:
             return None
         return recommendation.strip("\"'")
+
+    @classmethod
+    def rewrite_result_from_data(
+        cls, data: dict, *, include_notes: bool = False
+    ) -> Optional[WritingRewriteResult]:
+        recommendation = cls.recommendation_from_data(data)
+        if not recommendation:
+            return None
+
+        notes = ()
+        if include_notes:
+            raw_notes = data.get("notes") or ()
+            if isinstance(raw_notes, str):
+                raw_notes = (raw_notes,)
+            if not isinstance(raw_notes, (list, tuple)):
+                raise WritingRewriteInvalidResponse(
+                    "Gemini response included invalid rewrite notes"
+                )
+            notes = tuple(str(note).strip() for note in raw_notes if str(note).strip())
+
+        return WritingRewriteResult(recommendation=recommendation, notes=notes)
 
     @staticmethod
     def content_from_payload(payload: dict) -> str:
@@ -439,6 +530,61 @@ class GeminiWritingRewriteProvider:
             )
 
         return content
+
+    @staticmethod
+    def finish_reason_from_payload(payload: dict) -> Optional[str]:
+        try:
+            finish_reason = payload["candidates"][0].get("finishReason")
+        except (KeyError, IndexError, TypeError):
+            return None
+        return str(finish_reason) if finish_reason else None
+
+    @staticmethod
+    def json_from_content(content: str) -> dict:
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise
+            return json.loads(text[start : end + 1])
+
+    @staticmethod
+    def response_schema(include_notes: bool = False) -> dict:
+        properties = {
+            "recommendation": {
+                "type": "STRING",
+                "description": "One complete rewrite in the requested language.",
+            },
+        }
+        required = ["recommendation"]
+
+        if include_notes:
+            properties["notes"] = {
+                "type": "ARRAY",
+                "description": (
+                    "Short English explanations of the corrections and why each "
+                    "correction is needed."
+                ),
+                "items": {"type": "STRING"},
+            }
+            required.append("notes")
+
+        return {
+            "type": "OBJECT",
+            "properties": properties,
+            "required": required,
+        }
 
     @classmethod
     def endpoint_for_model(cls, model: str) -> str:

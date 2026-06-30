@@ -27,7 +27,6 @@ from bot.core.writing_feedback import (
     WritingFeedbackService,
 )
 
-
 log = logging.getLogger(__name__)
 MAX_WRITING_CONTEXT_CHARS = 240
 MIRROR_WEBHOOK_NAME = "Bard Translation Mirror"
@@ -103,20 +102,24 @@ class Translation(commands.Cog):
             for pair in channel_pairs
         }
         self.feedback_context_menu = None
+        self.rewrite_context_menu = None
         if getattr(self.client, "tree", None) is not None:
             self.feedback_context_menu = app_commands.ContextMenu(
                 name="French Feedback",
                 callback=self.feedback_context_menu_callback,
             )
             self.client.tree.add_command(self.feedback_context_menu)
+            self.rewrite_context_menu = app_commands.ContextMenu(
+                name="French Rewrite",
+                callback=self.rewrite_context_menu_callback,
+            )
+            self.client.tree.add_command(self.rewrite_context_menu)
 
     def cog_unload(self):
-        if self.feedback_context_menu is None:
-            return
-        self.client.tree.remove_command(
-            self.feedback_context_menu.name,
-            type=self.feedback_context_menu.type,
-        )
+        for command in (self.feedback_context_menu, self.rewrite_context_menu):
+            if command is None:
+                continue
+            self.client.tree.remove_command(command.name, type=command.type)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -145,6 +148,30 @@ class Translation(commands.Cog):
         interaction: discord.Interaction,
         message: discord.Message,
     ):
+        await self._send_context_feedback(
+            interaction,
+            message,
+            force_rewrite=False,
+        )
+
+    async def rewrite_context_menu_callback(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+    ):
+        await self._send_context_feedback(
+            interaction,
+            message,
+            force_rewrite=True,
+        )
+
+    async def _send_context_feedback(
+        self,
+        interaction: discord.Interaction,
+        message: discord.Message,
+        *,
+        force_rewrite: bool = False,
+    ):
         if self.writing_feedback_service is None:
             await interaction.response.send_message(
                 "Writing feedback is not enabled.",
@@ -160,8 +187,13 @@ class Translation(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        result = await self._assess_writing_message(message, language)
+        ephemeral = not force_rewrite
+        await interaction.response.defer(ephemeral=ephemeral, thinking=True)
+        result = await self._assess_writing_message(
+            message,
+            language,
+            force_rewrite=force_rewrite,
+        )
         if result is None:
             await interaction.followup.send(
                 "I could not assess that message.",
@@ -171,7 +203,8 @@ class Translation(commands.Cog):
 
         await interaction.followup.send(
             self._format_writing_feedback(message, result),
-            ephemeral=True,
+            ephemeral=ephemeral,
+            wait=True,
         )
 
     @commands.Cog.listener()
@@ -568,6 +601,9 @@ class Translation(commands.Cog):
         message: discord.Message,
         result: WritingFeedbackResult,
     ) -> str:
+        if result.llm_rewrite:
+            return self._format_writing_rewrite(message, result)
+
         author = discord.utils.escape_markdown(message.author.display_name)
         lines = [f"**{author}** French writing score: {result.score}/100"]
 
@@ -581,6 +617,29 @@ class Translation(commands.Cog):
             lines.append(f"Recommended: {result.recommendation}")
 
         body = "\n".join(lines)
+        if len(body) <= 2000:
+            return body
+
+        return f"{body[:1996]}..."
+
+    def _format_writing_rewrite(
+        self,
+        message: discord.Message,
+        result: WritingFeedbackResult,
+    ) -> str:
+        lines = [
+            "Original:",
+            result.source_text.strip(),
+            "",
+            "Natural rewrite:",
+            result.recommendation.strip() if result.recommendation else "",
+        ]
+
+        if result.rewrite_notes:
+            lines.extend(["", "Notes:"])
+            lines.extend(f"- {note}" for note in result.rewrite_notes)
+
+        body = "\n".join(line for line in lines if line is not None)
         if len(body) <= 2000:
             return body
 
@@ -624,6 +683,7 @@ def build_writing_feedback_service() -> Optional[WritingFeedbackService]:
         rewrite_provider=rewrite_provider,
         score_threshold=config.WRITING_FEEDBACK_SCORE_THRESHOLD,
         recommend_threshold=config.WRITING_FEEDBACK_RECOMMEND_THRESHOLD,
+        auto_rewrite_threshold=config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD,
     )
 
 

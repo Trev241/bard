@@ -8,6 +8,7 @@ from bot.core.writing_feedback import (
     WritingFeedbackResult,
     WritingRewriteInvalidResponse,
     WritingRewriteRequest,
+    WritingRewriteResult,
     WritingRewriteUnavailable,
     WritingFeedbackService,
     build_recommendation,
@@ -31,13 +32,19 @@ class FakeWritingFeedbackProvider:
 class FakeRewriteProvider:
     name = "fake-rewrite"
 
-    def __init__(self, recommendation):
+    def __init__(self, recommendation, notes=()):
         self.recommendation = recommendation
+        self.notes = notes
         self.calls = 0
 
     def rewrite_sync(self, request):
         self.calls += 1
-        return self.recommendation
+        if not self.recommendation:
+            return None
+        return WritingRewriteResult(
+            recommendation=self.recommendation,
+            notes=self.notes if request.include_notes else (),
+        )
 
 
 @pytest.mark.asyncio
@@ -108,7 +115,7 @@ async def test_writing_feedback_service_removes_recommendation_above_recommend_t
 
 
 @pytest.mark.asyncio
-async def test_writing_feedback_service_uses_llm_rewrite_for_low_scores():
+async def test_writing_feedback_service_keeps_low_score_feedback_basic():
     result = WritingFeedbackResult(
         score=30,
         language="fr",
@@ -130,24 +137,70 @@ async def test_writing_feedback_service_uses_llm_rewrite_for_low_scores():
         rewrite_provider=rewrite_provider,
         score_threshold=75,
         recommend_threshold=45,
+        auto_rewrite_threshold=25,
     )
 
     checked = await service.check(WritingFeedbackRequest("Je aller au magasin.", "FR"))
 
     assert checked is not None
-    assert checked.recommendation == "Je suis alle au magasin."
+    assert checked.recommendation == "Je vais au magasin."
+    assert checked.rewrite_notes == ()
+    assert not checked.llm_rewrite
+    assert rewrite_provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_writing_feedback_service_auto_rewrites_atrocious_scores():
+    result = WritingFeedbackResult(
+        score=20,
+        language="fr",
+        source_text="Je aller au magasin.",
+        provider="fake",
+        issues=(
+            WritingFeedbackIssue(
+                start=3,
+                end=8,
+                message="Conjugaison incorrecte.",
+                suggestions=("vais",),
+            ),
+        ),
+        recommendation="Je vais au magasin.",
+    )
+    rewrite_provider = FakeRewriteProvider(
+        "Je vais au magasin.",
+        notes=("Use je vais to conjugate aller in the present tense.",),
+    )
+    service = WritingFeedbackService(
+        [FakeWritingFeedbackProvider(result)],
+        rewrite_provider=rewrite_provider,
+        score_threshold=75,
+        recommend_threshold=45,
+        auto_rewrite_threshold=25,
+    )
+
+    checked = await service.check(WritingFeedbackRequest("Je aller au magasin.", "FR"))
+
+    assert checked is not None
+    assert checked.recommendation == "Je vais au magasin."
+    assert checked.rewrite_notes == (
+        "Use je vais to conjugate aller in the present tense.",
+    )
+    assert checked.llm_rewrite
     assert rewrite_provider.calls == 1
 
 
 @pytest.mark.asyncio
-async def test_writing_feedback_service_assess_can_force_rewrite():
+async def test_writing_feedback_service_assess_can_force_rewrite_with_notes():
     result = WritingFeedbackResult(
         score=100,
         language="fr",
         source_text="Bonjour.",
         provider="fake",
     )
-    rewrite_provider = FakeRewriteProvider("Salut.")
+    rewrite_provider = FakeRewriteProvider(
+        "Salut.",
+        notes=("More natural greeting.",),
+    )
     service = WritingFeedbackService(
         [FakeWritingFeedbackProvider(result)],
         rewrite_provider=rewrite_provider,
@@ -162,6 +215,8 @@ async def test_writing_feedback_service_assess_can_force_rewrite():
 
     assert checked is not None
     assert checked.recommendation == "Salut."
+    assert checked.rewrite_notes == ("More natural greeting.",)
+    assert checked.llm_rewrite
     assert rewrite_provider.calls == 1
 
 
@@ -296,10 +351,94 @@ def test_gemini_rewrite_provider_tries_next_model_after_rate_limit(monkeypatch):
         model="model-one,model-two",
     )
 
-    recommendation = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
+    rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
 
-    assert recommendation == "Je vais."
+    assert rewrite.recommendation == "Je vais."
     assert seen_models == ["model-one", "model-two"]
+    assert provider._cooldown_until == 0
+
+
+def test_gemini_rewrite_provider_tries_next_model_after_503(monkeypatch):
+    unavailable_response = requests.Response()
+    unavailable_response.status_code = 503
+    unavailable_response.url = GeminiWritingRewriteProvider.endpoint_for_model(
+        "model-one"
+    )
+
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"recommendation\\":\\"Je vais.\\"}"}]}}]}'
+    )
+
+    seen_models = []
+
+    def fake_post(*args, **kwargs):
+        url = args[0]
+        model = url.rsplit("/models/", 1)[1].split(":", 1)[0]
+        seen_models.append(model)
+        if model == "model-one":
+            return unavailable_response
+        return ok_response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="model-one,model-two",
+    )
+
+    rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
+
+    assert rewrite.recommendation == "Je vais."
+    assert seen_models == ["model-one", "model-two"]
+    assert provider._cooldown_until == 0
+
+
+def test_gemini_rewrite_provider_tries_next_model_after_timeout(monkeypatch):
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"recommendation\\":\\"Je vais.\\"}"}]}}]}'
+    )
+
+    seen_models = []
+
+    def fake_post(*args, **kwargs):
+        url = args[0]
+        model = url.rsplit("/models/", 1)[1].split(":", 1)[0]
+        seen_models.append(model)
+        if model == "model-one":
+            raise requests.Timeout("timed out")
+        return ok_response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="model-one,model-two",
+    )
+
+    rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
+
+    assert rewrite.recommendation == "Je vais."
+    assert seen_models == ["model-one", "model-two"]
+    assert provider._cooldown_until == 0
+
+
+def test_gemini_rewrite_provider_reports_transient_failures_after_all_models(monkeypatch):
+    def fake_post(*args, **kwargs):
+        raise requests.Timeout("timed out")
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="model-one,model-two",
+    )
+
+    with pytest.raises(WritingRewriteUnavailable):
+        provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
+
     assert provider._cooldown_until == 0
 
 
@@ -321,15 +460,82 @@ def test_gemini_rewrite_provider_sends_structured_json_request(monkeypatch):
     monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
 
-    recommendation = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
+    rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
 
-    assert recommendation == "Je vais."
+    assert rewrite.recommendation == "Je vais."
     assert captured["url"].endswith("/models/gemini-test:generateContent")
     assert captured["headers"]["x-goog-api-key"] == "key"
     assert captured["json"]["generationConfig"]["responseMimeType"] == "application/json"
     assert captured["json"]["generationConfig"]["responseSchema"]["required"] == [
         "recommendation"
     ]
+
+
+def test_gemini_rewrite_provider_can_request_notes(monkeypatch):
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"recommendation\\":\\"Je vais.\\",'
+        b'\\"notes\\":[\\"Use je vais to conjugate aller in the present tense.\\"]}"}]}}]}'
+    )
+    captured = {}
+
+    def fake_post(*args, **kwargs):
+        captured["json"] = kwargs["json"]
+        return ok_response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
+
+    rewrite = provider.rewrite_sync(
+        WritingRewriteRequest("Je aller.", "fr", 30, include_notes=True)
+    )
+
+    assert rewrite.recommendation == "Je vais."
+    assert rewrite.notes == (
+        "Use je vais to conjugate aller in the present tense.",
+    )
+    generation_config = captured["json"]["generationConfig"]
+    assert generation_config["maxOutputTokens"] == 768
+    assert generation_config["responseSchema"]["required"] == [
+        "recommendation",
+        "notes",
+    ]
+
+
+def test_gemini_rewrite_provider_accepts_fenced_json_content():
+    data = GeminiWritingRewriteProvider.json_from_content(
+        '```json\n{"recommendation":"Je vais.","notes":["Use je vais."]}\n```'
+    )
+
+    assert data == {"recommendation": "Je vais.", "notes": ["Use je vais."]}
+
+
+def test_gemini_rewrite_provider_extracts_embedded_json_content():
+    data = GeminiWritingRewriteProvider.json_from_content(
+        'Here is the feedback: {"recommendation":"Je vais.","notes":["Use je vais."]}'
+    )
+
+    assert data == {"recommendation": "Je vais.", "notes": ["Use je vais."]}
+
+
+def test_gemini_rewrite_prompt_requests_english_correction_notes():
+    prompt = GeminiWritingRewriteProvider.user_prompt(
+        WritingRewriteRequest("Je aller.", "fr", 30, include_notes=True)
+    )
+    schema = GeminiWritingRewriteProvider.response_schema(include_notes=True)
+
+    assert "brief English bullet-style explanations" in prompt
+    assert "corrections and the reasoning" in prompt
+    assert '{"recommendation":"...","notes":["..."]}' in prompt
+    assert "Short English explanations" in schema["properties"]["notes"]["description"]
+
+
+def test_gemini_rewrite_provider_extracts_finish_reason():
+    payload = {"candidates": [{"finishReason": "MAX_TOKENS"}]}
+
+    assert GeminiWritingRewriteProvider.finish_reason_from_payload(payload) == "MAX_TOKENS"
 
 
 def test_gemini_rewrite_provider_skips_during_cooldown():

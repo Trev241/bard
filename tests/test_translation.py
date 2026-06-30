@@ -195,6 +195,59 @@ def test_format_writing_feedback_includes_score_issues_and_recommendation():
     assert "Recommended: Je vais au magasin." in formatted
 
 
+def test_format_writing_feedback_with_notes_uses_inline_rewrite_layout():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    message = type(
+        "Message",
+        (),
+        {
+            "author": type("Author", (), {"display_name": "Trevis"})(),
+            "content": "Je aller.",
+        },
+    )()
+    result = WritingFeedbackResult(
+        score=32,
+        language="fr",
+        source_text="Je aller.",
+        provider="fake",
+        recommendation="Je vais.",
+        rewrite_notes=("Use je vais to conjugate aller in the present tense.",),
+        llm_rewrite=True,
+    )
+
+    formatted = cog._format_writing_feedback(message, result)
+
+    assert "**French rewrite**" not in formatted
+    assert "**Trevis** French rewrite" not in formatted
+    assert "Original:\nJe aller." in formatted
+    assert "Natural rewrite:\nJe vais." in formatted
+    assert "- Use je vais to conjugate aller in the present tense." in formatted
+
+
+def test_format_writing_feedback_uses_rewrite_layout_without_notes():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    message = type(
+        "Message",
+        (),
+        {"author": type("Author", (), {"display_name": "Trevis"})()},
+    )()
+    result = WritingFeedbackResult(
+        score=100,
+        language="fr",
+        source_text="Bonjour.",
+        provider="fake",
+        recommendation="Salut.",
+        rewrite_notes=(),
+        llm_rewrite=True,
+    )
+
+    formatted = cog._format_writing_feedback(message, result)
+
+    assert "**French rewrite**" not in formatted
+    assert "**Trevis** French rewrite" not in formatted
+    assert "Natural rewrite:\nSalut." in formatted
+
+
 def test_format_context_message_caps_content():
     message = FakeMessage(content="mot " * 100)
 
