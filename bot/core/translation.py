@@ -44,6 +44,9 @@ class TranslationProvider(Protocol):
     def supports(self, pair: LanguagePair) -> bool:
         ...
 
+    def warmup_sync(self) -> None:
+        ...
+
     def translate_sync(self, request: TranslationRequest) -> TranslationResult:
         ...
 
@@ -97,6 +100,13 @@ class TranslationService:
         self.cache = cache or TranslationCache()
         self.semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
+    async def warmup(self) -> None:
+        for provider in self.providers:
+            warmup_sync = getattr(provider, "warmup_sync", None)
+            if warmup_sync is None:
+                continue
+            await asyncio.to_thread(warmup_sync)
+
     async def translate(self, request: TranslationRequest) -> TranslationResult:
         text = request.text.strip()
         if not text:
@@ -139,6 +149,23 @@ class ArgosTranslateProvider:
     def supports(self, pair: LanguagePair) -> bool:
         return (pair.source.casefold(), pair.target.casefold()) in self.language_pairs
 
+    def warmup_sync(self) -> None:
+        try:
+            import argostranslate.translate
+        except ImportError as exc:
+            raise TranslationError(
+                "Argos Translate is not installed. Install argostranslate and the "
+                "required language models."
+            ) from exc
+
+        installed_languages = argostranslate.translate.get_installed_languages()
+        for source_lang, target_lang in self.language_pairs:
+            source = self._find_installed_language(installed_languages, source_lang)
+            target = self._find_installed_language(installed_languages, target_lang)
+            if source is None or target is None:
+                continue
+            source.get_translation(target)
+
     def translate_sync(self, request: TranslationRequest) -> TranslationResult:
         try:
             import argostranslate.translate
@@ -166,3 +193,11 @@ class ArgosTranslateProvider:
             source_text=request.text,
             pair=request.pair,
         )
+
+    @staticmethod
+    def _find_installed_language(installed_languages, code: str):
+        normalized_code = code.casefold()
+        for language in installed_languages:
+            if getattr(language, "code", "").casefold() == normalized_code:
+                return language
+        return None

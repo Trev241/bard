@@ -14,6 +14,7 @@ import bot.cogs.wordle as wordle
 
 
 logger = logging.getLogger(__name__)
+app_commands_synced = False
 
 cogs = [music, utils, events, wordle]
 if config.ASSISTANT_ENABLED:
@@ -32,6 +33,29 @@ async def load_extensions():
 
     for i in range(len(cogs)):
         await cogs[i].setup(client)
+
+
+async def sync_app_commands():
+    if not client.guilds:
+        synced = await client.tree.sync()
+        logger.info("Synced %s global Discord app command(s).", len(synced))
+        return
+
+    for guild in client.guilds:
+        client.tree.copy_global_to(guild=guild)
+        synced = await client.tree.sync(guild=guild)
+        logger.info(
+            "Synced %s Discord app command(s) to guild %s.",
+            len(synced),
+            guild.id,
+        )
+
+    client.tree.clear_commands(guild=None)
+    synced = await client.tree.sync()
+    logger.info(
+        "Cleared global Discord app commands after guild sync; %s remain global.",
+        len(synced),
+    )
 
 
 @tasks.loop(seconds=1)
@@ -63,6 +87,8 @@ async def check_restart_signal():
 
 
 async def main():
+    global app_commands_synced
+
     logging.getLogger("discord").setLevel(logging.INFO)
     logging.getLogger("discord.http").setLevel(logging.WARNING)
 
@@ -71,6 +97,12 @@ async def main():
 
         @client.listen()
         async def on_ready():
+            global app_commands_synced
+
+            if not app_commands_synced:
+                await sync_app_commands()
+                app_commands_synced = True
+
             check_restart_signal.start()
 
         logger.info(f"Socket IO async-mode: {socketio.async_mode}")

@@ -1,5 +1,6 @@
 beautifulsoup4
 argostranslate
+https://www.grammalecte.net/zip/Grammalecte-fr-v2.3.0.zip
 git+https://github.com/Rapptz/discord.py.git
 discord-ext-voice-recv
 Pillow

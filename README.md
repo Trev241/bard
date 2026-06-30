@@ -60,17 +60,40 @@ TRANSLATION_PROVIDER=argos
 TRANSLATION_CHANNEL_PAIRS=123456789012345678:234567890123456789:en:fr
 TRANSLATION_MAX_CONCURRENCY=1
 TRANSLATION_CACHE_SIZE=1000
+TRANSLATION_USE_WEBHOOKS=true
+WRITING_FEEDBACK_ENABLED=true
+WRITING_FEEDBACK_AUTO_REPLY=false
+WRITING_FEEDBACK_PROVIDER=grammalecte
+WRITING_FEEDBACK_LANGUAGES=fr
+WRITING_FEEDBACK_SCORE_THRESHOLD=75
+WRITING_FEEDBACK_RECOMMEND_THRESHOLD=45
+WRITING_FEEDBACK_LLM_PROVIDER=gemini
+WRITING_FEEDBACK_GEMINI_API_KEY=<your Google AI Studio Gemini API key>
+WRITING_FEEDBACK_GEMINI_MODEL=gemini-3.5-flash
+WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 ```
 
 `TRANSLATION_CHANNEL_PAIRS` uses `source_channel_id:mirror_channel_id:source_lang:mirror_lang`. Bard mirrors both directions, so the example above translates English messages into French in the mirror channel and French replies back into English in the source channel.
 
-Install the Argos package with `pip install -r requirements.txt`, then install the required language models on the host running Bard:
+When `TRANSLATION_USE_WEBHOOKS=true`, Bard sends mirrored translations through a channel webhook named `Bard Translation Mirror` using the original author's display name and avatar. This makes mirror channels look closer to the source channel. Bard needs `Manage Webhooks` in each mirror channel for this; if webhook sending fails, Bard falls back to a normal bot message.
+
+When writing feedback is enabled, Bard can check messages written in the mirror channel for the configured foreign language. For French, Bard uses Grammalecte to produce a rule-based writing score from grammar, typography, and suggestion density. Feedback is on demand by default: right-click or long-press a mirror-channel message and choose `Apps > French Feedback`, or react with `📝` to request feedback in the channel. React with `✨` to request feedback with a forced rewrite attempt. Set `WRITING_FEEDBACK_AUTO_REPLY=true` to restore automatic feedback replies for messages at or below `WRITING_FEEDBACK_SCORE_THRESHOLD`.
+
+The `French Feedback` context menu is a Discord app command. Bard syncs it to each connected server on startup, so restart Bard after enabling translation feedback. If the command does not appear under `Apps`, make sure the bot was invited with the `applications.commands` scope and that you have permission to use application commands in the channel.
+
+If `WRITING_FEEDBACK_LLM_PROVIDER=gemini`, Bard asks Gemini through the Google AI Studio Gemini API for a natural French rewrite only for those low-scoring messages. `WRITING_FEEDBACK_GEMINI_MODEL` accepts a comma-separated priority list; Bard tries the next model if one returns a 429 rate-limit response. If every configured model is unavailable or rate-limited, Bard falls back to Grammalecte's rule-based suggestion. After all configured models return 429, Bard pauses LLM rewrite requests for `WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS`.
+
+LLM rewrites include a small conversation context window: the Discord message being replied to, when present, and the immediately previous human message in the mirror channel. Bard excludes bot messages, mirrored translation messages, and feedback replies from this context.
+
+Install the Python packages with `pip install -r requirements.txt`, then install the required Argos language models on the host running Bard:
 
 ```bash
 argospm update
 argospm install translate-en_fr
 argospm install translate-fr_en
 ```
+
+Bard warms up the configured Argos language pairs when the translation cog loads. This front-loads Argos' installed-language scan during startup so the first mirrored message does not pay the full cold-start cost.
 
 ## List of available commands
 

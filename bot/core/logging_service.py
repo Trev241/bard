@@ -25,6 +25,7 @@ def sensitive_values():
         config.TOKEN,
         config.WEBHOOK_SECRET,
         config.ASSISTANT_OPENROUTER_API_KEY,
+        config.WRITING_FEEDBACK_GEMINI_API_KEY,
     ]
 
 
