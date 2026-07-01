@@ -5,6 +5,7 @@ from bot.cogs.translation import TranslationChannelPair
 from bot.cogs.translation import Translation
 from bot.core.translation import (
     CasualEnglishNormalizer,
+    GeminiTranslateProvider,
     LanguagePair,
     SlangAwareTranslationProvider,
     TranslationCache,
@@ -190,6 +191,25 @@ def test_casual_english_normalizer_loads_rules_from_file(tmp_path):
     )
 
     assert result.text == "on my way"
+
+
+def test_gemini_translate_provider_extracts_translated_text():
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": '{"translated_text":"Bonjour le monde"}'},
+                    ],
+                }
+            }
+        ]
+    }
+
+    assert (
+        GeminiTranslateProvider.translated_text_from_payload(payload)
+        == "Bonjour le monde"
+    )
 
 
 def test_translation_channel_pair_maps_both_directions():

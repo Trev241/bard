@@ -285,6 +285,16 @@ def test_gemini_rewrite_prompt_includes_conversation_context():
     assert "Rewrite only the original sentence" in prompt
 
 
+def test_gemini_rewrite_provider_uses_custom_system_prompt():
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="gemini-test",
+        system_prompt="Use a stricter rewrite rubric.",
+    )
+
+    assert provider.system_prompt() == "Use a stricter rewrite rubric."
+
+
 def test_gemini_rewrite_provider_rejects_empty_content():
     payload = {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
 

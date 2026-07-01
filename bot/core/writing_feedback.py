@@ -307,6 +307,13 @@ class GeminiWritingRewriteProvider:
     REWRITE_MAX_OUTPUT_TOKENS = 256
     REWRITE_WITH_NOTES_MAX_OUTPUT_TOKENS = 1024
     REWRITE_WITH_NOTES_RETRY_MAX_OUTPUT_TOKENS = 1536
+    DEFAULT_SYSTEM_PROMPT = (
+        "You help French learners write natural, correct French. "
+        "Return only JSON. "
+        "The recommendation must be one complete French rewrite of the user's "
+        "sentence. Preserve the original meaning, person, tense, tone, names, "
+        "and Discord-style casualness. Do not translate to English."
+    )
     name = "gemini"
 
     def __init__(
@@ -316,12 +323,14 @@ class GeminiWritingRewriteProvider:
         *,
         timeout_seconds: float = 4.0,
         rate_limit_cooldown_seconds: float = 300.0,
+        system_prompt: str = "",
     ):
         self.api_key = api_key
         self.models = tuple(item.strip() for item in model.split(",") if item.strip())
         self.model = self.models[0] if self.models else ""
         self.timeout_seconds = timeout_seconds
         self.rate_limit_cooldown_seconds = max(0.0, rate_limit_cooldown_seconds)
+        self._system_prompt = system_prompt.strip()
         self._cooldown_until = 0.0
 
     @property
@@ -473,15 +482,8 @@ class GeminiWritingRewriteProvider:
 
         self._cooldown_until = time.monotonic() + max(0.0, cooldown_seconds)
 
-    @staticmethod
-    def system_prompt():
-        return (
-            "You help French learners write natural, correct French. "
-            "Return only JSON. "
-            "The recommendation must be one complete French rewrite of the user's "
-            "sentence. Preserve the original meaning, person, tense, tone, names, "
-            "and Discord-style casualness. Do not translate to English."
-        )
+    def system_prompt(self):
+        return self._system_prompt or self.DEFAULT_SYSTEM_PROMPT
 
     @staticmethod
     def user_prompt(request: WritingRewriteRequest):

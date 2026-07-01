@@ -232,7 +232,7 @@ class PlaybackManager:
         self.curr_song = None
         self.looping = self.auto_play = False
         self.cancel_prefetch_tasks()
-        self.voice_client.stop_playing()
+        self.stop_voice_playback()
         self.idle = True
 
     def cancel_prefetch_tasks(self):
@@ -250,7 +250,15 @@ class PlaybackManager:
 
     def skip(self, count: int = 1):
         self.skip_songs = count
-        self.voice_client.stop_playing()
+        self.stop_voice_playback()
+
+    def stop_voice_playback(self):
+        stop_playing = getattr(self.voice_client, "stop_playing", None)
+        if stop_playing is not None:
+            stop_playing()
+            return
+
+        self.voice_client.stop()
 
     def now(self) -> Song:
         return self.curr_song

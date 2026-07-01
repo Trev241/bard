@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, Protocol, Tuple
 
+import requests
+
 
 log = logging.getLogger(__name__)
 DEFAULT_NORMALIZATION_RULES_PATH = (
@@ -277,6 +279,126 @@ class SlangAwareTranslationProvider:
             alternatives=result.alternatives,
             notes=result.notes + normalization.notes,
         )
+
+
+class GeminiTranslateProvider:
+    BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+    name = "gemini"
+
+    def __init__(
+        self,
+        language_pairs: Iterable[LanguagePair],
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float = 4.0,
+    ):
+        self.language_pairs = {
+            (pair.source.casefold(), pair.target.casefold()) for pair in language_pairs
+        }
+        self.api_key = api_key
+        self.model = model.strip()
+        self.timeout_seconds = timeout_seconds
+
+    def supports(self, pair: LanguagePair) -> bool:
+        return (pair.source.casefold(), pair.target.casefold()) in self.language_pairs
+
+    def warmup_sync(self) -> None:
+        return None
+
+    def translate_sync(self, request: TranslationRequest) -> TranslationResult:
+        if not self.api_key or not self.model:
+            raise TranslationError(
+                "Gemini translation requires WRITING_FEEDBACK_GEMINI_API_KEY "
+                "and WRITING_FEEDBACK_GEMINI_MODEL."
+            )
+
+        response = requests.post(
+            self.endpoint_for_model(self.model),
+            headers={
+                "x-goog-api-key": self.api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "system_instruction": {
+                    "parts": [
+                        {
+                            "text": (
+                                "You are a translation engine. Return only JSON. "
+                                "Preserve names, links, emojis, punctuation, tone, "
+                                "and Discord-style casualness."
+                            )
+                        }
+                    ],
+                },
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": (
+                                    f"Translate from {request.pair.source} to "
+                                    f"{request.pair.target}:\n{request.text}\n\n"
+                                    'Return exactly: {"translated_text":"..."}'
+                                )
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 1024,
+                    "responseMimeType": "application/json",
+                    "responseSchema": {
+                        "type": "object",
+                        "properties": {
+                            "translated_text": {
+                                "type": "string",
+                                "description": "The translated text.",
+                            }
+                        },
+                        "required": ["translated_text"],
+                    },
+                },
+            },
+            timeout=self.timeout_seconds,
+        )
+
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            raise TranslationError("Gemini failed to translate text.") from exc
+
+        try:
+            translated_text = self.translated_text_from_payload(response.json())
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise TranslationError("Gemini returned an invalid translation.") from exc
+
+        if not translated_text:
+            raise TranslationError("Gemini returned an empty translation.")
+
+        return TranslationResult(
+            translated_text=translated_text,
+            provider=self.name,
+            source_text=request.text,
+            pair=request.pair,
+        )
+
+    @classmethod
+    def translated_text_from_payload(cls, payload: dict) -> str:
+        content = cls.content_from_payload(payload)
+        data = json.loads(content)
+        return str(data.get("translated_text") or "").strip()
+
+    @staticmethod
+    def content_from_payload(payload: dict) -> str:
+        candidates = payload.get("candidates") or []
+        parts = candidates[0]["content"].get("parts") or []
+        return str(parts[0].get("text") or "")
+
+    @classmethod
+    def endpoint_for_model(cls, model: str) -> str:
+        return f"{cls.BASE_URL}/models/{model}:generateContent"
 
 
 class ArgosTranslateProvider:

@@ -14,7 +14,7 @@ class FakeVoiceClient:
         self.paused = False
         self.playing = False
 
-    def stop_playing(self):
+    def stop(self):
         self.stop_count += 1
 
     def pause(self):
@@ -78,6 +78,19 @@ def test_skip_stops_voice_and_records_count():
     assert manager.skip_songs == 2
 
 
+def test_skip_supports_custom_voice_client_stop_playing():
+    manager = make_manager(make_song("Track A"))
+
+    def stop_playing():
+        manager.voice_client.stop_count += 1
+
+    manager.voice_client = SimpleNamespace(stop_count=0, stop_playing=stop_playing)
+
+    manager.skip()
+
+    assert manager.voice_client.stop_count == 1
+
+
 def test_skip_sets_count_before_voice_stop_callback():
     first = make_song("Track A")
     second = make_song("Track B")
@@ -87,7 +100,7 @@ def test_skip_sets_count_before_voice_stop_callback():
         manager.voice_client.stop_count += 1
         manager.after_playback(None)
 
-    manager.voice_client.stop_playing = stop_and_callback
+    manager.voice_client.stop = stop_and_callback
 
     manager.skip(2)
 

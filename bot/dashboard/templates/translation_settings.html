@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Translation Settings{% endblock %}
+{% block content %}
+<main class="min-h-screen bg-[#111111]">
+  <section class="mx-auto max-w-screen-xl px-4 py-8">
+    <div class="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="mb-2 text-xs font-light tracking-widest text-gray-400">CONFIGURATION</p>
+        <h1 class="text-3xl font-semibold text-white">Translation Service</h1>
+        <p class="mt-2 text-sm text-gray-400">Changes are written to .env. Restart Bard to rebuild the running translation cog.</p>
+      </div>
+      <div class="rounded border border-gray-800 px-4 py-3 text-sm text-gray-300">
+        {{ settings.source_channel_id or "No source channel" }} -> {{ settings.mirror_channel_id or "No mirror channel" }}
+      </div>
+    </div>
+
+    {% if status == "saved" %}
+    <div class="mb-6 rounded border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-100">
+      Translation settings saved.
+    </div>
+    {% elif status == "reset" %}
+    <div class="mb-6 rounded border border-sky-800 bg-sky-950/40 px-4 py-3 text-sm text-sky-100">
+      Translation settings reset.
+    </div>
+    {% endif %}
+
+    {% if errors %}
+    <div class="mb-6 rounded border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-100">
+      {% for error in errors %}
+      <p>{{ error }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-6">
+      <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded border border-gray-800 bg-black/30 p-5">
+          <h2 class="mb-4 text-lg font-semibold text-white">Channel Pair</h2>
+          <div class="grid gap-4 md:grid-cols-2">
+            <label class="block">
+              <span class="mb-2 block text-sm text-gray-300">Source channel ID</span>
+              <input
+                name="source_channel_id"
+                value="{{ settings.source_channel_id }}"
+                inputmode="numeric"
+                class="w-full rounded border border-gray-700 bg-transparent px-3 py-2 text-sm text-white outline-none focus:border-gray-300"
+              >
+            </label>
+            <label class="block">
+              <span class="mb-2 block text-sm text-gray-300">Mirror channel ID</span>
+              <input
+                name="mirror_channel_id"
+                value="{{ settings.mirror_channel_id }}"
+                inputmode="numeric"
+                class="w-full rounded border border-gray-700 bg-transparent px-3 py-2 text-sm text-white outline-none focus:border-gray-300"
+              >
+            </label>
+            <input type="hidden" name="source_lang" value="{{ settings.source_lang }}">
+            <input type="hidden" name="mirror_lang" value="{{ settings.mirror_lang }}">
+          </div>
+          <p class="mt-3 text-xs text-gray-500">{{ settings.source_lang }} -> {{ settings.mirror_lang }}</p>
+        </section>
+
+        <section class="rounded border border-gray-800 bg-black/30 p-5">
+          <h2 class="mb-4 text-lg font-semibold text-white">Translation Engine</h2>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="flex cursor-pointer items-center gap-3 rounded border border-gray-700 px-4 py-3 text-sm text-gray-200">
+              <input
+                type="radio"
+                name="translation_provider"
+                value="argos"
+                class="h-4 w-4"
+                {% if settings.translation_provider != "gemini" %}checked{% endif %}
+              >
+              Argos
+            </label>
+            <label class="flex cursor-pointer items-center gap-3 rounded border border-gray-700 px-4 py-3 text-sm text-gray-200">
+              <input
+                type="radio"
+                name="translation_provider"
+                value="gemini"
+                class="h-4 w-4"
+                {% if settings.translation_provider == "gemini" %}checked{% endif %}
+              >
+              Gemini
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <section class="rounded border border-gray-800 bg-black/30 p-5">
+        <h2 class="mb-4 text-lg font-semibold text-white">LLM Rewrite</h2>
+        <div class="grid gap-4 md:grid-cols-[220px_1fr] md:items-start">
+          <label class="block">
+            <span class="mb-2 block text-sm text-gray-300">Score threshold</span>
+            <input
+              name="auto_rewrite_threshold"
+              type="number"
+              min="0"
+              max="100"
+              value="{{ settings.auto_rewrite_threshold }}"
+              class="w-full rounded border border-gray-700 bg-transparent px-3 py-2 text-sm text-white outline-none focus:border-gray-300"
+            >
+          </label>
+
+          <label class="flex items-center gap-3 pt-8 text-sm text-gray-200">
+            <input
+              type="checkbox"
+              name="auto_rewrite_enabled"
+              value="true"
+              class="h-4 w-4"
+              {% if settings.auto_rewrite_enabled %}checked{% endif %}
+            >
+            Provide LLM rewrite automatically
+          </label>
+        </div>
+      </section>
+
+      <section class="rounded border border-gray-800 bg-black/30 p-5">
+        <div class="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-white">LLM Prompt</h2>
+            <p class="mt-1 text-sm text-gray-400">Leave empty to use the default prompt.</p>
+          </div>
+        </div>
+
+        <label class="block">
+          <span class="mb-2 block text-sm text-gray-300">Prompt override</span>
+          <textarea
+            name="llm_prompt"
+            rows="7"
+            class="w-full rounded border border-gray-700 bg-transparent px-3 py-2 text-sm leading-relaxed text-white outline-none focus:border-gray-300"
+          >{{ settings.llm_prompt }}</textarea>
+        </label>
+
+        <details class="mt-4 rounded border border-gray-800 bg-black/40 p-4">
+          <summary class="cursor-pointer text-sm text-gray-200">Default prompt</summary>
+          <pre class="mt-3 whitespace-pre-wrap text-xs leading-relaxed text-gray-300">{{ default_prompt }}</pre>
+        </details>
+      </section>
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <button
+          name="action"
+          value="reset"
+          class="rounded border border-gray-700 px-5 py-2 text-sm text-gray-100 hover:border-gray-300"
+          type="submit"
+        >
+          Reset
+        </button>
+        <button
+          name="action"
+          value="save"
+          class="rounded bg-white px-5 py-2 text-sm font-semibold text-black hover:bg-gray-200"
+          type="submit"
+        >
+          Save settings
+        </button>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}

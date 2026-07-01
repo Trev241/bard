@@ -11,6 +11,7 @@ from bot import config
 from bot.core.checks import trusted_only
 from bot.core.translation import (
     ArgosTranslateProvider,
+    GeminiTranslateProvider,
     LanguagePair,
     SlangAwareTranslationProvider,
     TranslationCache,
@@ -657,12 +658,21 @@ def build_translation_service(channel_pairs) -> TranslationService:
             LanguagePair(channel_pair.mirror_lang, channel_pair.source_lang)
         )
 
-    if config.TRANSLATION_PROVIDER != "argos":
+    if config.TRANSLATION_PROVIDER not in {"argos", "gemini"}:
         raise ValueError(
             f"Unsupported translation provider: {config.TRANSLATION_PROVIDER}"
         )
 
-    provider = ArgosTranslateProvider(language_pairs)
+    if config.TRANSLATION_PROVIDER == "gemini":
+        provider = GeminiTranslateProvider(
+            language_pairs,
+            api_key=config.WRITING_FEEDBACK_GEMINI_API_KEY,
+            model=config.WRITING_FEEDBACK_GEMINI_MODEL,
+            timeout_seconds=config.WRITING_FEEDBACK_LLM_TIMEOUT_SECONDS,
+        )
+    else:
+        provider = ArgosTranslateProvider(language_pairs)
+
     if config.TRANSLATION_NORMALIZE_SLANG:
         provider = SlangAwareTranslationProvider(provider)
 
@@ -709,6 +719,7 @@ def build_writing_rewrite_provider():
         rate_limit_cooldown_seconds=(
             config.WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS
         ),
+        system_prompt=config.WRITING_FEEDBACK_LLM_PROMPT,
     )
 
 

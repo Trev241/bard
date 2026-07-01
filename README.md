@@ -34,9 +34,11 @@ Bard can play songs on demand and manages all queued songs using an internal que
 
 Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
 
+Translation mirror settings can be edited at `/dashboard/translation`. The page writes channel-pair, translation provider, automatic rewrite threshold, automatic rewrite, and LLM prompt settings to `.env`; restart Bard after saving so the running translation cog rebuilds its providers.
+
 ### Translation Mirrors
 
-Bard can mirror text between paired channels in different languages. Translation is disabled by default and currently supports the local Argos Translate provider.
+Bard can mirror text between paired channels in different languages. Translation is disabled by default and supports the local Argos Translate provider or Gemini through the configured Gemini API key and model.
 
 Example `.env` configuration:
 
