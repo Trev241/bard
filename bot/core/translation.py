@@ -1,11 +1,20 @@
 import asyncio
+import json
 import logging
+import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, Optional, Protocol, Tuple
 
 
 log = logging.getLogger(__name__)
+DEFAULT_NORMALIZATION_RULES_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "resources"
+    / "translation"
+    / "normalization.en.json"
+)
 
 
 class TranslationError(Exception):
@@ -135,6 +144,138 @@ class TranslationService:
 
         raise TranslationError(
             f"No translation provider supports {pair.source!r} -> {pair.target!r}."
+        )
+
+
+@dataclass(frozen=True)
+class TextNormalization:
+    text: str
+    notes: Tuple[str, ...] = ()
+
+
+class CasualEnglishNormalizer:
+    source_languages = {"en", "eng", "english"}
+
+    _FALLBACK_RULES = (
+        {
+            "pattern": r"\ban\s+llm\b",
+            "replacement": "a large language model",
+        },
+        {
+            "pattern": r"\bllm\b",
+            "replacement": "large language model",
+        },
+        {
+            "pattern": r"\bdon['\u2019]?t\b",
+            "replacement": "do not",
+        },
+        {
+            "pattern": r"\bbs\b",
+            "replacement": "bullshit",
+        },
+        {
+            "pattern": (
+                r"\bur\s+(?=(?:using|doing|going|making|being|trying|talking|"
+                r"lying|asking|saying|playing|running|coming|working|looking|"
+                r"getting)\b)"
+            ),
+            "replacement": "you are ",
+        },
+        {
+            "pattern": r"\bur\b",
+            "replacement": "your",
+        },
+        {
+            "pattern": r"\bvas\b",
+            "replacement": "what's up",
+        },
+    )
+
+    def __init__(self, rules_path: Optional[Path] = DEFAULT_NORMALIZATION_RULES_PATH):
+        self.replacements = self._load_replacements(rules_path)
+
+    def normalize(self, request: TranslationRequest) -> TextNormalization:
+        if request.pair.source.casefold() not in self.source_languages:
+            return TextNormalization(request.text)
+
+        normalized_text = request.text
+        for pattern, replacement in self.replacements:
+            normalized_text = pattern.sub(replacement, normalized_text)
+
+        if normalized_text == request.text:
+            return TextNormalization(request.text)
+
+        return TextNormalization(
+            normalized_text,
+            notes=("Normalized casual English before translation.",),
+        )
+
+    @classmethod
+    def _load_replacements(cls, rules_path: Optional[Path]):
+        rules = cls._FALLBACK_RULES
+        if rules_path is not None:
+            try:
+                with Path(rules_path).open(encoding="utf-8") as rules_file:
+                    data = json.load(rules_file)
+                rules = data["rules"]
+            except (OSError, json.JSONDecodeError, KeyError, TypeError):
+                log.warning(
+                    "Failed to load translation normalization rules from %s; "
+                    "using built-in fallback rules.",
+                    rules_path,
+                    exc_info=True,
+                )
+
+        replacements = []
+        for rule in rules:
+            try:
+                replacements.append(
+                    (
+                        re.compile(rule["pattern"], re.IGNORECASE),
+                        rule["replacement"],
+                    )
+                )
+            except (KeyError, TypeError, re.error):
+                log.warning("Skipping invalid translation normalization rule: %r", rule)
+
+        return tuple(replacements)
+
+
+class SlangAwareTranslationProvider:
+    def __init__(self, provider: TranslationProvider, normalizer=None):
+        self.provider = provider
+        self.normalizer = normalizer or CasualEnglishNormalizer()
+        self.name = provider.name
+
+    def supports(self, pair: LanguagePair) -> bool:
+        return self.provider.supports(pair)
+
+    def warmup_sync(self) -> None:
+        warmup_sync = getattr(self.provider, "warmup_sync", None)
+        if warmup_sync is not None:
+            warmup_sync()
+
+    def translate_sync(self, request: TranslationRequest) -> TranslationResult:
+        normalization = self.normalizer.normalize(request)
+        provider_request = request
+        if normalization.text != request.text:
+            provider_request = TranslationRequest(
+                text=normalization.text,
+                pair=request.pair,
+                context=request.context,
+            )
+
+        result = self.provider.translate_sync(provider_request)
+        if not normalization.notes:
+            return result
+
+        return TranslationResult(
+            translated_text=result.translated_text,
+            provider=result.provider,
+            source_text=request.text,
+            pair=result.pair,
+            alternatives=result.alternatives,
+            notes=result.notes + normalization.notes,
         )
 
 

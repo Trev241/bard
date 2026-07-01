@@ -497,7 +497,7 @@ def test_gemini_rewrite_provider_can_request_notes(monkeypatch):
         "Use je vais to conjugate aller in the present tense.",
     )
     generation_config = captured["json"]["generationConfig"]
-    assert generation_config["maxOutputTokens"] == 768
+    assert generation_config["maxOutputTokens"] == 1024
     assert generation_config["responseSchema"]["required"] == [
         "recommendation",
         "notes",
@@ -527,6 +527,7 @@ def test_gemini_rewrite_prompt_requests_english_correction_notes():
     schema = GeminiWritingRewriteProvider.response_schema(include_notes=True)
 
     assert "brief English bullet-style explanations" in prompt
+    assert "at most 12 words" in prompt
     assert "corrections and the reasoning" in prompt
     assert '{"recommendation":"...","notes":["..."]}' in prompt
     assert "Short English explanations" in schema["properties"]["notes"]["description"]
@@ -536,6 +537,41 @@ def test_gemini_rewrite_provider_extracts_finish_reason():
     payload = {"candidates": [{"finishReason": "MAX_TOKENS"}]}
 
     assert GeminiWritingRewriteProvider.finish_reason_from_payload(payload) == "MAX_TOKENS"
+
+
+def test_gemini_rewrite_provider_retries_with_larger_budget_after_max_tokens(monkeypatch):
+    truncated_response = requests.Response()
+    truncated_response.status_code = 200
+    truncated_response._content = (
+        b'{"candidates":[{"finishReason":"MAX_TOKENS","content":{"parts":[{"text":'
+        b'"{\\"recommendation\\":\\"Je vais.\\",\\"notes\\":[\\"Use"}]}}]}'
+    )
+
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"recommendation\\":\\"Je vais.\\",'
+        b'\\"notes\\":[\\"Use je vais.\\"]}"}]}}]}'
+    )
+    seen_budgets = []
+
+    def fake_post(*args, **kwargs):
+        seen_budgets.append(kwargs["json"]["generationConfig"]["maxOutputTokens"])
+        if len(seen_budgets) == 1:
+            return truncated_response
+        return ok_response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
+
+    rewrite = provider.rewrite_sync(
+        WritingRewriteRequest("Je aller.", "fr", 30, include_notes=True)
+    )
+
+    assert rewrite.recommendation == "Je vais."
+    assert rewrite.notes == ("Use je vais.",)
+    assert seen_budgets == [1024, 1536]
 
 
 def test_gemini_rewrite_provider_skips_during_cooldown():

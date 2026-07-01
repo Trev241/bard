@@ -4,7 +4,9 @@ from bot import config
 from bot.cogs.translation import TranslationChannelPair
 from bot.cogs.translation import Translation
 from bot.core.translation import (
+    CasualEnglishNormalizer,
     LanguagePair,
+    SlangAwareTranslationProvider,
     TranslationCache,
     TranslationError,
     TranslationProvider,
@@ -21,6 +23,7 @@ class FakeTranslationProvider(TranslationProvider):
     def __init__(self):
         self.calls = 0
         self.warmups = 0
+        self.requests = []
 
     def supports(self, pair):
         return pair == LanguagePair("en", "fr")
@@ -30,6 +33,7 @@ class FakeTranslationProvider(TranslationProvider):
 
     def translate_sync(self, request):
         self.calls += 1
+        self.requests.append(request)
         return TranslationResult(
             translated_text=f"translated:{request.text}",
             provider=self.name,
@@ -123,6 +127,69 @@ async def test_translation_service_rejects_unsupported_pair():
 
     with pytest.raises(TranslationError):
         await service.translate(TranslationRequest("bonjour", LanguagePair("fr", "en")))
+
+
+@pytest.mark.asyncio
+async def test_translation_service_normalizes_casual_english_before_provider():
+    provider = FakeTranslationProvider()
+    service = TranslationService(
+        [SlangAwareTranslationProvider(provider)],
+        cache=TranslationCache(max_size=0),
+    )
+
+    result = await service.translate(
+        TranslationRequest("ur using an llm", LanguagePair("en", "fr"))
+    )
+
+    assert provider.requests[0].text == "you are using a large language model"
+    assert result.translated_text == "translated:you are using a large language model"
+    assert result.source_text == "ur using an llm"
+    assert result.notes == ("Normalized casual English before translation.",)
+
+
+@pytest.mark.asyncio
+async def test_translation_service_normalizes_slang_phrases_before_provider():
+    provider = FakeTranslationProvider()
+    service = TranslationService(
+        [SlangAwareTranslationProvider(provider)],
+        cache=TranslationCache(max_size=0),
+    )
+
+    first = await service.translate(
+        TranslationRequest("don't bs me", LanguagePair("en", "fr"))
+    )
+    second = await service.translate(TranslationRequest("vas", LanguagePair("en", "fr")))
+
+    assert provider.requests[0].text == "do not bullshit me"
+    assert first.translated_text == "translated:do not bullshit me"
+    assert provider.requests[1].text == "what's up"
+    assert second.translated_text == "translated:what's up"
+
+
+def test_casual_english_normalizer_loads_rules_from_file(tmp_path):
+    rules_path = tmp_path / "normalization.en.json"
+    rules_path.write_text(
+        """
+        {
+          "version": 1,
+          "source_language": "en",
+          "rules": [
+            {
+              "pattern": "\\\\bomw\\\\b",
+              "replacement": "on my way"
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    normalizer = CasualEnglishNormalizer(rules_path)
+
+    result = normalizer.normalize(
+        TranslationRequest("omw", LanguagePair("en", "fr"))
+    )
+
+    assert result.text == "on my way"
 
 
 def test_translation_channel_pair_maps_both_directions():

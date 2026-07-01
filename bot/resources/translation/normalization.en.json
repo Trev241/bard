@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "source_language": "en",
+  "rules": [
+    {
+      "pattern": "\\ban\\s+llm\\b",
+      "replacement": "a large language model",
+      "description": "Expand article plus LLM abbreviation before the generic LLM rule runs."
+    },
+    {
+      "pattern": "\\bllm\\b",
+      "replacement": "large language model",
+      "description": "Expand LLM abbreviation for machine translation."
+    },
+    {
+      "pattern": "\\bdon['\\u2019]?t\\b",
+      "replacement": "do not",
+      "description": "Normalize don't/dont-style contraction before slang expansion."
+    },
+    {
+      "pattern": "\\bbs\\b",
+      "replacement": "bullshit",
+      "description": "Expand common BS abbreviation."
+    },
+    {
+      "pattern": "\\bur\\s+(?=(?:using|doing|going|making|being|trying|talking|lying|asking|saying|playing|running|coming|working|looking|getting)\\b)",
+      "replacement": "you are ",
+      "description": "Treat ur as you are before common verbs."
+    },
+    {
+      "pattern": "\\bur\\b",
+      "replacement": "your",
+      "description": "Treat remaining ur tokens as your."
+    },
+    {
+      "pattern": "\\bvas\\b",
+      "replacement": "what's up",
+      "description": "Normalize server shorthand for a casual greeting/check-in."
+    }
+  ]
+}

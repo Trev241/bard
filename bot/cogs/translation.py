@@ -12,6 +12,7 @@ from bot.core.checks import trusted_only
 from bot.core.translation import (
     ArgosTranslateProvider,
     LanguagePair,
+    SlangAwareTranslationProvider,
     TranslationCache,
     TranslationError,
     TranslationRequest,
@@ -661,8 +662,12 @@ def build_translation_service(channel_pairs) -> TranslationService:
             f"Unsupported translation provider: {config.TRANSLATION_PROVIDER}"
         )
 
+    provider = ArgosTranslateProvider(language_pairs)
+    if config.TRANSLATION_NORMALIZE_SLANG:
+        provider = SlangAwareTranslationProvider(provider)
+
     return TranslationService(
-        [ArgosTranslateProvider(language_pairs)],
+        [provider],
         cache=TranslationCache(max_size=config.TRANSLATION_CACHE_SIZE),
         max_concurrency=config.TRANSLATION_MAX_CONCURRENCY,
     )

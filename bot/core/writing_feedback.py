@@ -22,6 +22,10 @@ class WritingRewriteUnavailable(Exception):
 class WritingRewriteInvalidResponse(Exception):
     """Raised when an LLM rewrite response cannot be used."""
 
+    @property
+    def is_max_tokens(self) -> bool:
+        return getattr(self, "finish_reason", None) == "MAX_TOKENS"
+
 
 @dataclass(frozen=True)
 class WritingFeedbackIssue:
@@ -300,6 +304,9 @@ class GrammalecteWritingFeedbackProvider:
 
 class GeminiWritingRewriteProvider:
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+    REWRITE_MAX_OUTPUT_TOKENS = 256
+    REWRITE_WITH_NOTES_MAX_OUTPUT_TOKENS = 1024
+    REWRITE_WITH_NOTES_RETRY_MAX_OUTPUT_TOKENS = 1536
     name = "gemini"
 
     def __init__(
@@ -376,6 +383,29 @@ class GeminiWritingRewriteProvider:
     def _rewrite_with_model(
         self, request: WritingRewriteRequest, model: str
     ) -> Optional[WritingRewriteResult]:
+        max_output_tokens = self.max_output_tokens_for(request)
+        try:
+            return self._rewrite_with_model_once(
+                request,
+                model,
+                max_output_tokens=max_output_tokens,
+            )
+        except WritingRewriteInvalidResponse as exc:
+            if not request.include_notes or not exc.is_max_tokens:
+                raise
+            return self._rewrite_with_model_once(
+                request,
+                model,
+                max_output_tokens=self.REWRITE_WITH_NOTES_RETRY_MAX_OUTPUT_TOKENS,
+            )
+
+    def _rewrite_with_model_once(
+        self,
+        request: WritingRewriteRequest,
+        model: str,
+        *,
+        max_output_tokens: int,
+    ) -> Optional[WritingRewriteResult]:
         response = requests.post(
             self.endpoint_for_model(model),
             headers={
@@ -394,7 +424,7 @@ class GeminiWritingRewriteProvider:
                 ],
                 "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": 768 if request.include_notes else 256,
+                    "maxOutputTokens": max_output_tokens,
                     "responseMimeType": "application/json",
                     "responseSchema": self.response_schema(request.include_notes),
                 },
@@ -415,10 +445,18 @@ class GeminiWritingRewriteProvider:
             finish_reason = self.finish_reason_from_payload(payload)
             if finish_reason:
                 snippet = f"{snippet} [finishReason={finish_reason}]"
-            raise WritingRewriteInvalidResponse(
+            error = WritingRewriteInvalidResponse(
                 f"Gemini returned non-JSON content: {snippet!r}"
-            ) from exc
+            )
+            error.finish_reason = finish_reason
+            raise error from exc
         return self.rewrite_result_from_data(data, include_notes=request.include_notes)
+
+    @classmethod
+    def max_output_tokens_for(cls, request: WritingRewriteRequest) -> int:
+        if request.include_notes:
+            return cls.REWRITE_WITH_NOTES_MAX_OUTPUT_TOKENS
+        return cls.REWRITE_MAX_OUTPUT_TOKENS
 
     def _is_cooling_down(self) -> bool:
         return time.monotonic() < self._cooldown_until
@@ -463,7 +501,8 @@ class GeminiWritingRewriteProvider:
             else "Conversation context:\n- None\n\n"
         )
         note_instruction = (
-            "Also include notes: 1 to 3 brief English bullet-style explanations. "
+            "Also include notes: 1 to 2 brief English bullet-style explanations. "
+            "Each note must be at most 12 words. "
             "Focus primarily on the corrections and the reasoning behind each "
             "correction. Return exactly this JSON shape: "
             '{"recommendation":"...","notes":["..."]}.'
