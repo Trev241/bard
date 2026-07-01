@@ -2,26 +2,40 @@ import json
 import logging
 import hmac
 import hashlib
+import secrets
+from urllib.parse import urlencode
 
 from bot import client, app, config, socketio
-from flask import render_template, request, jsonify, abort
+from flask import (
+    abort,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from threading import Timer
+import requests
+
 from bot.cogs.music import Music
-from bot.core.env_file import read_env_values, update_env_file
 from bot.core.logging_service import recent_logs
+from bot.core.translation_settings import (
+    GuildTranslationSettings,
+    TranslationSettingsStore,
+    direction_key,
+)
 from bot.core.writing_feedback import GeminiWritingRewriteProvider
 
 logger = logging.getLogger(__name__)
-ENV_PATH = config.PROJECT_ROOT / ".env"
-DEFAULT_TRANSLATION_DASHBOARD_SETTINGS = {
-    "TRANSLATION_PROVIDER": "argos",
-    "TRANSLATION_PROVIDER_BY_DIRECTION": None,
-    "TRANSLATION_CHANNEL_PAIRS": "",
-    "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD": "25",
-    "WRITING_FEEDBACK_AUTO_REPLY": "false",
-    "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS": None,
-    "WRITING_FEEDBACK_LLM_PROMPT": None,
-}
+DISCORD_API_BASE_URL = "https://discord.com/api/v10"
+DISCORD_OAUTH_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
+DISCORD_OAUTH_TOKEN_URL = f"{DISCORD_API_BASE_URL}/oauth2/token"
+DISCORD_ADMINISTRATOR_PERMISSION = 0x8
+TRANSLATION_SETTINGS_STORE = TranslationSettingsStore(
+    config.TRANSLATION_GUILD_SETTINGS_FILE
+)
 
 
 @app.context_processor
@@ -40,13 +54,84 @@ def inject_client_info():
         if client.user and client.user.avatar
         else "/static/placeholder_icon.png"
     )
-    return {"client_avatar": client_avatar, "head_commit": head_commit}
+    return {"client_avatar": client_avatar, "head_commit": head_commit, "config": config}
 
 
 @app.route("/")
 @app.route("/index")
 def index():
     return render_template("index.html")
+
+
+@app.before_request
+def require_dashboard_auth():
+    g.dashboard_user = session.get("discord_user")
+    if not config.DASHBOARD_AUTH_ENABLED:
+        return None
+
+    path = request.path.rstrip("/")
+    if not path.startswith("/dashboard"):
+        return None
+    if path.startswith("/dashboard/auth"):
+        return None
+
+    if not dashboard_oauth_configured():
+        return render_template("dashboard_auth_setup.html"), 503
+
+    if not session.get("discord_user"):
+        return redirect(url_for("dashboard_login", next=request.full_path))
+
+    return None
+
+
+@app.route("/dashboard/auth/login")
+def dashboard_login():
+    if not dashboard_oauth_configured():
+        return render_template("dashboard_auth_setup.html"), 503
+
+    state = secrets.token_urlsafe(24)
+    session["dashboard_oauth_state"] = state
+    next_url = request.args.get("next") or url_for("dashboard")
+    session["dashboard_auth_next"] = next_url
+    params = {
+        "client_id": config.DASHBOARD_DISCORD_CLIENT_ID,
+        "redirect_uri": config.DASHBOARD_DISCORD_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": state,
+    }
+    return redirect(f"{DISCORD_OAUTH_AUTHORIZE_URL}?{urlencode(params)}")
+
+
+@app.route("/dashboard/auth/callback")
+def dashboard_auth_callback():
+    if request.args.get("state") != session.pop("dashboard_oauth_state", None):
+        abort(403)
+
+    code = request.args.get("code")
+    if not code:
+        abort(400)
+
+    token = exchange_discord_oauth_code(code)
+    user = discord_api_get("/users/@me", token["access_token"])
+    guilds = discord_api_get("/users/@me/guilds", token["access_token"])
+    session["discord_user"] = {
+        "id": int(user["id"]),
+        "username": user.get("global_name") or user.get("username") or "Discord user",
+        "avatar": user.get("avatar"),
+    }
+    session["discord_guilds"] = guilds
+
+    next_url = session.pop("dashboard_auth_next", None) or url_for("dashboard")
+    return redirect(next_url)
+
+
+@app.route("/dashboard/auth/logout")
+def dashboard_logout():
+    session.pop("discord_user", None)
+    session.pop("discord_guilds", None)
+    session.pop("dashboard_oauth_state", None)
+    return redirect(url_for("index"))
 
 
 @app.route("/dashboard")
@@ -86,23 +171,38 @@ def logs_data():
 def translation_settings_dashboard():
     status = None
     errors = []
+    guilds = authorized_dashboard_guilds()
+    selected_guild_id = selected_dashboard_guild_id(guilds)
+    selected_guild = guild_by_id(selected_guild_id)
 
     if request.method == "POST":
+        selected_guild_id = selected_dashboard_guild_id(guilds, request.form)
+        selected_guild = guild_by_id(selected_guild_id)
+        if selected_guild is None:
+            errors.append("Choose a guild before changing translation settings.")
+
         action = request.form.get("action", "save")
-        if action == "reset":
-            update_env_file(ENV_PATH, DEFAULT_TRANSLATION_DASHBOARD_SETTINGS)
-            apply_translation_dashboard_config(DEFAULT_TRANSLATION_DASHBOARD_SETTINGS)
+        if action == "reset" and selected_guild is not None:
+            TRANSLATION_SETTINGS_STORE.save(
+                GuildTranslationSettings(guild_id=selected_guild.id)
+            )
             status = "reset"
-        else:
-            updates, errors = translation_settings_updates_from_form(request.form)
+        elif selected_guild is not None:
+            setting, form_errors = translation_settings_from_form(
+                selected_guild,
+                request.form,
+            )
+            errors.extend(form_errors)
             if not errors:
-                update_env_file(ENV_PATH, updates)
-                apply_translation_dashboard_config(updates)
+                TRANSLATION_SETTINGS_STORE.save(setting)
                 status = "saved"
 
-    settings = current_translation_dashboard_settings()
+    settings = current_translation_dashboard_settings(selected_guild)
     return render_template(
         "translation_settings.html",
+        guilds=guilds,
+        selected_guild=selected_guild,
+        channels=text_channels_for_guild(selected_guild),
         settings=settings,
         default_prompt=GeminiWritingRewriteProvider.DEFAULT_SYSTEM_PROMPT,
         status=status,
@@ -119,67 +219,14 @@ def parse_lines_arg(default, maximum):
     return max(1, min(lines, maximum))
 
 
-def current_translation_dashboard_settings():
-    values = read_env_values(ENV_PATH)
-    pair = first_translation_pair(values.get("TRANSLATION_CHANNEL_PAIRS"))
-    source_lang = pair.get("source_lang") or "en"
-    mirror_lang = pair.get("mirror_lang") or "fr"
-    providers_by_direction = provider_by_direction_from_values(values)
+def current_translation_dashboard_settings(guild):
+    if guild is None:
+        return GuildTranslationSettings(guild_id=0)
 
-    return {
-        "source_channel_id": str(pair.get("source_channel_id") or ""),
-        "mirror_channel_id": str(pair.get("mirror_channel_id") or ""),
-        "source_lang": source_lang,
-        "mirror_lang": mirror_lang,
-        "translation_provider": values.get(
-            "TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER
-        ).strip().casefold()
-        or "argos",
-        "source_to_mirror_provider": providers_by_direction.get(
-            (source_lang.casefold(), mirror_lang.casefold()),
-            values.get("TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER),
-        ).strip().casefold()
-        or "argos",
-        "mirror_to_source_provider": providers_by_direction.get(
-            (mirror_lang.casefold(), source_lang.casefold()),
-            values.get("TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER),
-        ).strip().casefold()
-        or "argos",
-        "auto_rewrite_threshold": values.get(
-            "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD",
-            str(config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD),
-        ),
-        "auto_rewrite_enabled": parse_bool_value(
-            values.get(
-                "WRITING_FEEDBACK_AUTO_REPLY",
-                str(config.WRITING_FEEDBACK_AUTO_REPLY),
-            )
-        ),
-        "llm_extra_instructions": values.get(
-            "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS",
-            config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS,
-        ),
-    }
+    return TRANSLATION_SETTINGS_STORE.get(guild.id)
 
 
-def first_translation_pair(raw_pairs=None):
-    try:
-        pairs = config.parse_translation_channel_pairs(raw_pairs or "")
-    except (TypeError, ValueError):
-        pairs = []
-
-    if pairs:
-        return pairs[0]
-
-    return {
-        "source_channel_id": "",
-        "mirror_channel_id": "",
-        "source_lang": "en",
-        "mirror_lang": "fr",
-    }
-
-
-def translation_settings_updates_from_form(form):
+def translation_settings_from_form(guild, form):
     errors = []
     source_channel_id = (form.get("source_channel_id") or "").strip()
     mirror_channel_id = (form.get("mirror_channel_id") or "").strip()
@@ -201,8 +248,11 @@ def translation_settings_updates_from_form(form):
         if provider not in {"argos", "gemini"}:
             errors.append(f"{label} must be Argos or Gemini.")
 
-    if bool(source_channel_id) != bool(mirror_channel_id):
-        errors.append("Both channel IDs are required when configuring a pair.")
+    channel_ids = {str(channel.id) for channel in text_channels_for_guild(guild)}
+    if source_channel_id and source_channel_id not in channel_ids:
+        errors.append("Source channel must belong to the selected guild.")
+    if mirror_channel_id and mirror_channel_id not in channel_ids:
+        errors.append("Mirror channel must belong to the selected guild.")
 
     for label, value in (
         ("Source channel ID", source_channel_id),
@@ -220,63 +270,118 @@ def translation_settings_updates_from_form(form):
         if not 0 <= threshold_int <= 100:
             errors.append("LLM rewrite score threshold must be from 0 to 100.")
 
-    channel_pairs = ""
-    if source_channel_id and mirror_channel_id:
-        channel_pairs = (
-            f"{source_channel_id}:{mirror_channel_id}:{source_lang}:{mirror_lang}"
-        )
-
-    provider_by_direction = (
-        f"{source_lang}->{mirror_lang}:{source_to_mirror_provider},"
-        f"{mirror_lang}->{source_lang}:{mirror_to_source_provider}"
-    )
-
     return (
-        {
-            "TRANSLATION_PROVIDER": source_to_mirror_provider,
-            "TRANSLATION_PROVIDER_BY_DIRECTION": provider_by_direction,
-            "TRANSLATION_CHANNEL_PAIRS": channel_pairs,
-            "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD": str(threshold_int),
-            "WRITING_FEEDBACK_AUTO_REPLY": (
-                "true" if form.get("auto_rewrite_enabled") else "false"
-            ),
-            "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS": extra_instructions or None,
-            "WRITING_FEEDBACK_LLM_PROMPT": None,
-        },
+        GuildTranslationSettings(
+            guild_id=guild.id,
+            source_channel_id=int(source_channel_id) if source_channel_id else None,
+            mirror_channel_id=int(mirror_channel_id) if mirror_channel_id else None,
+            source_lang=source_lang,
+            mirror_lang=mirror_lang,
+            providers={
+                direction_key(source_lang, mirror_lang): source_to_mirror_provider,
+                direction_key(mirror_lang, source_lang): mirror_to_source_provider,
+            },
+            auto_rewrite_enabled=bool(form.get("auto_rewrite_enabled")),
+            auto_rewrite_threshold=threshold_int,
+            llm_extra_instructions=extra_instructions,
+        ),
         errors,
     )
 
 
-def apply_translation_dashboard_config(updates):
-    for key, value in updates.items():
-        if value is None:
-            value = ""
-        if key == "TRANSLATION_PROVIDER":
-            config.TRANSLATION_PROVIDER = value.strip().casefold()
-        elif key == "TRANSLATION_PROVIDER_BY_DIRECTION":
-            config.TRANSLATION_PROVIDER_BY_DIRECTION = value
-        elif key == "TRANSLATION_CHANNEL_PAIRS":
-            config.TRANSLATION_CHANNEL_PAIRS = value
-        elif key == "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD":
-            config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD = int(value or 25)
-        elif key == "WRITING_FEEDBACK_AUTO_REPLY":
-            config.WRITING_FEEDBACK_AUTO_REPLY = parse_bool_value(value)
-        elif key == "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS":
-            config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS = (
-                value.replace("\\n", "\n").strip()
-            )
-
-
-def provider_by_direction_from_values(values):
-    raw_value = values.get(
-        "TRANSLATION_PROVIDER_BY_DIRECTION",
-        config.TRANSLATION_PROVIDER_BY_DIRECTION,
+def dashboard_oauth_configured():
+    return bool(
+        config.DASHBOARD_DISCORD_CLIENT_ID
+        and config.DASHBOARD_DISCORD_CLIENT_SECRET
+        and config.DASHBOARD_DISCORD_REDIRECT_URI
     )
+
+
+def exchange_discord_oauth_code(code):
+    response = requests.post(
+        DISCORD_OAUTH_TOKEN_URL,
+        data={
+            "client_id": config.DASHBOARD_DISCORD_CLIENT_ID,
+            "client_secret": config.DASHBOARD_DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": config.DASHBOARD_DISCORD_REDIRECT_URI,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def discord_api_get(path, access_token):
+    response = requests.get(
+        f"{DISCORD_API_BASE_URL}{path}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def authorized_dashboard_guilds():
+    user = session.get("discord_user") or {}
+    user_id = int(user.get("id") or 0)
+    bot_guilds = {guild.id: guild for guild in client.guilds}
+
+    if not config.DASHBOARD_AUTH_ENABLED or user_id in config.ADMIN_IDS:
+        return sorted(bot_guilds.values(), key=lambda guild: guild.name.casefold())
+
+    authorized_ids = set()
+    for guild in session.get("discord_guilds") or []:
+        try:
+            guild_id = int(guild["id"])
+            permissions = int(guild.get("permissions") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if guild.get("owner") or permissions & DISCORD_ADMINISTRATOR_PERMISSION:
+            authorized_ids.add(guild_id)
+
+    return sorted(
+        (guild for guild_id, guild in bot_guilds.items() if guild_id in authorized_ids),
+        key=lambda guild: guild.name.casefold(),
+    )
+
+
+def selected_dashboard_guild_id(guilds, form=None):
+    source = form if form is not None else request.args
+    raw_guild_id = source.get("guild_id") if source is not None else None
+    allowed_ids = {guild.id for guild in guilds}
+
     try:
-        return config.parse_translation_provider_by_direction(raw_value)
-    except ValueError:
-        logger.warning("Invalid TRANSLATION_PROVIDER_BY_DIRECTION in .env.")
-        return {}
+        guild_id = int(raw_guild_id) if raw_guild_id else None
+    except (TypeError, ValueError):
+        guild_id = None
+
+    if guild_id in allowed_ids:
+        return guild_id
+    if guilds:
+        return guilds[0].id
+    return None
+
+
+def guild_by_id(guild_id):
+    if guild_id is None:
+        return None
+    return client.get_guild(int(guild_id))
+
+
+def text_channels_for_guild(guild):
+    if guild is None:
+        return []
+    return sorted(
+        [
+            channel
+            for channel in getattr(guild, "text_channels", [])
+            if getattr(channel, "id", None)
+        ],
+        key=lambda channel: (getattr(channel, "position", 0), channel.name.casefold()),
+    )
 
 
 def parse_bool_value(value):

@@ -17,6 +17,7 @@ app = Flask(
     template_folder=str(config.BASE_DIR / "dashboard" / "templates"),
     static_folder=str(config.BASE_DIR / "dashboard" / "static"),
 )
+app.secret_key = config.DASHBOARD_SECRET_KEY or config.TOKEN or "bard-dashboard-dev"
 socketio = SocketIO(app)
 
 public_url = config.DEFAULT_PUBLIC_URL

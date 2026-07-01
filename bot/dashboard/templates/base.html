@@ -19,6 +19,13 @@
         <span class="self-center text-xl font-semibold whitespace-nowrap text-white">Bard</span>
       </a>
       <div class="flex md:order-2">
+        {% if g.dashboard_user %}
+        <a href="/dashboard/auth/logout"
+          class="mr-3 rounded border border-gray-700 px-3 py-2 text-xs text-gray-200 hover:border-gray-300">LOG OUT</a>
+        {% elif config and config.DASHBOARD_AUTH_ENABLED %}
+        <a href="/dashboard/auth/login"
+          class="mr-3 rounded border border-gray-700 px-3 py-2 text-xs text-gray-200 hover:border-gray-300">LOG IN</a>
+        {% endif %}
         <button data-collapse-toggle="navbar-cta" type="button"
           class="inline-flex items-center p-2 text-sm text-gray-500 rounded-lg md:hidden hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-200 text-gray-400 hover:bg-gray-700 focus:ring-gray-600"
           aria-controls="navbar-cta" aria-expanded="false">

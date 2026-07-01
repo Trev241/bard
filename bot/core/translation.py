@@ -284,8 +284,12 @@ class SlangAwareTranslationProvider:
 class TranslationProviderRouter:
     name = "router"
 
-    def __init__(self, providers: Iterable[TranslationProvider]):
+    def __init__(self, providers: Iterable[TranslationProvider], routes=None):
         self.providers = list(providers)
+        self.routes = {
+            (int(guild_id), source.casefold(), target.casefold()): provider.casefold()
+            for (guild_id, source, target), provider in (routes or {}).items()
+        }
 
     def supports(self, pair: LanguagePair) -> bool:
         return self._select_provider(pair) is not None
@@ -298,6 +302,12 @@ class TranslationProviderRouter:
 
     def translate_sync(self, request: TranslationRequest) -> TranslationResult:
         provider = self._select_provider(request.pair)
+        guild_id = request.context.get("guild_id")
+        if guild_id is not None:
+            routed_provider = self._select_routed_provider(int(guild_id), request.pair)
+            if routed_provider is not None:
+                provider = routed_provider
+
         if provider is None:
             raise TranslationError(
                 f"No translation provider supports {request.pair.source!r} -> "
@@ -308,6 +318,20 @@ class TranslationProviderRouter:
     def _select_provider(self, pair: LanguagePair) -> Optional[TranslationProvider]:
         for provider in self.providers:
             if provider.supports(pair):
+                return provider
+        return None
+
+    def _select_routed_provider(
+        self, guild_id: int, pair: LanguagePair
+    ) -> Optional[TranslationProvider]:
+        provider_name = self.routes.get(
+            (guild_id, pair.source.casefold(), pair.target.casefold())
+        )
+        if not provider_name:
+            return None
+
+        for provider in self.providers:
+            if provider.name.casefold() == provider_name and provider.supports(pair):
                 return provider
         return None
 

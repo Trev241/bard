@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "guilds": {
+    "423759031157653504": {
+      "source_channel_id": 552167108515987486,
+      "mirror_channel_id": 1520636922186305678,
+      "source_lang": "en",
+      "mirror_lang": "fr",
+      "providers": {
+        "en->fr": "gemini",
+        "fr->en": "argos"
+      },
+      "auto_rewrite_enabled": false,
+      "auto_rewrite_threshold": 25,
+      "llm_extra_instructions": ""
+    },
+    "1288688066822934592": {
+      "source_channel_id": 1288688066822934595,
+      "mirror_channel_id": 1521932502430912702,
+      "source_lang": "en",
+      "mirror_lang": "fr",
+      "providers": {
+        "en->fr": "argos",
+        "fr->en": "gemini"
+      },
+      "auto_rewrite_enabled": false,
+      "auto_rewrite_threshold": 25,
+      "llm_extra_instructions": ""
+    }
+  }
+}

@@ -21,6 +21,13 @@ from bot.core.translation import (
     TranslationResult,
     TranslationService,
 )
+from bot.core.translation_settings import (
+    GuildTranslationSettings,
+    TranslationSettingsStore,
+    direction_key,
+    direction_tuple,
+    settings_from_legacy_env,
+)
 from bot.core.writing_feedback import (
     GeminiWritingRewriteProvider,
     GrammalecteWritingFeedbackProvider,
@@ -43,6 +50,7 @@ class TranslationChannelPair:
     mirror_channel_id: int
     source_lang: str
     mirror_lang: str
+    guild_id: Optional[int] = None
 
     def direction_for(self, channel_id: int) -> Optional[LanguagePair]:
         if channel_id == self.source_channel_id:
@@ -92,11 +100,13 @@ class Translation(commands.Cog):
         service: TranslationService,
         channel_pairs,
         writing_feedback_service: Optional[WritingFeedbackService] = None,
+        guild_settings: Optional[Dict[int, GuildTranslationSettings]] = None,
     ):
         self.client = client
         self.service = service
         self.writing_feedback_service = writing_feedback_service
         self.channel_pairs = channel_pairs
+        self.guild_settings = guild_settings or {}
         self.registry = TranslationMirrorRegistry()
         self._webhooks: Dict[int, discord.Webhook] = {}
         self._webhook_unavailable_channel_ids = set()
@@ -285,6 +295,7 @@ class Translation(commands.Cog):
                     text=message.content,
                     pair=language_pair,
                     context={
+                        "guild_id": getattr(getattr(message, "guild", None), "id", None),
                         "message_id": message.id,
                         "channel_id": message.channel.id,
                         "author_id": message.author.id,
@@ -433,10 +444,13 @@ class Translation(commands.Cog):
             text=message.content,
             language=language,
             context={
+                "guild_id": getattr(getattr(message, "guild", None), "id", None),
                 "message_id": message.id,
                 "channel_id": message.channel.id,
                 "author_id": message.author.id,
                 "conversation_context": await self._writing_context_for(message),
+                "auto_rewrite_threshold": self._auto_rewrite_threshold_for(message),
+                "llm_extra_instructions": self._llm_extra_instructions_for(message),
             },
         )
         if auto:
@@ -482,6 +496,24 @@ class Translation(commands.Cog):
             if channel_pair.direction_for(channel_id) is not None:
                 return channel_pair
         return None
+
+    def _settings_for_message(self, message: discord.Message):
+        guild_id = getattr(getattr(message, "guild", None), "id", None)
+        if guild_id is None:
+            return None
+        return self.guild_settings.get(int(guild_id))
+
+    def _auto_rewrite_threshold_for(self, message: discord.Message) -> Optional[int]:
+        settings = self._settings_for_message(message)
+        if settings is None:
+            return None
+        return settings.auto_rewrite_threshold
+
+    def _llm_extra_instructions_for(self, message: discord.Message) -> str:
+        settings = self._settings_for_message(message)
+        if settings is None:
+            return ""
+        return settings.llm_extra_instructions
 
     async def _writing_context_for(self, message: discord.Message):
         context = []
@@ -649,15 +681,41 @@ class Translation(commands.Cog):
         return f"{body[:1996]}..."
 
 
-def build_translation_service(channel_pairs) -> TranslationService:
+def build_translation_service(channel_pairs, guild_settings=None) -> TranslationService:
     language_pairs = []
+    provider_routes = {}
+    guild_settings = guild_settings or {}
     for channel_pair in channel_pairs:
-        language_pairs.append(
-            LanguagePair(channel_pair.source_lang, channel_pair.mirror_lang)
-        )
-        language_pairs.append(
-            LanguagePair(channel_pair.mirror_lang, channel_pair.source_lang)
-        )
+        forward_pair = LanguagePair(channel_pair.source_lang, channel_pair.mirror_lang)
+        reverse_pair = LanguagePair(channel_pair.mirror_lang, channel_pair.source_lang)
+        language_pairs.append(forward_pair)
+        language_pairs.append(reverse_pair)
+
+        if channel_pair.guild_id is not None:
+            settings = guild_settings.get(channel_pair.guild_id)
+            if settings is not None:
+                provider_routes[
+                    (
+                        channel_pair.guild_id,
+                        forward_pair.source,
+                        forward_pair.target,
+                    )
+                ] = settings.provider_for(
+                    forward_pair.source,
+                    forward_pair.target,
+                    config.TRANSLATION_PROVIDER,
+                )
+                provider_routes[
+                    (
+                        channel_pair.guild_id,
+                        reverse_pair.source,
+                        reverse_pair.target,
+                    )
+                ] = settings.provider_for(
+                    reverse_pair.source,
+                    reverse_pair.target,
+                    config.TRANSLATION_PROVIDER,
+                )
 
     if config.TRANSLATION_PROVIDER not in {"argos", "gemini"}:
         raise ValueError(
@@ -669,15 +727,44 @@ def build_translation_service(channel_pairs) -> TranslationService:
     argos_pairs = []
     gemini_pairs = []
     for pair in language_pairs:
+        provider_names = {
+            providers_by_direction.get(
+                (pair.source.casefold(), pair.target.casefold()),
+                config.TRANSLATION_PROVIDER,
+            )
+        }
+        provider_names.update(
+            provider_name
+            for (guild_id, source, target), provider_name in provider_routes.items()
+            if source.casefold() == pair.source.casefold()
+            and target.casefold() == pair.target.casefold()
+        )
+
+        for provider_name in provider_names:
+            if provider_name == "argos":
+                argos_pairs.append(pair)
+            elif provider_name == "gemini":
+                gemini_pairs.append(pair)
+            else:
+                raise ValueError(
+                    f"Unsupported translation provider for "
+                    f"{pair.source}->{pair.target}: {provider_name}"
+                )
+
+    dedupe_pairs = lambda pairs: list(
+        {  # noqa: E731
+            (pair.source.casefold(), pair.target.casefold()): pair for pair in pairs
+        }.values()
+    )
+    argos_pairs = dedupe_pairs(argos_pairs)
+    gemini_pairs = dedupe_pairs(gemini_pairs)
+
+    for pair in language_pairs:
         provider_name = providers_by_direction.get(
             (pair.source.casefold(), pair.target.casefold()),
             config.TRANSLATION_PROVIDER,
         )
-        if provider_name == "argos":
-            argos_pairs.append(pair)
-        elif provider_name == "gemini":
-            gemini_pairs.append(pair)
-        else:
+        if provider_name not in {"argos", "gemini"}:
             raise ValueError(
                 f"Unsupported translation provider for "
                 f"{pair.source}->{pair.target}: {provider_name}"
@@ -695,7 +782,7 @@ def build_translation_service(channel_pairs) -> TranslationService:
             )
         )
 
-    provider = TranslationProviderRouter(providers)
+    provider = TranslationProviderRouter(providers, routes=provider_routes)
     if config.TRANSLATION_NORMALIZE_SLANG:
         provider = SlangAwareTranslationProvider(provider)
 
@@ -747,13 +834,52 @@ def build_writing_rewrite_provider():
 
 
 async def setup(client):
-    channel_pairs = [
-        TranslationChannelPair(**item)
-        for item in config.parse_translation_channel_pairs()
-    ]
-    service = build_translation_service(channel_pairs)
+    guild_settings = load_guild_translation_settings(client.guilds)
+    if guild_settings:
+        channel_pairs = channel_pairs_from_guild_settings(guild_settings)
+    else:
+        channel_pairs = [
+            TranslationChannelPair(**item)
+            for item in config.parse_translation_channel_pairs()
+        ]
+    service = build_translation_service(channel_pairs, guild_settings)
     await service.warmup()
     writing_feedback_service = build_writing_feedback_service()
     await client.add_cog(
-        Translation(client, service, channel_pairs, writing_feedback_service)
+        Translation(
+            client,
+            service,
+            channel_pairs,
+            writing_feedback_service,
+            guild_settings,
+        )
     )
+
+
+def load_guild_translation_settings(guilds):
+    store = TranslationSettingsStore(config.TRANSLATION_GUILD_SETTINGS_FILE)
+    settings = store.load_all()
+    if settings:
+        return settings
+
+    legacy_settings = settings_from_legacy_env((guild.id for guild in guilds), config)
+    if legacy_settings:
+        store.save_all(legacy_settings.values())
+    return legacy_settings
+
+
+def channel_pairs_from_guild_settings(guild_settings):
+    pairs = []
+    for settings in guild_settings.values():
+        if not settings.configured:
+            continue
+        pairs.append(
+            TranslationChannelPair(
+                guild_id=settings.guild_id,
+                source_channel_id=settings.source_channel_id,
+                mirror_channel_id=settings.mirror_channel_id,
+                source_lang=settings.source_lang,
+                mirror_lang=settings.mirror_lang,
+            )
+        )
+    return pairs

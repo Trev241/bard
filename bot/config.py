@@ -47,6 +47,14 @@ DASHBOARD_PORT = parse_int_env("DASHBOARD_PORT", 5000)
 DEFAULT_PUBLIC_URL = os.getenv(
     "PUBLIC_URL", f"http://{DASHBOARD_HOST}:{DASHBOARD_PORT}"
 )
+DASHBOARD_AUTH_ENABLED = parse_bool_env("DASHBOARD_AUTH_ENABLED", True)
+DASHBOARD_SECRET_KEY = os.getenv("DASHBOARD_SECRET_KEY", WEBHOOK_SECRET or "")
+DASHBOARD_DISCORD_CLIENT_ID = os.getenv("DASHBOARD_DISCORD_CLIENT_ID", "")
+DASHBOARD_DISCORD_CLIENT_SECRET = os.getenv("DASHBOARD_DISCORD_CLIENT_SECRET", "")
+DASHBOARD_DISCORD_REDIRECT_URI = os.getenv(
+    "DASHBOARD_DISCORD_REDIRECT_URI",
+    f"{DEFAULT_PUBLIC_URL}/dashboard/auth/callback",
+)
 
 BOT_SPAM_CHANNEL = parse_int_env("BOT_SPAM_CHANNEL", 423774455332864011)
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "?")
@@ -173,6 +181,7 @@ def parse_translation_provider_by_direction(value=None):
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "bard.log"
 DUMPS_DIR = BASE_DIR / "resources" / "dumps"
+TRANSLATION_RESOURCES_DIR = BASE_DIR / "resources" / "translation"
 STICKERS_DIR = BASE_DIR / "resources" / "stickers"
 SECRETS_DIR = BASE_DIR / "secrets"
 SOUNDS_DIR = BASE_DIR / "resources" / "sounds"
@@ -188,6 +197,7 @@ DROID_MONO_FONT = FONTS_DIR / "DroidSansMono.ttf"
 RESTART_SIGNAL_FILE = BASE_DIR / "restart_signal.flag"
 RESTART_SIGNAL_TRIGGER_FILE = BASE_DIR / "restart_signal_trigger.flag"
 DISCONNECT_SOUND = SOUNDS_DIR / "bard.disconnect.ogg"
+TRANSLATION_GUILD_SETTINGS_FILE = TRANSLATION_RESOURCES_DIR / "settings.json"
 
 AUTOPLAY_PLAYLIST_URL = os.getenv(
     "AUTOPLAY_PLAYLIST_URL",
@@ -202,5 +212,5 @@ ADMIN_IDS = {
 
 
 def ensure_runtime_dirs():
-    for path in (LOG_DIR, DUMPS_DIR, STICKERS_DIR, SECRETS_DIR):
+    for path in (LOG_DIR, DUMPS_DIR, TRANSLATION_RESOURCES_DIR, STICKERS_DIR, SECRETS_DIR):
         path.mkdir(parents=True, exist_ok=True)

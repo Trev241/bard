@@ -67,6 +67,7 @@ class WritingRewriteRequest:
     issues: Tuple[WritingFeedbackIssue, ...] = ()
     conversation_context: Tuple[str, ...] = ()
     include_notes: bool = False
+    extra_instructions: str = ""
 
 
 @dataclass(frozen=True)
@@ -120,7 +121,10 @@ class WritingFeedbackService:
         if result.score > self.score_threshold:
             return None
 
-        if result.score <= self.auto_rewrite_threshold:
+        auto_rewrite_threshold = _clamp_score(
+            request.context.get("auto_rewrite_threshold", self.auto_rewrite_threshold)
+        )
+        if result.score <= auto_rewrite_threshold:
             return await self.assess(request, force_rewrite=True)
 
         if result.score > self.recommend_threshold:
@@ -213,6 +217,7 @@ class WritingFeedbackService:
             issues=result.issues,
             conversation_context=tuple(context.get("conversation_context") or ()),
             include_notes=include_notes,
+            extra_instructions=str(context.get("llm_extra_instructions") or ""),
         )
 
         try:
@@ -423,7 +428,7 @@ class GeminiWritingRewriteProvider:
             },
             json={
                 "system_instruction": {
-                    "parts": [{"text": self.system_prompt()}],
+                    "parts": [{"text": self.system_prompt(request.extra_instructions)}],
                 },
                 "contents": [
                     {
@@ -482,12 +487,13 @@ class GeminiWritingRewriteProvider:
 
         self._cooldown_until = time.monotonic() + max(0.0, cooldown_seconds)
 
-    def system_prompt(self):
-        if not self.extra_instructions:
+    def system_prompt(self, extra_instructions: str = ""):
+        instructions = (extra_instructions or self.extra_instructions).strip()
+        if not instructions:
             return self.DEFAULT_SYSTEM_PROMPT
         return (
             f"{self.DEFAULT_SYSTEM_PROMPT}\n\n"
-            f"Additional correction instructions:\n{self.extra_instructions}"
+            f"Additional correction instructions:\n{instructions}"
         )
 
     @staticmethod

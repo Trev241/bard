@@ -34,7 +34,19 @@ Bard can play songs on demand and manages all queued songs using an internal que
 
 Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
 
-Translation mirror settings can be edited at `/dashboard/translation`. The page writes channel-pair, per-direction translation provider, automatic rewrite threshold, automatic rewrite, and LLM rewrite instruction settings to `.env`; restart Bard after saving so the running translation cog rebuilds its providers.
+Translation mirror settings can be edited at `/dashboard/translation`. The page writes guild-specific non-secret settings to `bot/resources/translation/settings.json`; restart Bard after saving so the running translation cog rebuilds its providers.
+
+Dashboard routes are protected with Discord OAuth by default. Configure these values in `.env`:
+
+```env
+DASHBOARD_AUTH_ENABLED=true
+DASHBOARD_SECRET_KEY=<random session secret>
+DASHBOARD_DISCORD_CLIENT_ID=<Discord application client ID>
+DASHBOARD_DISCORD_CLIENT_SECRET=<Discord application client secret>
+DASHBOARD_DISCORD_REDIRECT_URI=http://127.0.0.1:5000/dashboard/auth/callback
+```
+
+The OAuth redirect URI must also be added to the Discord application. Logged-in users can administer dashboard translation settings for guilds where they have Discord Administrator permission; users listed in `BARD_ADMIN_IDS` can access every guild Bard is in.
 
 ### Translation Mirrors
 
