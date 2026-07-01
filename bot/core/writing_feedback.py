@@ -323,14 +323,14 @@ class GeminiWritingRewriteProvider:
         *,
         timeout_seconds: float = 4.0,
         rate_limit_cooldown_seconds: float = 300.0,
-        system_prompt: str = "",
+        extra_instructions: str = "",
     ):
         self.api_key = api_key
         self.models = tuple(item.strip() for item in model.split(",") if item.strip())
         self.model = self.models[0] if self.models else ""
         self.timeout_seconds = timeout_seconds
         self.rate_limit_cooldown_seconds = max(0.0, rate_limit_cooldown_seconds)
-        self._system_prompt = system_prompt.strip()
+        self.extra_instructions = extra_instructions.strip()
         self._cooldown_until = 0.0
 
     @property
@@ -483,7 +483,12 @@ class GeminiWritingRewriteProvider:
         self._cooldown_until = time.monotonic() + max(0.0, cooldown_seconds)
 
     def system_prompt(self):
-        return self._system_prompt or self.DEFAULT_SYSTEM_PROMPT
+        if not self.extra_instructions:
+            return self.DEFAULT_SYSTEM_PROMPT
+        return (
+            f"{self.DEFAULT_SYSTEM_PROMPT}\n\n"
+            f"Additional correction instructions:\n{self.extra_instructions}"
+        )
 
     @staticmethod
     def user_prompt(request: WritingRewriteRequest):

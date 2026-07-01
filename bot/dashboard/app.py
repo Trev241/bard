@@ -15,9 +15,11 @@ logger = logging.getLogger(__name__)
 ENV_PATH = config.PROJECT_ROOT / ".env"
 DEFAULT_TRANSLATION_DASHBOARD_SETTINGS = {
     "TRANSLATION_PROVIDER": "argos",
+    "TRANSLATION_PROVIDER_BY_DIRECTION": None,
     "TRANSLATION_CHANNEL_PAIRS": "",
     "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD": "25",
     "WRITING_FEEDBACK_AUTO_REPLY": "false",
+    "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS": None,
     "WRITING_FEEDBACK_LLM_PROMPT": None,
 }
 
@@ -120,14 +122,27 @@ def parse_lines_arg(default, maximum):
 def current_translation_dashboard_settings():
     values = read_env_values(ENV_PATH)
     pair = first_translation_pair(values.get("TRANSLATION_CHANNEL_PAIRS"))
+    source_lang = pair.get("source_lang") or "en"
+    mirror_lang = pair.get("mirror_lang") or "fr"
+    providers_by_direction = provider_by_direction_from_values(values)
 
     return {
         "source_channel_id": str(pair.get("source_channel_id") or ""),
         "mirror_channel_id": str(pair.get("mirror_channel_id") or ""),
-        "source_lang": pair.get("source_lang") or "en",
-        "mirror_lang": pair.get("mirror_lang") or "fr",
+        "source_lang": source_lang,
+        "mirror_lang": mirror_lang,
         "translation_provider": values.get(
             "TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER
+        ).strip().casefold()
+        or "argos",
+        "source_to_mirror_provider": providers_by_direction.get(
+            (source_lang.casefold(), mirror_lang.casefold()),
+            values.get("TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER),
+        ).strip().casefold()
+        or "argos",
+        "mirror_to_source_provider": providers_by_direction.get(
+            (mirror_lang.casefold(), source_lang.casefold()),
+            values.get("TRANSLATION_PROVIDER", config.TRANSLATION_PROVIDER),
         ).strip().casefold()
         or "argos",
         "auto_rewrite_threshold": values.get(
@@ -140,9 +155,9 @@ def current_translation_dashboard_settings():
                 str(config.WRITING_FEEDBACK_AUTO_REPLY),
             )
         ),
-        "llm_prompt": values.get(
-            "WRITING_FEEDBACK_LLM_PROMPT",
-            config.WRITING_FEEDBACK_LLM_PROMPT,
+        "llm_extra_instructions": values.get(
+            "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS",
+            config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS,
         ),
     }
 
@@ -170,12 +185,21 @@ def translation_settings_updates_from_form(form):
     mirror_channel_id = (form.get("mirror_channel_id") or "").strip()
     source_lang = (form.get("source_lang") or "en").strip().casefold() or "en"
     mirror_lang = (form.get("mirror_lang") or "fr").strip().casefold() or "fr"
-    provider = (form.get("translation_provider") or "argos").strip().casefold()
+    source_to_mirror_provider = (
+        form.get("source_to_mirror_provider") or "argos"
+    ).strip().casefold()
+    mirror_to_source_provider = (
+        form.get("mirror_to_source_provider") or "argos"
+    ).strip().casefold()
     threshold = (form.get("auto_rewrite_threshold") or "").strip()
-    prompt = (form.get("llm_prompt") or "").strip()
+    extra_instructions = (form.get("llm_extra_instructions") or "").strip()
 
-    if provider not in {"argos", "gemini"}:
-        errors.append("Translation service must be Argos or Gemini.")
+    for label, provider in (
+        ("Source to mirror translation service", source_to_mirror_provider),
+        ("Mirror to source translation service", mirror_to_source_provider),
+    ):
+        if provider not in {"argos", "gemini"}:
+            errors.append(f"{label} must be Argos or Gemini.")
 
     if bool(source_channel_id) != bool(mirror_channel_id):
         errors.append("Both channel IDs are required when configuring a pair.")
@@ -202,15 +226,22 @@ def translation_settings_updates_from_form(form):
             f"{source_channel_id}:{mirror_channel_id}:{source_lang}:{mirror_lang}"
         )
 
+    provider_by_direction = (
+        f"{source_lang}->{mirror_lang}:{source_to_mirror_provider},"
+        f"{mirror_lang}->{source_lang}:{mirror_to_source_provider}"
+    )
+
     return (
         {
-            "TRANSLATION_PROVIDER": provider,
+            "TRANSLATION_PROVIDER": source_to_mirror_provider,
+            "TRANSLATION_PROVIDER_BY_DIRECTION": provider_by_direction,
             "TRANSLATION_CHANNEL_PAIRS": channel_pairs,
             "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD": str(threshold_int),
             "WRITING_FEEDBACK_AUTO_REPLY": (
                 "true" if form.get("auto_rewrite_enabled") else "false"
             ),
-            "WRITING_FEEDBACK_LLM_PROMPT": prompt or None,
+            "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS": extra_instructions or None,
+            "WRITING_FEEDBACK_LLM_PROMPT": None,
         },
         errors,
     )
@@ -222,14 +253,30 @@ def apply_translation_dashboard_config(updates):
             value = ""
         if key == "TRANSLATION_PROVIDER":
             config.TRANSLATION_PROVIDER = value.strip().casefold()
+        elif key == "TRANSLATION_PROVIDER_BY_DIRECTION":
+            config.TRANSLATION_PROVIDER_BY_DIRECTION = value
         elif key == "TRANSLATION_CHANNEL_PAIRS":
             config.TRANSLATION_CHANNEL_PAIRS = value
         elif key == "WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD":
             config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD = int(value or 25)
         elif key == "WRITING_FEEDBACK_AUTO_REPLY":
             config.WRITING_FEEDBACK_AUTO_REPLY = parse_bool_value(value)
-        elif key == "WRITING_FEEDBACK_LLM_PROMPT":
-            config.WRITING_FEEDBACK_LLM_PROMPT = value.replace("\\n", "\n").strip()
+        elif key == "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS":
+            config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS = (
+                value.replace("\\n", "\n").strip()
+            )
+
+
+def provider_by_direction_from_values(values):
+    raw_value = values.get(
+        "TRANSLATION_PROVIDER_BY_DIRECTION",
+        config.TRANSLATION_PROVIDER_BY_DIRECTION,
+    )
+    try:
+        return config.parse_translation_provider_by_direction(raw_value)
+    except ValueError:
+        logger.warning("Invalid TRANSLATION_PROVIDER_BY_DIRECTION in .env.")
+        return {}
 
 
 def parse_bool_value(value):

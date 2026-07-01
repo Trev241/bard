@@ -17,7 +17,10 @@ def test_update_env_file_preserves_unrelated_values_and_removes_keys(tmp_path):
 
     update_env_file(
         env_path,
-        {"TRANSLATION_PROVIDER": "gemini", "WRITING_FEEDBACK_LLM_PROMPT": "line one\nline two"},
+        {
+            "TRANSLATION_PROVIDER": "gemini",
+            "WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS": "line one\nline two",
+        },
         remove_keys={"OLD_KEY"},
     )
 
@@ -25,5 +28,5 @@ def test_update_env_file_preserves_unrelated_values_and_removes_keys(tmp_path):
 
     assert values["TOKEN"] == "secret"
     assert values["TRANSLATION_PROVIDER"] == "gemini"
-    assert values["WRITING_FEEDBACK_LLM_PROMPT"] == "line one\nline two"
+    assert values["WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS"] == "line one\nline two"
     assert "OLD_KEY" not in values

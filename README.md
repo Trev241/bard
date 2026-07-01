@@ -34,7 +34,7 @@ Bard can play songs on demand and manages all queued songs using an internal que
 
 Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
 
-Translation mirror settings can be edited at `/dashboard/translation`. The page writes channel-pair, translation provider, automatic rewrite threshold, automatic rewrite, and LLM prompt settings to `.env`; restart Bard after saving so the running translation cog rebuilds its providers.
+Translation mirror settings can be edited at `/dashboard/translation`. The page writes channel-pair, per-direction translation provider, automatic rewrite threshold, automatic rewrite, and LLM rewrite instruction settings to `.env`; restart Bard after saving so the running translation cog rebuilds its providers.
 
 ### Translation Mirrors
 
@@ -45,6 +45,7 @@ Example `.env` configuration:
 ```env
 TRANSLATION_ENABLED=true
 TRANSLATION_PROVIDER=argos
+TRANSLATION_PROVIDER_BY_DIRECTION=en->fr:gemini,fr->en:argos
 TRANSLATION_CHANNEL_PAIRS=123456789012345678:234567890123456789:en:fr
 TRANSLATION_MAX_CONCURRENCY=1
 TRANSLATION_CACHE_SIZE=1000
@@ -60,10 +61,11 @@ WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD=25
 WRITING_FEEDBACK_LLM_PROVIDER=gemini
 WRITING_FEEDBACK_GEMINI_API_KEY=<your Google AI Studio Gemini API key>
 WRITING_FEEDBACK_GEMINI_MODEL=gemini-3.5-flash
+WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS=
 WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 ```
 
-`TRANSLATION_CHANNEL_PAIRS` uses `source_channel_id:mirror_channel_id:source_lang:mirror_lang`. Bard mirrors both directions, so the example above translates English messages into French in the mirror channel and French replies back into English in the source channel.
+`TRANSLATION_CHANNEL_PAIRS` uses `source_channel_id:mirror_channel_id:source_lang:mirror_lang`. Bard mirrors both directions, so the example above translates English messages into French in the mirror channel and French replies back into English in the source channel. `TRANSLATION_PROVIDER_BY_DIRECTION` can override the engine per language direction, for example `en->fr:gemini,fr->en:argos`.
 
 When `TRANSLATION_USE_WEBHOOKS=true`, Bard sends mirrored translations through a channel webhook named `Bard Translation Mirror` using the original author's display name and avatar. This makes mirror channels look closer to the source channel. Bard needs `Manage Webhooks` in each mirror channel for this; if webhook sending fails, Bard falls back to a normal bot message.
 

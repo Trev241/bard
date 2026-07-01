@@ -64,6 +64,7 @@ GITHUB_ISSUE_LABELS = [
 ]
 TRANSLATION_ENABLED = parse_bool_env("TRANSLATION_ENABLED", False)
 TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "argos").strip().casefold()
+TRANSLATION_PROVIDER_BY_DIRECTION = os.getenv("TRANSLATION_PROVIDER_BY_DIRECTION", "")
 TRANSLATION_CHANNEL_PAIRS = os.getenv("TRANSLATION_CHANNEL_PAIRS", "")
 TRANSLATION_CACHE_SIZE = parse_int_env("TRANSLATION_CACHE_SIZE", 1000)
 TRANSLATION_MAX_CONCURRENCY = parse_int_env("TRANSLATION_MAX_CONCURRENCY", 1)
@@ -93,8 +94,10 @@ WRITING_FEEDBACK_MAX_ISSUES = parse_int_env("WRITING_FEEDBACK_MAX_ISSUES", 3)
 WRITING_FEEDBACK_LLM_PROVIDER = os.getenv(
     "WRITING_FEEDBACK_LLM_PROVIDER", "none"
 ).strip().casefold()
-WRITING_FEEDBACK_LLM_PROMPT = (
-    os.getenv("WRITING_FEEDBACK_LLM_PROMPT", "").replace("\\n", "\n").strip()
+WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS = (
+    os.getenv("WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS", "")
+    .replace("\\n", "\n")
+    .strip()
 )
 WRITING_FEEDBACK_GEMINI_API_KEY = os.getenv("WRITING_FEEDBACK_GEMINI_API_KEY", "")
 WRITING_FEEDBACK_GEMINI_MODEL = os.getenv(
@@ -136,6 +139,36 @@ def parse_translation_channel_pairs(value=None):
         )
 
     return pairs
+
+
+def parse_translation_provider_by_direction(value=None):
+    raw_value = TRANSLATION_PROVIDER_BY_DIRECTION if value is None else value
+    providers = {}
+
+    for raw_entry in raw_value.split(","):
+        raw_entry = raw_entry.strip()
+        if not raw_entry:
+            continue
+
+        if ":" not in raw_entry or "->" not in raw_entry:
+            raise ValueError(
+                "TRANSLATION_PROVIDER_BY_DIRECTION entries must use "
+                "source_lang->target_lang:provider"
+            )
+
+        raw_pair, raw_provider = raw_entry.split(":", 1)
+        source_lang, target_lang = raw_pair.split("->", 1)
+        source_lang = source_lang.strip().casefold()
+        target_lang = target_lang.strip().casefold()
+        provider = raw_provider.strip().casefold()
+        if not source_lang or not target_lang or not provider:
+            raise ValueError(
+                "TRANSLATION_PROVIDER_BY_DIRECTION entries must include "
+                "source language, target language, and provider."
+            )
+        providers[(source_lang, target_lang)] = provider
+
+    return providers
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "bard.log"

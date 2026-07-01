@@ -10,6 +10,7 @@ from bot.core.translation import (
     SlangAwareTranslationProvider,
     TranslationCache,
     TranslationError,
+    TranslationProviderRouter,
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
@@ -210,6 +211,37 @@ def test_gemini_translate_provider_extracts_translated_text():
         GeminiTranslateProvider.translated_text_from_payload(payload)
         == "Bonjour le monde"
     )
+
+
+def test_parse_translation_provider_by_direction():
+    parsed = config.parse_translation_provider_by_direction(
+        "en->fr:gemini,fr->en:argos"
+    )
+
+    assert parsed == {("en", "fr"): "gemini", ("fr", "en"): "argos"}
+
+
+def test_translation_provider_router_selects_provider_by_direction():
+    class DirectionProvider(FakeTranslationProvider):
+        def __init__(self, source, target, name):
+            super().__init__()
+            self.pair = LanguagePair(source, target)
+            self.name = name
+
+        def supports(self, pair):
+            return pair == self.pair
+
+    en_fr = DirectionProvider("en", "fr", "en-fr")
+    fr_en = DirectionProvider("fr", "en", "fr-en")
+    router = TranslationProviderRouter([en_fr, fr_en])
+
+    first = router.translate_sync(TranslationRequest("hello", LanguagePair("en", "fr")))
+    second = router.translate_sync(
+        TranslationRequest("bonjour", LanguagePair("fr", "en"))
+    )
+
+    assert first.provider == "en-fr"
+    assert second.provider == "fr-en"
 
 
 def test_translation_channel_pair_maps_both_directions():

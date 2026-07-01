@@ -285,14 +285,18 @@ def test_gemini_rewrite_prompt_includes_conversation_context():
     assert "Rewrite only the original sentence" in prompt
 
 
-def test_gemini_rewrite_provider_uses_custom_system_prompt():
+def test_gemini_rewrite_provider_appends_extra_instructions_to_system_prompt():
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="gemini-test",
-        system_prompt="Use a stricter rewrite rubric.",
+        extra_instructions="Use a stricter rewrite rubric.",
     )
 
-    assert provider.system_prompt() == "Use a stricter rewrite rubric."
+    prompt = provider.system_prompt()
+
+    assert GeminiWritingRewriteProvider.DEFAULT_SYSTEM_PROMPT in prompt
+    assert "Return only JSON." in prompt
+    assert "Use a stricter rewrite rubric." in prompt
 
 
 def test_gemini_rewrite_provider_rejects_empty_content():

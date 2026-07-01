@@ -16,6 +16,7 @@ from bot.core.translation import (
     SlangAwareTranslationProvider,
     TranslationCache,
     TranslationError,
+    TranslationProviderRouter,
     TranslationRequest,
     TranslationResult,
     TranslationService,
@@ -663,16 +664,38 @@ def build_translation_service(channel_pairs) -> TranslationService:
             f"Unsupported translation provider: {config.TRANSLATION_PROVIDER}"
         )
 
-    if config.TRANSLATION_PROVIDER == "gemini":
-        provider = GeminiTranslateProvider(
-            language_pairs,
-            api_key=config.WRITING_FEEDBACK_GEMINI_API_KEY,
-            model=config.WRITING_FEEDBACK_GEMINI_MODEL,
-            timeout_seconds=config.WRITING_FEEDBACK_LLM_TIMEOUT_SECONDS,
+    providers_by_direction = config.parse_translation_provider_by_direction()
+    providers = []
+    argos_pairs = []
+    gemini_pairs = []
+    for pair in language_pairs:
+        provider_name = providers_by_direction.get(
+            (pair.source.casefold(), pair.target.casefold()),
+            config.TRANSLATION_PROVIDER,
         )
-    else:
-        provider = ArgosTranslateProvider(language_pairs)
+        if provider_name == "argos":
+            argos_pairs.append(pair)
+        elif provider_name == "gemini":
+            gemini_pairs.append(pair)
+        else:
+            raise ValueError(
+                f"Unsupported translation provider for "
+                f"{pair.source}->{pair.target}: {provider_name}"
+            )
 
+    if argos_pairs:
+        providers.append(ArgosTranslateProvider(argos_pairs))
+    if gemini_pairs:
+        providers.append(
+            GeminiTranslateProvider(
+                gemini_pairs,
+                api_key=config.WRITING_FEEDBACK_GEMINI_API_KEY,
+                model=config.WRITING_FEEDBACK_GEMINI_MODEL,
+                timeout_seconds=config.WRITING_FEEDBACK_LLM_TIMEOUT_SECONDS,
+            )
+        )
+
+    provider = TranslationProviderRouter(providers)
     if config.TRANSLATION_NORMALIZE_SLANG:
         provider = SlangAwareTranslationProvider(provider)
 
@@ -719,7 +742,7 @@ def build_writing_rewrite_provider():
         rate_limit_cooldown_seconds=(
             config.WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS
         ),
-        system_prompt=config.WRITING_FEEDBACK_LLM_PROMPT,
+        extra_instructions=config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS,
     )
 
 

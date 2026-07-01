@@ -281,6 +281,37 @@ class SlangAwareTranslationProvider:
         )
 
 
+class TranslationProviderRouter:
+    name = "router"
+
+    def __init__(self, providers: Iterable[TranslationProvider]):
+        self.providers = list(providers)
+
+    def supports(self, pair: LanguagePair) -> bool:
+        return self._select_provider(pair) is not None
+
+    def warmup_sync(self) -> None:
+        for provider in self.providers:
+            warmup_sync = getattr(provider, "warmup_sync", None)
+            if warmup_sync is not None:
+                warmup_sync()
+
+    def translate_sync(self, request: TranslationRequest) -> TranslationResult:
+        provider = self._select_provider(request.pair)
+        if provider is None:
+            raise TranslationError(
+                f"No translation provider supports {request.pair.source!r} -> "
+                f"{request.pair.target!r}."
+            )
+        return provider.translate_sync(request)
+
+    def _select_provider(self, pair: LanguagePair) -> Optional[TranslationProvider]:
+        for provider in self.providers:
+            if provider.supports(pair):
+                return provider
+        return None
+
+
 class GeminiTranslateProvider:
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
     name = "gemini"
