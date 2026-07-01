@@ -105,15 +105,13 @@ class Translation(commands.Cog):
         self.client = client
         self.service = service
         self.writing_feedback_service = writing_feedback_service
-        self.channel_pairs = channel_pairs
-        self.guild_settings = guild_settings or {}
+        self.channel_pairs = []
+        self.guild_settings = {}
         self.registry = TranslationMirrorRegistry()
         self._webhooks: Dict[int, discord.Webhook] = {}
         self._webhook_unavailable_channel_ids = set()
-        self._locks = {
-            (pair.source_channel_id, pair.mirror_channel_id): asyncio.Lock()
-            for pair in channel_pairs
-        }
+        self._locks = {}
+        self._set_translation_state(channel_pairs, guild_settings or {})
         self.feedback_context_menu = None
         self.rewrite_context_menu = None
         if getattr(self.client, "tree", None) is not None:
@@ -133,6 +131,23 @@ class Translation(commands.Cog):
             if command is None:
                 continue
             self.client.tree.remove_command(command.name, type=command.type)
+
+    async def reload_settings(self) -> None:
+        guild_settings = load_guild_translation_settings(self.client.guilds)
+        channel_pairs = channel_pairs_from_guild_settings(guild_settings)
+        service = build_translation_service(channel_pairs, guild_settings)
+        await service.warmup()
+        self.service = service
+        self.writing_feedback_service = build_writing_feedback_service()
+        self._set_translation_state(channel_pairs, guild_settings)
+
+    def _set_translation_state(self, channel_pairs, guild_settings):
+        self.channel_pairs = list(channel_pairs)
+        self.guild_settings = guild_settings or {}
+        self._locks = {
+            (pair.source_channel_id, pair.mirror_channel_id): asyncio.Lock()
+            for pair in self.channel_pairs
+        }
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

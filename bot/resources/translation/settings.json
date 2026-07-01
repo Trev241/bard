@@ -20,8 +20,8 @@
       "source_lang": "en",
       "mirror_lang": "fr",
       "providers": {
-        "en->fr": "argos",
-        "fr->en": "gemini"
+        "en->fr": "gemini",
+        "fr->en": "argos"
       },
       "auto_rewrite_enabled": false,
       "auto_rewrite_threshold": 25,

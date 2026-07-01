@@ -511,7 +511,7 @@ def test_gemini_rewrite_provider_can_request_notes(monkeypatch):
         "Use je vais to conjugate aller in the present tense.",
     )
     generation_config = captured["json"]["generationConfig"]
-    assert generation_config["maxOutputTokens"] == 1024
+    assert generation_config["maxOutputTokens"] == 2048
     assert generation_config["responseSchema"]["required"] == [
         "recommendation",
         "notes",
@@ -553,6 +553,25 @@ def test_gemini_rewrite_provider_extracts_finish_reason():
     assert GeminiWritingRewriteProvider.finish_reason_from_payload(payload) == "MAX_TOKENS"
 
 
+def test_gemini_rewrite_provider_extracts_part_finish_reason():
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": '{"recommendation":"Je vais."',
+                            "finishReason": "MAX_TOKENS",
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    assert GeminiWritingRewriteProvider.finish_reason_from_payload(payload) == "MAX_TOKENS"
+
+
 def test_gemini_rewrite_provider_retries_with_larger_budget_after_max_tokens(monkeypatch):
     truncated_response = requests.Response()
     truncated_response.status_code = 200
@@ -585,7 +604,7 @@ def test_gemini_rewrite_provider_retries_with_larger_budget_after_max_tokens(mon
 
     assert rewrite.recommendation == "Je vais."
     assert rewrite.notes == ("Use je vais.",)
-    assert seen_budgets == [1024, 1536]
+    assert seen_budgets == [2048, 4096]
 
 
 def test_gemini_rewrite_provider_skips_during_cooldown():

@@ -309,9 +309,9 @@ class GrammalecteWritingFeedbackProvider:
 
 class GeminiWritingRewriteProvider:
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-    REWRITE_MAX_OUTPUT_TOKENS = 256
-    REWRITE_WITH_NOTES_MAX_OUTPUT_TOKENS = 1024
-    REWRITE_WITH_NOTES_RETRY_MAX_OUTPUT_TOKENS = 1536
+    REWRITE_MAX_OUTPUT_TOKENS = 768
+    REWRITE_WITH_NOTES_MAX_OUTPUT_TOKENS = 2048
+    REWRITE_WITH_NOTES_RETRY_MAX_OUTPUT_TOKENS = 4096
     DEFAULT_SYSTEM_PROMPT = (
         "You help French learners write natural, correct French. "
         "Return only JSON. "
@@ -586,9 +586,25 @@ class GeminiWritingRewriteProvider:
     @staticmethod
     def finish_reason_from_payload(payload: dict) -> Optional[str]:
         try:
-            finish_reason = payload["candidates"][0].get("finishReason")
+            candidate = payload["candidates"][0]
         except (KeyError, IndexError, TypeError):
             return None
+
+        if not isinstance(candidate, dict):
+            return None
+
+        finish_reason = candidate.get("finishReason")
+        if finish_reason:
+            return str(finish_reason)
+
+        parts = ((candidate.get("content") or {}).get("parts") or [])
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            finish_reason = part.get("finishReason")
+            if finish_reason:
+                return str(finish_reason)
+
         return str(finish_reason) if finish_reason else None
 
     @staticmethod

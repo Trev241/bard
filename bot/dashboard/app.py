@@ -3,6 +3,7 @@ import logging
 import hmac
 import hashlib
 import secrets
+import asyncio
 from urllib.parse import urlencode
 
 from bot import client, app, config, socketio
@@ -186,6 +187,7 @@ def translation_settings_dashboard():
             TRANSLATION_SETTINGS_STORE.save(
                 GuildTranslationSettings(guild_id=selected_guild.id)
             )
+            schedule_translation_settings_reload()
             status = "reset"
         elif selected_guild is not None:
             setting, form_errors = translation_settings_from_form(
@@ -195,6 +197,7 @@ def translation_settings_dashboard():
             errors.extend(form_errors)
             if not errors:
                 TRANSLATION_SETTINGS_STORE.save(setting)
+                schedule_translation_settings_reload()
                 status = "saved"
 
     settings = current_translation_dashboard_settings(selected_guild)
@@ -382,6 +385,28 @@ def text_channels_for_guild(guild):
         ],
         key=lambda channel: (getattr(channel, "position", 0), channel.name.casefold()),
     )
+
+
+def schedule_translation_settings_reload():
+    translation_cog = client.get_cog("Translation")
+    if translation_cog is None:
+        return False
+
+    future = asyncio.run_coroutine_threadsafe(
+        translation_cog.reload_settings(),
+        client.loop,
+    )
+    future.add_done_callback(log_translation_reload_result)
+    return True
+
+
+def log_translation_reload_result(future):
+    try:
+        future.result()
+    except Exception:
+        logger.warning("Failed to live-reload translation settings.", exc_info=True)
+    else:
+        logger.info("Live-reloaded translation settings from dashboard.")
 
 
 def parse_bool_value(value):

@@ -1,4 +1,5 @@
 import pytest
+import requests
 
 from bot import config
 from bot.cogs.translation import TranslationChannelPair
@@ -17,6 +18,7 @@ from bot.core.translation import (
     TranslationService,
 )
 from bot.core.writing_feedback import WritingFeedbackIssue, WritingFeedbackResult
+from bot.core.translation_settings import GuildTranslationSettings
 
 
 class FakeTranslationProvider(TranslationProvider):
@@ -211,6 +213,42 @@ def test_gemini_translate_provider_extracts_translated_text():
         GeminiTranslateProvider.translated_text_from_payload(payload)
         == "Bonjour le monde"
     )
+
+
+def test_gemini_translate_provider_tries_next_model_after_http_error(monkeypatch):
+    failed_response = requests.Response()
+    failed_response.status_code = 400
+    failed_response.url = GeminiTranslateProvider.endpoint_for_model("model-one")
+
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"translated_text\\":\\"Bonjour\\"}"}]}}]}'
+    )
+    seen_models = []
+
+    def fake_post(*args, **kwargs):
+        url = args[0]
+        model = url.rsplit("/models/", 1)[1].split(":", 1)[0]
+        seen_models.append(model)
+        if model == "model-one":
+            return failed_response
+        return ok_response
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    provider = GeminiTranslateProvider(
+        [LanguagePair("en", "fr")],
+        api_key="key",
+        model="model-one,model-two",
+    )
+
+    result = provider.translate_sync(
+        TranslationRequest("hello", LanguagePair("en", "fr"))
+    )
+
+    assert result.translated_text == "Bonjour"
+    assert seen_models == ["model-one", "model-two"]
 
 
 def test_parse_translation_provider_by_direction():
@@ -475,3 +513,54 @@ def test_feedback_language_for_rejects_source_webhook_and_bot_messages(monkeypat
     assert cog._feedback_language_for(
         FakeMessage(channel=FakeChannel(id=200), author=FakeAuthor(bot=True))
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_translation_cog_reload_settings_rebuilds_runtime_state(monkeypatch):
+    initial_pair = TranslationChannelPair(
+        source_channel_id=100,
+        mirror_channel_id=200,
+        source_lang="en",
+        mirror_lang="fr",
+        guild_id=1,
+    )
+    reloaded_pair = TranslationChannelPair(
+        source_channel_id=300,
+        mirror_channel_id=400,
+        source_lang="en",
+        mirror_lang="fr",
+        guild_id=1,
+    )
+    settings = {1: GuildTranslationSettings(guild_id=1)}
+    service = TranslationService([FakeTranslationProvider()])
+    new_service = TranslationService([FakeTranslationProvider()])
+    cog = Translation(
+        client=type("Client", (), {"guilds": []})(),
+        service=service,
+        channel_pairs=[initial_pair],
+        guild_settings=settings,
+    )
+
+    monkeypatch.setattr(
+        "bot.cogs.translation.load_guild_translation_settings",
+        lambda guilds: settings,
+    )
+    monkeypatch.setattr(
+        "bot.cogs.translation.channel_pairs_from_guild_settings",
+        lambda loaded_settings: [reloaded_pair],
+    )
+    monkeypatch.setattr(
+        "bot.cogs.translation.build_translation_service",
+        lambda pairs, loaded_settings: new_service,
+    )
+    monkeypatch.setattr(
+        "bot.cogs.translation.build_writing_feedback_service",
+        lambda: None,
+    )
+
+    await cog.reload_settings()
+
+    assert cog.service is new_service
+    assert cog.channel_pairs == [reloaded_pair]
+    assert (300, 400) in cog._locks
+    assert (100, 200) not in cog._locks

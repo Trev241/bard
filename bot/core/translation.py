@@ -352,7 +352,8 @@ class GeminiTranslateProvider:
             (pair.source.casefold(), pair.target.casefold()) for pair in language_pairs
         }
         self.api_key = api_key
-        self.model = model.strip()
+        self.models = tuple(item.strip() for item in model.split(",") if item.strip())
+        self.model = self.models[0] if self.models else ""
         self.timeout_seconds = timeout_seconds
 
     def supports(self, pair: LanguagePair) -> bool:
@@ -362,14 +363,29 @@ class GeminiTranslateProvider:
         return None
 
     def translate_sync(self, request: TranslationRequest) -> TranslationResult:
-        if not self.api_key or not self.model:
+        if not self.api_key or not self.models:
             raise TranslationError(
                 "Gemini translation requires WRITING_FEEDBACK_GEMINI_API_KEY "
                 "and WRITING_FEEDBACK_GEMINI_MODEL."
             )
 
+        last_error = None
+        for model in self.models:
+            try:
+                return self._translate_with_model(request, model)
+            except TranslationError as exc:
+                last_error = exc
+                continue
+
+        raise TranslationError("Gemini failed to translate text with every model.") from last_error
+
+    def _translate_with_model(
+        self,
+        request: TranslationRequest,
+        model: str,
+    ) -> TranslationResult:
         response = requests.post(
-            self.endpoint_for_model(self.model),
+            self.endpoint_for_model(model),
             headers={
                 "x-goog-api-key": self.api_key,
                 "Content-Type": "application/json",
@@ -422,7 +438,9 @@ class GeminiTranslateProvider:
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            raise TranslationError("Gemini failed to translate text.") from exc
+            raise TranslationError(
+                f"Gemini model {model!r} failed to translate text."
+            ) from exc
 
         try:
             translated_text = self.translated_text_from_payload(response.json())
@@ -430,7 +448,7 @@ class GeminiTranslateProvider:
             raise TranslationError("Gemini returned an invalid translation.") from exc
 
         if not translated_text:
-            raise TranslationError("Gemini returned an empty translation.")
+            raise TranslationError(f"Gemini model {model!r} returned an empty translation.")
 
         return TranslationResult(
             translated_text=translated_text,
