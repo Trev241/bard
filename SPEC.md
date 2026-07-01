@@ -182,21 +182,6 @@ Yordle should:
 
 Yordle failures caused by unavailable external data should not prevent the main bot from running.
 
-### Voice Assistant
-
-Bard contains an experimental voice assistant module.
-
-The project should explicitly decide whether this module is:
-
-- Active.
-- Experimental but maintained.
-- Archived.
-- Removed.
-
-If active, it should be guarded by configuration and should not interfere with normal music playback when unavailable.
-
-The maintained direction is wake-word activation, one-shot transcription, deterministic parsing for common music controls, and optional LLM fallback parsing for ambiguous language. LLM parsing must remain optional so basic voice controls can work without internet-hosted inference.
-
 ## Configuration Requirements
 
 Bard should use centralized configuration for:
@@ -321,7 +306,6 @@ When major features are added or removed, `TARGET.md` and `SPEC.md` should be up
 
 ### Phase 4: Optional Feature Decisions
 
-- Decide the future of the voice assistant.
 - Decide whether Yordle and utility features remain core or optional.
 - Decide whether the dashboard should remain local-only or gain authentication.
 
@@ -332,5 +316,5 @@ A future change should be considered acceptable when:
 - It preserves the current personal music-bot workflow.
 - It does not break existing `?` commands unless intentionally migrated.
 - It does not expose secrets or runtime files.
-- It has focused tests when playback, queue, utility, assistant, or security behavior changes.
+- It has focused tests when playback, queue, utility, or security behavior changes.
 - It updates documentation when user-facing behavior changes.

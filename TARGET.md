@@ -111,24 +111,6 @@ Important file:
 
 - `bot/cogs/wordle.py`
 
-### Voice Assistant
-
-There is an experimental voice assistant module using:
-
-- openWakeWord for local wake-word detection.
-- `SpeechRecognition` and Whisper for transcription.
-- Local deterministic rules for common music-control intent parsing.
-- Optional OpenRouter fallback parsing.
-- `pyttsx3` for text-to-speech.
-- `discord-ext-voice-recv` for receiving voice audio.
-
-This module is controlled by `ASSISTANT_ENABLED`, which defaults to disabled. Set `ASSISTANT_ENABLED=true` to enable it.
-
-Important files:
-
-- `bot/cogs/assistant.py`
-- `bot/core/assistant/`
-
 ## Runtime Shape
 
 The main startup command is:
@@ -213,9 +195,8 @@ Priority improvements:
 4. Move config values into a central `bot/config.py` module.
 5. Extract shared YouTube/`yt-dlp` options into one place.
 6. Add focused unit tests for `PlaybackManager` queue behavior.
-7. Keep the voice assistant behind an explicit feature flag until it is actively maintained.
-8. Add useful npm scripts for rebuilding dashboard CSS.
-9. Keep the single-guild assumption explicit unless a future task changes the architecture.
+7. Add useful npm scripts for rebuilding dashboard CSS.
+8. Keep the single-guild assumption explicit unless a future task changes the architecture.
 
 ## Suggested Development Direction
 

@@ -6,7 +6,7 @@ import time
 
 from discord import FFmpegOpusAudio
 from discord import Client
-from discord.ext.voice_recv import VoiceRecvClient
+from discord import VoiceProtocol
 
 from bot.core.models import MusicRequest, Song
 from bot.core.events import SONG_COMPLETE, SONG_START, events
@@ -19,7 +19,7 @@ class PlaybackManager:
     def __init__(
         self,
         client: Client,
-        voice_client: VoiceRecvClient,
+        voice_client: VoiceProtocol,
         resolver: TrackResolver = None,
     ):
         self.ffmpeg_options = {

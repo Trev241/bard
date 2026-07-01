@@ -3,7 +3,7 @@ import itertools
 import logging
 
 import discord
-from discord.ext import commands, voice_recv
+from discord.ext import commands
 
 from bot import EMBED_COLOR_THEME, config, public_url, socketio
 from bot.core.events import SONG_COMPLETE, SONG_START, events
@@ -170,19 +170,10 @@ class Music(commands.Cog):
             voice_channel = voice_channel or ctx.author.voice.channel
             ctx.author = author or ctx.author
 
-            await voice_channel.connect(cls=voice_recv.VoiceRecvClient, reconnect=False)
+            await voice_channel.connect(reconnect=False)
 
             if public_url:
                 await ctx.send(f"Check out {public_url}/dashboard to manage me!")
-
-            assistant_base = self.client.get_cog("Assistant")
-            if assistant_base:
-                try:
-                    assistant_connected = assistant_base.enable(ctx)
-                    if assistant_connected:
-                        await ctx.send('Say "OK, Bard" if you need help.')
-                except Exception:
-                    log.warning("Failed to enable assistant.", exc_info=True)
 
             self.playback_manager = PlaybackManager(self.client, ctx.voice_client)
             self.service.attach_playback(self.playback_manager)
@@ -208,10 +199,6 @@ class Music(commands.Cog):
         self.voice_state = Music.VOICE_DISCONNECTING
 
         self.service.stop()
-        assistant_base = self.client.get_cog("Assistant")
-        if assistant_base:
-            assistant_base.disable(ctx)
-
         voice_client = ctx.voice_client
 
         async def finish_disconnect():

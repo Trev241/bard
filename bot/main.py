@@ -17,11 +17,6 @@ logger = logging.getLogger(__name__)
 app_commands_synced = False
 
 cogs = [music, utils, events, wordle]
-if config.ASSISTANT_ENABLED:
-    import bot.cogs.assistant as assistant
-
-    cogs.append(assistant)
-
 if config.TRANSLATION_ENABLED:
     import bot.cogs.translation as translation
 

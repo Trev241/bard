@@ -1,6 +1,6 @@
 # Bard
 
-A simple music bot built with [discord.py](https://github.com/Rapptz/discord.py) that uses YouTube to stream songs. Bard also uses an experimental extension for processing vocal instructions.
+A simple music bot built with [discord.py](https://github.com/Rapptz/discord.py) that uses YouTube to stream songs.
 
 Bard was created for personal use in mind so it will not work across multiple guilds.
 
@@ -33,20 +33,6 @@ Bard can play songs on demand and manages all queued songs using an internal que
 ### Web Dashboard
 
 Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
-
-### Vocal Commands
-
-**_WARNING!_** _These features are based on an [experimental extension](https://github.com/imayhaveborkedit/discord-ext-voice-recv) of the discord.py wrapper. They can break at any time and are not actively maintained._
-
-Bard uses local wake words powered by openWakeWord to avoid misinterpreting normal speech as commands. The default wake phrase is "hey jarvis" because it is one of openWakeWord's built-in models. You can configure wake models with `ASSISTANT_WAKEWORD_MODELS`, or point that setting at a custom trained model.
-
-Voice commands are disabled by default. Set `ASSISTANT_ENABLED=true` to enable the assistant module. You can instruct Bard by issuing your commands vocally while on a call with her. First type `?join` while on a call and then say the configured wake phrase. If Bard heard you correctly, you will hear a reply. Bard will listen for one command, transcribe it, and parse it with local rules. The parser understands common music-control requests like "play Daft Punk", "can you play some jazz", "pause the song", "resume", "skip this", "what song is this", "loop this song", and "disconnect".
-
-Bard can optionally use OpenRouter as a fallback parser when local rules do not understand a command. Set `ASSISTANT_LLM_PROVIDER=openrouter`, `ASSISTANT_OPENROUTER_API_KEY=<key>`, and `ASSISTANT_OPENROUTER_MODEL=<model id>` to enable it. If the LLM is unavailable, slow, or returns an unclear result, Bard falls back to asking for clarification rather than guessing.
-
-_Remember! Due to technical reasons, Bard will only listen to the **first speaker** who invited her to the
-voice channel. So to make yourself the priority speaker, just disconnect Bard and invite her to the call
-yourself using_ `?join`.
 
 ### Translation Mirrors
 
