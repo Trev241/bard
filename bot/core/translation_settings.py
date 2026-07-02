@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,16 @@ class GuildTranslationSettings:
 
     @property
     def configured(self) -> bool:
-        return bool(self.source_channel_id and self.mirror_channel_id)
+        return bool(
+            self.source_channel_id
+            and self.mirror_channel_id
+            and self.source_lang
+            and self.mirror_lang
+            and self.provider_for(self.source_lang, self.mirror_lang, "")
+            in {"argos", "gemini"}
+            and self.provider_for(self.mirror_lang, self.source_lang, "")
+            in {"argos", "gemini"}
+        )
 
     def provider_for(self, source: str, target: str, default: str = "argos") -> str:
         return self.providers.get(
@@ -96,51 +105,8 @@ class TranslationSettingsStore:
         return data
 
 
-def settings_from_legacy_env(guild_ids: Iterable[int], config) -> Dict[int, GuildTranslationSettings]:
-    pairs = config.parse_translation_channel_pairs()
-    providers_by_direction = config.parse_translation_provider_by_direction()
-    settings = {}
-    guild_id_list = [int(item) for item in guild_ids]
-
-    for index, pair in enumerate(pairs):
-        if not guild_id_list:
-            break
-        guild_id = guild_id_list[min(index, len(guild_id_list) - 1)]
-        source_lang = pair["source_lang"]
-        mirror_lang = pair["mirror_lang"]
-        source_to_mirror = providers_by_direction.get(
-            (source_lang.casefold(), mirror_lang.casefold()),
-            config.TRANSLATION_PROVIDER,
-        )
-        mirror_to_source = providers_by_direction.get(
-            (mirror_lang.casefold(), source_lang.casefold()),
-            config.TRANSLATION_PROVIDER,
-        )
-        settings[guild_id] = GuildTranslationSettings(
-            guild_id=guild_id,
-            source_channel_id=pair["source_channel_id"],
-            mirror_channel_id=pair["mirror_channel_id"],
-            source_lang=source_lang,
-            mirror_lang=mirror_lang,
-            providers={
-                direction_key(source_lang, mirror_lang): source_to_mirror,
-                direction_key(mirror_lang, source_lang): mirror_to_source,
-            },
-            auto_rewrite_enabled=config.WRITING_FEEDBACK_AUTO_REPLY,
-            auto_rewrite_threshold=config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD,
-            llm_extra_instructions=config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS,
-        )
-
-    return settings
-
-
 def direction_key(source: str, target: str) -> str:
     return f"{source.strip().casefold()}->{target.strip().casefold()}"
-
-
-def direction_tuple(key: str) -> Tuple[str, str]:
-    source, target = key.split("->", 1)
-    return source.strip().casefold(), target.strip().casefold()
 
 
 def optional_int(value):

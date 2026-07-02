@@ -26,8 +26,6 @@ from bot.core.translation_settings import (
     GuildTranslationSettings,
     TranslationSettingsStore,
     direction_key,
-    direction_tuple,
-    settings_from_legacy_env,
 )
 from bot.core.writing_feedback import (
     GeminiWritingRewriteProvider,
@@ -320,8 +318,7 @@ class Translation(commands.Cog):
     async def translation_status(self, ctx):
         await ctx.send(
             "Translation mirroring is enabled for "
-            f"{len(self.channel_pairs)} channel pair(s) using "
-            f"{config.TRANSLATION_PROVIDER}."
+            f"{len(self.channel_pairs)} configured channel pair(s)."
         )
 
     async def _mirror_message(
@@ -766,7 +763,7 @@ def build_translation_service(channel_pairs, guild_settings=None) -> Translation
                 ] = settings.provider_for(
                     forward_pair.source,
                     forward_pair.target,
-                    config.TRANSLATION_PROVIDER,
+                    "",
                 )
                 provider_routes[
                     (
@@ -777,31 +774,19 @@ def build_translation_service(channel_pairs, guild_settings=None) -> Translation
                 ] = settings.provider_for(
                     reverse_pair.source,
                     reverse_pair.target,
-                    config.TRANSLATION_PROVIDER,
+                    "",
                 )
 
-    if config.TRANSLATION_PROVIDER not in {"argos", "gemini"}:
-        raise ValueError(
-            f"Unsupported translation provider: {config.TRANSLATION_PROVIDER}"
-        )
-
-    providers_by_direction = config.parse_translation_provider_by_direction()
     providers = []
     argos_pairs = []
     gemini_pairs = []
     for pair in language_pairs:
         provider_names = {
-            providers_by_direction.get(
-                (pair.source.casefold(), pair.target.casefold()),
-                config.TRANSLATION_PROVIDER,
-            )
-        }
-        provider_names.update(
             provider_name
             for (guild_id, source, target), provider_name in provider_routes.items()
             if source.casefold() == pair.source.casefold()
             and target.casefold() == pair.target.casefold()
-        )
+        }
 
         for provider_name in provider_names:
             if provider_name == "argos":
@@ -821,17 +806,6 @@ def build_translation_service(channel_pairs, guild_settings=None) -> Translation
     )
     argos_pairs = dedupe_pairs(argos_pairs)
     gemini_pairs = dedupe_pairs(gemini_pairs)
-
-    for pair in language_pairs:
-        provider_name = providers_by_direction.get(
-            (pair.source.casefold(), pair.target.casefold()),
-            config.TRANSLATION_PROVIDER,
-        )
-        if provider_name not in {"argos", "gemini"}:
-            raise ValueError(
-                f"Unsupported translation provider for "
-                f"{pair.source}->{pair.target}: {provider_name}"
-            )
 
     if argos_pairs:
         providers.append(ArgosTranslateProvider(argos_pairs))
@@ -910,13 +884,7 @@ def build_writing_rewrite_provider():
 
 async def setup(client):
     guild_settings = load_guild_translation_settings(client.guilds)
-    if guild_settings:
-        channel_pairs = channel_pairs_from_guild_settings(guild_settings)
-    else:
-        channel_pairs = [
-            TranslationChannelPair(**item)
-            for item in config.parse_translation_channel_pairs()
-        ]
+    channel_pairs = channel_pairs_from_guild_settings(guild_settings)
     service = build_translation_service(channel_pairs, guild_settings)
     await service.warmup()
     writing_feedback_service = build_writing_feedback_service()
@@ -933,14 +901,7 @@ async def setup(client):
 
 def load_guild_translation_settings(guilds):
     store = TranslationSettingsStore(config.TRANSLATION_GUILD_SETTINGS_FILE)
-    settings = store.load_all()
-    if settings:
-        return settings
-
-    legacy_settings = settings_from_legacy_env((guild.id for guild in guilds), config)
-    if legacy_settings:
-        store.save_all(legacy_settings.values())
-    return legacy_settings
+    return store.load_all()
 
 
 def channel_pairs_from_guild_settings(guild_settings):

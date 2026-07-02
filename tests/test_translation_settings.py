@@ -31,6 +31,7 @@ def test_translation_settings_store_round_trips_guild_settings(tmp_path):
     assert loaded.auto_rewrite_enabled is True
     assert loaded.auto_rewrite_threshold == 32
     assert loaded.llm_extra_instructions == "Prefer casual corrections."
+    assert loaded.configured is True
 
 
 def test_translation_settings_store_returns_default_for_missing_guild(tmp_path):
@@ -42,3 +43,16 @@ def test_translation_settings_store_returns_default_for_missing_guild(tmp_path):
     assert setting.configured is False
     assert setting.source_lang == "en"
     assert setting.mirror_lang == "fr"
+
+
+def test_translation_settings_require_both_direction_providers():
+    setting = GuildTranslationSettings(
+        guild_id=123,
+        source_channel_id=111,
+        mirror_channel_id=222,
+        providers={
+            direction_key("en", "fr"): "gemini",
+        },
+    )
+
+    assert setting.configured is False

@@ -56,9 +56,6 @@ Example `.env` configuration:
 
 ```env
 TRANSLATION_ENABLED=true
-TRANSLATION_PROVIDER=argos
-TRANSLATION_PROVIDER_BY_DIRECTION=en->fr:gemini,fr->en:argos
-TRANSLATION_CHANNEL_PAIRS=123456789012345678:234567890123456789:en:fr
 TRANSLATION_MAX_CONCURRENCY=1
 TRANSLATION_CACHE_SIZE=1000
 TRANSLATION_PERSISTENT_CACHE_ENABLED=true
@@ -79,7 +76,7 @@ WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS=
 WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 ```
 
-`TRANSLATION_CHANNEL_PAIRS` uses `source_channel_id:mirror_channel_id:source_lang:mirror_lang`. Bard mirrors both directions, so the example above translates English messages into French in the mirror channel and French replies back into English in the source channel. `TRANSLATION_PROVIDER_BY_DIRECTION` can override the engine per language direction, for example `en->fr:gemini,fr->en:argos`.
+Bard loads translation channel pairs and per-direction engines from `bot/resources/translation/settings.json`, which is managed through the dashboard translation settings page. If a guild is missing source channel, mirror channel, language codes, or either direction's translation provider in that settings file, translation mirroring is unavailable for that guild instead of falling back to `.env`.
 
 `TRANSLATION_CACHE_SIZE` controls the maximum number of cached translations. When `TRANSLATION_PERSISTENT_CACHE_ENABLED=true`, Bard stores those entries in `TRANSLATION_CACHE_FILE` so repeated phrases survive restarts. Cache entries are scoped by guild, language direction, normalized text, and selected translation route.
 

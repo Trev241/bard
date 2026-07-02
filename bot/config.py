@@ -71,9 +71,6 @@ GITHUB_ISSUE_LABELS = [
     if label.strip()
 ]
 TRANSLATION_ENABLED = parse_bool_env("TRANSLATION_ENABLED", False)
-TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "argos").strip().casefold()
-TRANSLATION_PROVIDER_BY_DIRECTION = os.getenv("TRANSLATION_PROVIDER_BY_DIRECTION", "")
-TRANSLATION_CHANNEL_PAIRS = os.getenv("TRANSLATION_CHANNEL_PAIRS", "")
 TRANSLATION_CACHE_SIZE = parse_int_env("TRANSLATION_CACHE_SIZE", 1000)
 TRANSLATION_PERSISTENT_CACHE_ENABLED = parse_bool_env(
     "TRANSLATION_PERSISTENT_CACHE_ENABLED",
@@ -123,64 +120,6 @@ WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS = parse_float_env(
     "WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS", 300.0
 )
 
-
-def parse_translation_channel_pairs(value=None):
-    raw_value = TRANSLATION_CHANNEL_PAIRS if value is None else value
-    pairs = []
-
-    for raw_pair in raw_value.split(","):
-        raw_pair = raw_pair.strip()
-        if not raw_pair:
-            continue
-
-        parts = [part.strip() for part in raw_pair.split(":")]
-        if len(parts) != 4:
-            raise ValueError(
-                "TRANSLATION_CHANNEL_PAIRS entries must use "
-                "source_channel_id:mirror_channel_id:source_lang:mirror_lang"
-            )
-
-        source_channel_id, mirror_channel_id, source_lang, mirror_lang = parts
-        pairs.append(
-            {
-                "source_channel_id": int(source_channel_id),
-                "mirror_channel_id": int(mirror_channel_id),
-                "source_lang": source_lang,
-                "mirror_lang": mirror_lang,
-            }
-        )
-
-    return pairs
-
-
-def parse_translation_provider_by_direction(value=None):
-    raw_value = TRANSLATION_PROVIDER_BY_DIRECTION if value is None else value
-    providers = {}
-
-    for raw_entry in raw_value.split(","):
-        raw_entry = raw_entry.strip()
-        if not raw_entry:
-            continue
-
-        if ":" not in raw_entry or "->" not in raw_entry:
-            raise ValueError(
-                "TRANSLATION_PROVIDER_BY_DIRECTION entries must use "
-                "source_lang->target_lang:provider"
-            )
-
-        raw_pair, raw_provider = raw_entry.split(":", 1)
-        source_lang, target_lang = raw_pair.split("->", 1)
-        source_lang = source_lang.strip().casefold()
-        target_lang = target_lang.strip().casefold()
-        provider = raw_provider.strip().casefold()
-        if not source_lang or not target_lang or not provider:
-            raise ValueError(
-                "TRANSLATION_PROVIDER_BY_DIRECTION entries must include "
-                "source language, target language, and provider."
-            )
-        providers[(source_lang, target_lang)] = provider
-
-    return providers
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "bard.log"

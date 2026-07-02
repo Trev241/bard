@@ -308,14 +308,6 @@ def test_gemini_translate_provider_tries_next_model_after_http_error(monkeypatch
     assert seen_models == ["model-one", "model-two"]
 
 
-def test_parse_translation_provider_by_direction():
-    parsed = config.parse_translation_provider_by_direction(
-        "en->fr:gemini,fr->en:argos"
-    )
-
-    assert parsed == {("en", "fr"): "gemini", ("fr", "en"): "argos"}
-
-
 def test_translation_provider_router_selects_provider_by_direction():
     class DirectionProvider(FakeTranslationProvider):
         def __init__(self, source, target, name):
@@ -353,30 +345,6 @@ def test_translation_channel_pair_maps_both_directions():
     assert pair.target_channel_id_for(200) == 100
     assert pair.direction_for(300) is None
     assert pair.target_channel_id_for(300) is None
-
-
-def test_parse_translation_channel_pairs():
-    parsed = config.parse_translation_channel_pairs("100:200:en:fr,300:400:fr:en")
-
-    assert parsed == [
-        {
-            "source_channel_id": 100,
-            "mirror_channel_id": 200,
-            "source_lang": "en",
-            "mirror_lang": "fr",
-        },
-        {
-            "source_channel_id": 300,
-            "mirror_channel_id": 400,
-            "source_lang": "fr",
-            "mirror_lang": "en",
-        },
-    ]
-
-
-def test_parse_translation_channel_pairs_rejects_invalid_entry():
-    with pytest.raises(ValueError):
-        config.parse_translation_channel_pairs("100:200:en")
 
 
 def test_format_writing_feedback_includes_score_issues_and_recommendation():
