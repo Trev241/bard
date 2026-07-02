@@ -62,6 +62,11 @@ TRANSLATION_PERSISTENT_CACHE_ENABLED=true
 TRANSLATION_CACHE_FILE=bot/resources/translation/cache.sqlite3
 TRANSLATION_USE_WEBHOOKS=true
 TRANSLATION_NORMALIZE_SLANG=true
+TRANSLATION_SKIP_LOW_VALUE_MESSAGES=true
+TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS=60
+TRANSLATION_GEMINI_BATCH_ENABLED=true
+TRANSLATION_GEMINI_BATCH_WINDOW_MS=750
+TRANSLATION_GEMINI_BATCH_MAX_SIZE=5
 WRITING_FEEDBACK_ENABLED=true
 WRITING_FEEDBACK_PROVIDER=grammalecte
 WRITING_FEEDBACK_LANGUAGES=fr
@@ -80,6 +85,8 @@ Bard loads translation channel pairs and per-direction engines from `bot/resourc
 When `TRANSLATION_USE_WEBHOOKS=true`, Bard sends mirrored translations through a channel webhook named `Bard Translation Mirror` using the original author's display name and avatar. This makes mirror channels look closer to the source channel. Bard needs `Manage Webhooks` in each mirror channel for this; if webhook sending fails, Bard falls back to a normal bot message.
 
 When `TRANSLATION_NORMALIZE_SLANG=true`, Bard normalizes common casual English before sending text to Argos. This helps local translation models handle phrases like `ur using an llm`, `don't bs me`, and `vas` more consistently. Set it to `false` if you want raw Argos translation input. Slang rules live in `bot/resources/translation/normalization.en.json`; add new ordered `pattern` and `replacement` entries there when Bard needs to understand more chat shorthand.
+
+When `TRANSLATION_SKIP_LOW_VALUE_MESSAGES=true`, Bard mirrors messages that are only links, custom emoji, emoji, mentions, punctuation, or similar non-language content without sending them to a translation provider. For Gemini directions, Bard can micro-batch heavy conversations when `TRANSLATION_GEMINI_BATCH_ENABLED=true`: it waits `TRANSLATION_GEMINI_BATCH_WINDOW_MS`, sends up to `TRANSLATION_GEMINI_BATCH_MAX_SIZE` messages in one Gemini request, then mirrors each translation as its own Discord message. If Gemini returns 429 for all configured translation models, Bard pauses Gemini translation attempts for `TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS` or the API `Retry-After` value and posts a short notice in the mirror channel.
 
 When writing feedback is enabled, Bard can check messages written in the mirror channel for the configured foreign language. For French, Bard uses Grammalecte to produce a rule-based writing score from grammar, typography, and suggestion density. Feedback is on demand by default: right-click or long-press a mirror-channel message and choose `Apps > French Feedback`, or react with `📝` to request basic feedback in the channel. Basic feedback is rule-based and does not call the LLM. Automatic feedback replies run after the translated message is mirrored, so feedback and rewrite latency does not delay the translation send path.
 

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import re
+import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -39,6 +41,13 @@ from bot.core.writing_feedback import (
 log = logging.getLogger(__name__)
 MAX_WRITING_CONTEXT_CHARS = 240
 MIRROR_WEBHOOK_NAME = "Bard Translation Mirror"
+TRANSLATION_RATE_LIMIT_NOTICE = (
+    "-# Some translations were skipped because the translation provider was "
+    "rate-limited."
+)
+URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+CUSTOM_EMOJI_RE = re.compile(r"<a?:[A-Za-z0-9_]+:\d+>")
+MENTION_RE = re.compile(r"<[@#@&]!?&?\d+>|<[@#@&]?\d+>")
 FEEDBACK_REACTION = "📝"
 REWRITE_REACTION = "✨"
 
@@ -110,6 +119,9 @@ class Translation(commands.Cog):
         self._webhooks: Dict[int, discord.Webhook] = {}
         self._webhook_unavailable_channel_ids = set()
         self._background_tasks = set()
+        self._batch_queues = {}
+        self._batch_workers = {}
+        self._rate_limit_notice_until = {}
         self._locks = {}
         self._set_translation_state(channel_pairs, guild_settings or {})
         self.feedback_context_menu = None
@@ -129,6 +141,8 @@ class Translation(commands.Cog):
     def cog_unload(self):
         for task in self._background_tasks:
             task.cancel()
+        for task in self._batch_workers.values():
+            task.cancel()
         for command in (self.feedback_context_menu, self.rewrite_context_menu):
             if command is None:
                 continue
@@ -144,6 +158,10 @@ class Translation(commands.Cog):
         self._set_translation_state(channel_pairs, guild_settings)
 
     def _set_translation_state(self, channel_pairs, guild_settings):
+        for task in self._batch_workers.values():
+            task.cancel()
+        self._batch_workers = {}
+        self._batch_queues = {}
         self.channel_pairs = list(channel_pairs)
         self.guild_settings = guild_settings or {}
         self._locks = {
@@ -168,6 +186,15 @@ class Translation(commands.Cog):
         lock = self._locks[
             (channel_pair.source_channel_id, channel_pair.mirror_channel_id)
         ]
+        if self._translation_batching_enabled(channel_pair, language_pair):
+            self._enqueue_translation_message(
+                message,
+                channel_pair,
+                language_pair,
+                target_channel_id,
+            )
+            return
+
         async with lock:
             await self._mirror_message(message, language_pair, target_channel_id)
             if self._automatic_writing_feedback_enabled(channel_pair):
@@ -176,6 +203,126 @@ class Translation(commands.Cog):
                     channel_pair,
                     language_pair,
                 )
+
+    def _enqueue_translation_message(
+        self,
+        message: discord.Message,
+        channel_pair: TranslationChannelPair,
+        language_pair: LanguagePair,
+        target_channel_id: int,
+    ) -> None:
+        pair_key = (channel_pair.source_channel_id, channel_pair.mirror_channel_id)
+        queue = self._batch_queues.get(pair_key)
+        if queue is None:
+            queue = asyncio.Queue()
+            self._batch_queues[pair_key] = queue
+
+        queue.put_nowait((message, channel_pair, language_pair, target_channel_id))
+
+        worker = self._batch_workers.get(pair_key)
+        if worker is None or worker.done():
+            worker = asyncio.create_task(self._translation_batch_worker(pair_key, queue))
+            self._batch_workers[pair_key] = worker
+            worker.add_done_callback(self._log_background_task_failure)
+
+    async def _translation_batch_worker(self, pair_key, queue) -> None:
+        while True:
+            first_item = await queue.get()
+            batch = [first_item]
+            await asyncio.sleep(max(0, config.TRANSLATION_GEMINI_BATCH_WINDOW_MS) / 1000)
+
+            max_size = max(1, config.TRANSLATION_GEMINI_BATCH_MAX_SIZE)
+            while len(batch) < max_size:
+                try:
+                    batch.append(queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+
+            lock = self._locks[pair_key]
+            async with lock:
+                await self._mirror_message_batch(batch)
+
+            for _ in batch:
+                queue.task_done()
+
+    async def _mirror_message_batch(self, batch) -> None:
+        if len(batch) == 1:
+            message, channel_pair, language_pair, target_channel_id = batch[0]
+            await self._mirror_message(message, language_pair, target_channel_id)
+            if self._automatic_writing_feedback_enabled(channel_pair):
+                self._schedule_writing_feedback(message, channel_pair, language_pair)
+            return
+
+        translatable_batch = []
+        for item in batch:
+            message, channel_pair, language_pair, target_channel_id = item
+            if (
+                config.TRANSLATION_SKIP_LOW_VALUE_MESSAGES
+                and self._is_low_value_translation_message(message.content)
+            ):
+                await self._send_translation_result(
+                    message,
+                    language_pair,
+                    target_channel_id,
+                    self._passthrough_translation_result(message, language_pair),
+                )
+                continue
+            translatable_batch.append(item)
+
+        if not translatable_batch:
+            return
+
+        requests = [
+            TranslationRequest(
+                text=message.content,
+                pair=language_pair,
+                context={
+                    "guild_id": getattr(getattr(message, "guild", None), "id", None),
+                    "message_id": message.id,
+                    "channel_id": message.channel.id,
+                    "author_id": message.author.id,
+                },
+            )
+            for message, channel_pair, language_pair, target_channel_id in translatable_batch
+        ]
+
+        try:
+            results = await self.service.translate_many(tuple(requests))
+        except TranslationError as exc:
+            if self._is_translation_rate_limited(exc):
+                noticed_channels = set()
+                for message, channel_pair, language_pair, target_channel_id in translatable_batch:
+                    if target_channel_id in noticed_channels:
+                        continue
+                    noticed_channels.add(target_channel_id)
+                    await self._send_rate_limit_notice(target_channel_id)
+            log.warning(
+                "Failed to batch translate %s messages.",
+                len(translatable_batch),
+                exc_info=True,
+            )
+            for message, channel_pair, language_pair, target_channel_id in translatable_batch:
+                await self._mirror_message(message, language_pair, target_channel_id)
+                if self._automatic_writing_feedback_enabled(channel_pair):
+                    self._schedule_writing_feedback(
+                        message,
+                        channel_pair,
+                        language_pair,
+                    )
+            return
+
+        for (message, channel_pair, language_pair, target_channel_id), result in zip(
+            translatable_batch,
+            results,
+        ):
+            await self._send_translation_result(
+                message,
+                language_pair,
+                target_channel_id,
+                result,
+            )
+            if self._automatic_writing_feedback_enabled(channel_pair):
+                self._schedule_writing_feedback(message, channel_pair, language_pair)
 
     def _schedule_writing_feedback(
         self,
@@ -332,6 +479,20 @@ class Translation(commands.Cog):
             if target_channel is None:
                 target_channel = await self.client.fetch_channel(target_channel_id)
 
+            if (
+                config.TRANSLATION_SKIP_LOW_VALUE_MESSAGES
+                and self._is_low_value_translation_message(message.content)
+            ):
+                result = self._passthrough_translation_result(message, language_pair)
+                await self._send_translation_result(
+                    message,
+                    language_pair,
+                    target_channel_id,
+                    result,
+                    target_channel=target_channel,
+                )
+                return
+
             result = await self.service.translate(
                 TranslationRequest(
                     text=message.content,
@@ -344,7 +505,9 @@ class Translation(commands.Cog):
                     },
                 )
             )
-        except TranslationError:
+        except TranslationError as exc:
+            if self._is_translation_rate_limited(exc):
+                await self._send_rate_limit_notice(target_channel_id)
             log.warning("Failed to translate message %s.", message.id, exc_info=True)
             return
         except discord.DiscordException:
@@ -355,7 +518,69 @@ class Translation(commands.Cog):
             )
             return
 
+        await self._send_translation_result(
+            message,
+            language_pair,
+            target_channel_id,
+            result,
+            target_channel=target_channel,
+        )
+
+    @staticmethod
+    def _passthrough_translation_result(
+        message: discord.Message,
+        language_pair: LanguagePair,
+    ) -> TranslationResult:
+        return TranslationResult(
+            translated_text=message.content,
+            provider="passthrough",
+            source_text=message.content,
+            pair=language_pair,
+        )
+
+    async def _send_rate_limit_notice(self, target_channel_id: int) -> None:
+        now = time.monotonic()
+        if now < self._rate_limit_notice_until.get(target_channel_id, 0):
+            return
+
+        self._rate_limit_notice_until[target_channel_id] = (
+            now + max(1.0, config.TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS)
+        )
+
         try:
+            target_channel = self.client.get_channel(target_channel_id)
+            if target_channel is None:
+                target_channel = await self.client.fetch_channel(target_channel_id)
+            await target_channel.send(
+                TRANSLATION_RATE_LIMIT_NOTICE,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except discord.DiscordException:
+            log.warning(
+                "Failed to send translation rate-limit notice to channel %s.",
+                target_channel_id,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _is_translation_rate_limited(error: BaseException) -> bool:
+        text = str(error).casefold()
+        return "429" in text or "rate-limit" in text or "cooldown" in text
+
+    async def _send_translation_result(
+        self,
+        message: discord.Message,
+        language_pair: LanguagePair,
+        target_channel_id: int,
+        result: TranslationResult,
+        *,
+        target_channel=None,
+    ) -> None:
+        try:
+            if target_channel is None:
+                target_channel = self.client.get_channel(target_channel_id)
+                if target_channel is None:
+                    target_channel = await self.client.fetch_channel(target_channel_id)
             mirrored_message = await self._send_mirrored_message(
                 target_channel,
                 message,
@@ -369,6 +594,7 @@ class Translation(commands.Cog):
                 exc_info=True,
             )
             return
+
         self.registry.add(
             MirroredMessage(
                 source_message_id=message.id,
@@ -534,6 +760,21 @@ class Translation(commands.Cog):
             return True
         return self.registry.contains_message(message.id)
 
+    @staticmethod
+    def _is_low_value_translation_message(content: str) -> bool:
+        text = content.strip()
+        if not text:
+            return True
+
+        text = URL_RE.sub("", text)
+        text = CUSTOM_EMOJI_RE.sub("", text)
+        text = MENTION_RE.sub("", text)
+        text = re.sub(r"\s+", "", text)
+        if not text:
+            return True
+
+        return not any(character.isalnum() for character in text)
+
     def _channel_pair_for(self, channel_id: int) -> Optional[TranslationChannelPair]:
         for channel_pair in self.channel_pairs:
             if channel_pair.direction_for(channel_id) is not None:
@@ -556,6 +797,20 @@ class Translation(commands.Cog):
         if settings is None:
             return False
         return settings.auto_rewrite_enabled
+
+    def _translation_batching_enabled(
+        self,
+        channel_pair: TranslationChannelPair,
+        language_pair: LanguagePair,
+    ) -> bool:
+        if not config.TRANSLATION_GEMINI_BATCH_ENABLED:
+            return False
+        if channel_pair.guild_id is None:
+            return False
+        settings = self.guild_settings.get(channel_pair.guild_id)
+        if settings is None:
+            return False
+        return settings.provider_for(language_pair.source, language_pair.target) == "gemini"
 
     def _auto_rewrite_threshold_for(self, message: discord.Message) -> Optional[int]:
         settings = self._settings_for_message(message)
@@ -827,6 +1082,9 @@ def build_translation_service(channel_pairs, guild_settings=None) -> Translation
                 api_key=config.WRITING_FEEDBACK_GEMINI_API_KEY,
                 model=config.WRITING_FEEDBACK_GEMINI_MODEL,
                 timeout_seconds=config.WRITING_FEEDBACK_LLM_TIMEOUT_SECONDS,
+                rate_limit_cooldown_seconds=(
+                    config.TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS
+                ),
             )
         )
 

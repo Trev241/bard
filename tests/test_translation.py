@@ -107,6 +107,17 @@ class FakeChannel:
         return FakeMessage(id=600, content=content)
 
 
+class FakeClient:
+    def __init__(self, channels=None):
+        self.channels = channels or {}
+
+    def get_channel(self, channel_id):
+        return self.channels.get(channel_id)
+
+    async def fetch_channel(self, channel_id):
+        return self.channels.get(channel_id)
+
+
 @pytest.mark.asyncio
 async def test_translation_service_uses_provider_and_cache():
     provider = FakeTranslationProvider()
@@ -306,6 +317,67 @@ def test_gemini_translate_provider_tries_next_model_after_http_error(monkeypatch
 
     assert result.translated_text == "Bonjour"
     assert seen_models == ["model-one", "model-two"]
+
+
+def test_gemini_translate_provider_translates_batch_in_one_request():
+    ok_response = requests.Response()
+    ok_response.status_code = 200
+    ok_response._content = (
+        b'{"candidates":[{"content":{"parts":[{"text":'
+        b'"{\\"translations\\":[{\\"id\\":\\"0\\",\\"translated_text\\":\\"Bonjour\\"},'
+        b'{\\"id\\":\\"1\\",\\"translated_text\\":\\"Au revoir\\"}]}"}]}}]}'
+    )
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs["json"])
+        return ok_response
+
+    provider = GeminiTranslateProvider(
+        [LanguagePair("en", "fr")],
+        api_key="key",
+        model="gemini-test",
+        session=FakeHTTPSession(fake_post),
+    )
+
+    results = provider.translate_many_sync(
+        (
+            TranslationRequest("hello", LanguagePair("en", "fr")),
+            TranslationRequest("bye", LanguagePair("en", "fr")),
+        )
+    )
+
+    assert [result.translated_text for result in results] == ["Bonjour", "Au revoir"]
+    assert len(calls) == 1
+
+
+def test_gemini_translate_provider_enters_cooldown_after_rate_limit():
+    response = requests.Response()
+    response.status_code = 429
+    response.url = GeminiTranslateProvider.endpoint_for_model("gemini-test")
+    response.headers["Retry-After"] = "12"
+    calls = 0
+
+    def fake_post(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return response
+
+    provider = GeminiTranslateProvider(
+        [LanguagePair("en", "fr")],
+        api_key="key",
+        model="gemini-test",
+        rate_limit_cooldown_seconds=60,
+        session=FakeHTTPSession(fake_post),
+    )
+
+    with pytest.raises(TranslationError):
+        provider.translate_sync(TranslationRequest("hello", LanguagePair("en", "fr")))
+    with pytest.raises(TranslationError, match="cooldown"):
+        provider.translate_sync(TranslationRequest("hello", LanguagePair("en", "fr")))
+
+    assert calls == 1
+    assert provider._cooldown_until > 0
 
 
 def test_translation_provider_router_selects_provider_by_direction():
@@ -592,6 +664,77 @@ def test_automatic_writing_feedback_disabled_without_guild_settings():
     cog = Translation(client=None, service=None, channel_pairs=[pair])
 
     assert not cog._automatic_writing_feedback_enabled(pair)
+
+
+def test_translation_batching_enabled_only_for_gemini_direction(monkeypatch):
+    monkeypatch.setattr(config, "TRANSLATION_GEMINI_BATCH_ENABLED", True)
+    pair = TranslationChannelPair(
+        source_channel_id=100,
+        mirror_channel_id=200,
+        source_lang="en",
+        mirror_lang="fr",
+        guild_id=1,
+    )
+    settings = GuildTranslationSettings(
+        guild_id=1,
+        providers={
+            "en->fr": "gemini",
+            "fr->en": "argos",
+        },
+    )
+    cog = Translation(
+        client=None,
+        service=None,
+        channel_pairs=[pair],
+        guild_settings={1: settings},
+    )
+
+    assert cog._translation_batching_enabled(pair, LanguagePair("en", "fr"))
+    assert not cog._translation_batching_enabled(pair, LanguagePair("fr", "en"))
+
+
+def test_low_value_translation_message_detection():
+    assert Translation._is_low_value_translation_message("😂😂")
+    assert Translation._is_low_value_translation_message("https://example.com")
+    assert Translation._is_low_value_translation_message("<:wave:1234567890>")
+    assert Translation._is_low_value_translation_message("!!!")
+    assert not Translation._is_low_value_translation_message("hello 😂")
+
+
+def test_should_ignore_allows_low_value_messages_for_passthrough(monkeypatch):
+    monkeypatch.setattr(config, "TRANSLATION_SKIP_LOW_VALUE_MESSAGES", True)
+    cog = Translation(client=None, service=None, channel_pairs=[])
+
+    assert not cog._should_ignore(FakeMessage(content="https://example.com"))
+
+
+def test_passthrough_translation_result_keeps_original_content():
+    message = FakeMessage(content="https://example.com")
+    pair = LanguagePair("en", "fr")
+
+    result = Translation._passthrough_translation_result(message, pair)
+
+    assert result.translated_text == "https://example.com"
+    assert result.source_text == "https://example.com"
+    assert result.provider == "passthrough"
+    assert result.pair == pair
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_notice_is_sent_once_per_cooldown(monkeypatch):
+    monkeypatch.setattr(config, "TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 60)
+    channel = FakeChannel(id=200)
+    cog = Translation(
+        client=FakeClient({200: channel}),
+        service=None,
+        channel_pairs=[],
+    )
+
+    await cog._send_rate_limit_notice(200)
+    await cog._send_rate_limit_notice(200)
+
+    assert len(channel.bot_messages) == 1
+    assert "rate-limited" in channel.bot_messages[0][0]
 
 
 @pytest.mark.asyncio

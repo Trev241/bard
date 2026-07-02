@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Protocol, Tuple
+from typing import Iterable, Optional, Protocol, Sequence, Tuple
 
 import requests
 
@@ -270,26 +270,84 @@ class TranslationService:
             await asyncio.to_thread(warmup_sync)
 
     async def translate(self, request: TranslationRequest) -> TranslationResult:
-        text = request.text.strip()
-        if not text:
-            raise TranslationError("Cannot translate an empty message.")
+        results = await self.translate_many((request,))
+        return results[0]
 
-        normalized_request = TranslationRequest(
-            text=text,
-            pair=request.pair,
-            context=request.context,
-        )
-        provider = self._select_provider(normalized_request.pair)
-        cache_namespace = self._cache_namespace(provider, normalized_request)
-        cached = self.cache.get(normalized_request, namespace=cache_namespace)
-        if cached is not None:
-            return cached
+    async def translate_many(
+        self,
+        requests: Sequence[TranslationRequest],
+    ) -> Tuple[TranslationResult, ...]:
+        if not requests:
+            return ()
 
-        async with self.semaphore:
-            result = await asyncio.to_thread(provider.translate_sync, normalized_request)
+        normalized_requests = []
+        for request in requests:
+            text = request.text.strip()
+            if not text:
+                raise TranslationError("Cannot translate an empty message.")
+            normalized_requests.append(
+                TranslationRequest(
+                    text=text,
+                    pair=request.pair,
+                    context=request.context,
+                )
+            )
 
-        self.cache.set(normalized_request, result, namespace=cache_namespace)
-        return result
+        results = [None] * len(normalized_requests)
+        pending_by_namespace = {}
+        for index, normalized_request in enumerate(normalized_requests):
+            provider = self._select_provider(normalized_request.pair)
+            cache_namespace = self._cache_namespace(provider, normalized_request)
+            cached = self.cache.get(normalized_request, namespace=cache_namespace)
+            if cached is not None:
+                results[index] = cached
+                continue
+            pending_by_namespace.setdefault(
+                (id(provider), cache_namespace),
+                {
+                    "provider": provider,
+                    "cache_namespace": cache_namespace,
+                    "requests": [],
+                    "indexes": [],
+                },
+            )
+            pending_by_namespace[(id(provider), cache_namespace)]["requests"].append(
+                normalized_request
+            )
+            pending_by_namespace[(id(provider), cache_namespace)]["indexes"].append(index)
+
+        for group in pending_by_namespace.values():
+            provider = group["provider"]
+            group_requests = tuple(group["requests"])
+            async with self.semaphore:
+                translated = await asyncio.to_thread(
+                    self._translate_many_sync,
+                    provider,
+                    group_requests,
+                )
+
+            if len(translated) != len(group_requests):
+                raise TranslationError("Provider returned an invalid translation batch.")
+
+            for index, request, result in zip(
+                group["indexes"],
+                group_requests,
+                translated,
+            ):
+                self.cache.set(request, result, namespace=group["cache_namespace"])
+                results[index] = result
+
+        return tuple(result for result in results if result is not None)
+
+    @staticmethod
+    def _translate_many_sync(
+        provider: TranslationProvider,
+        requests: Sequence[TranslationRequest],
+    ) -> Tuple[TranslationResult, ...]:
+        translate_many_sync = getattr(provider, "translate_many_sync", None)
+        if translate_many_sync is not None:
+            return tuple(translate_many_sync(tuple(requests)))
+        return tuple(provider.translate_sync(request) for request in requests)
 
     def _select_provider(self, pair: LanguagePair) -> TranslationProvider:
         for provider in self.providers:
@@ -442,6 +500,56 @@ class SlangAwareTranslationProvider:
             notes=result.notes + normalization.notes,
         )
 
+    def translate_many_sync(
+        self,
+        requests: Sequence[TranslationRequest],
+    ) -> Tuple[TranslationResult, ...]:
+        provider_requests = []
+        original_requests = []
+        normalizations = []
+        for request in requests:
+            normalization = self.normalizer.normalize(request)
+            provider_request = request
+            if normalization.text != request.text:
+                provider_request = TranslationRequest(
+                    text=normalization.text,
+                    pair=request.pair,
+                    context=request.context,
+                )
+            provider_requests.append(provider_request)
+            original_requests.append(request)
+            normalizations.append(normalization)
+
+        translate_many_sync = getattr(self.provider, "translate_many_sync", None)
+        if translate_many_sync is not None:
+            results = tuple(translate_many_sync(tuple(provider_requests)))
+        else:
+            results = tuple(
+                self.provider.translate_sync(provider_request)
+                for provider_request in provider_requests
+            )
+
+        patched_results = []
+        for request, normalization, result in zip(
+            original_requests,
+            normalizations,
+            results,
+        ):
+            if not normalization.notes:
+                patched_results.append(result)
+                continue
+            patched_results.append(
+                TranslationResult(
+                    translated_text=result.translated_text,
+                    provider=result.provider,
+                    source_text=request.text,
+                    pair=result.pair,
+                    alternatives=result.alternatives,
+                    notes=result.notes + normalization.notes,
+                )
+            )
+        return tuple(patched_results)
+
     def cache_key_for_request(self, request: TranslationRequest) -> str:
         cache_key_for_request = getattr(self.provider, "cache_key_for_request", None)
         provider_key = (
@@ -480,6 +588,37 @@ class TranslationProviderRouter:
                 f"{request.pair.target!r}."
             )
         return provider.translate_sync(request)
+
+    def translate_many_sync(
+        self,
+        requests: Sequence[TranslationRequest],
+    ) -> Tuple[TranslationResult, ...]:
+        results = [None] * len(requests)
+        grouped = {}
+        for index, request in enumerate(requests):
+            provider = self._select_provider_for_request(request)
+            if provider is None:
+                raise TranslationError(
+                    f"No translation provider supports {request.pair.source!r} -> "
+                    f"{request.pair.target!r}."
+                )
+            grouped.setdefault(provider, {"indexes": [], "requests": []})
+            grouped[provider]["indexes"].append(index)
+            grouped[provider]["requests"].append(request)
+
+        for provider, group in grouped.items():
+            group_requests = tuple(group["requests"])
+            translate_many_sync = getattr(provider, "translate_many_sync", None)
+            if translate_many_sync is not None:
+                translated = tuple(translate_many_sync(group_requests))
+            else:
+                translated = tuple(
+                    provider.translate_sync(request) for request in group_requests
+                )
+            for index, result in zip(group["indexes"], translated):
+                results[index] = result
+
+        return tuple(result for result in results if result is not None)
 
     def cache_key_for_request(self, request: TranslationRequest) -> str:
         provider = self._select_provider_for_request(request)
@@ -535,6 +674,7 @@ class GeminiTranslateProvider:
         api_key: str,
         model: str,
         timeout_seconds: float = 4.0,
+        rate_limit_cooldown_seconds: float = 60.0,
         session=None,
     ):
         self.language_pairs = {
@@ -544,7 +684,9 @@ class GeminiTranslateProvider:
         self.models = tuple(item.strip() for item in model.split(",") if item.strip())
         self.model = self.models[0] if self.models else ""
         self.timeout_seconds = timeout_seconds
+        self.rate_limit_cooldown_seconds = max(0.0, rate_limit_cooldown_seconds)
         self.session = session or requests.Session()
+        self._cooldown_until = 0.0
 
     def supports(self, pair: LanguagePair) -> bool:
         return (pair.source.casefold(), pair.target.casefold()) in self.language_pairs
@@ -558,16 +700,62 @@ class GeminiTranslateProvider:
                 "Gemini translation requires WRITING_FEEDBACK_GEMINI_API_KEY "
                 "and WRITING_FEEDBACK_GEMINI_MODEL."
             )
+        if self._is_cooling_down():
+            remaining = int(max(1, self._cooldown_until - time.monotonic()))
+            raise TranslationError(
+                f"Gemini translation rate-limit cooldown active for {remaining}s."
+            )
 
         last_error = None
+        rate_limited_responses = []
         for model in self.models:
             try:
                 return self._translate_with_model(request, model)
             except TranslationError as exc:
                 last_error = exc
+                response = getattr(exc.__cause__, "response", None)
+                if getattr(response, "status_code", None) == 429:
+                    rate_limited_responses.append(response)
                 continue
 
+        if rate_limited_responses:
+            self._start_rate_limit_cooldown(rate_limited_responses[-1])
         raise TranslationError("Gemini failed to translate text with every model.") from last_error
+
+    def translate_many_sync(
+        self,
+        requests: Sequence[TranslationRequest],
+    ) -> Tuple[TranslationResult, ...]:
+        if not requests:
+            return ()
+        if len(requests) == 1:
+            return (self.translate_sync(requests[0]),)
+        if not self.api_key or not self.models:
+            raise TranslationError(
+                "Gemini translation requires WRITING_FEEDBACK_GEMINI_API_KEY "
+                "and WRITING_FEEDBACK_GEMINI_MODEL."
+            )
+        if self._is_cooling_down():
+            remaining = int(max(1, self._cooldown_until - time.monotonic()))
+            raise TranslationError(
+                f"Gemini translation rate-limit cooldown active for {remaining}s."
+            )
+
+        last_error = None
+        rate_limited_responses = []
+        for model in self.models:
+            try:
+                return self._translate_many_with_model(requests, model)
+            except TranslationError as exc:
+                last_error = exc
+                response = getattr(exc.__cause__, "response", None)
+                if getattr(response, "status_code", None) == 429:
+                    rate_limited_responses.append(response)
+                continue
+
+        if rate_limited_responses:
+            self._start_rate_limit_cooldown(rate_limited_responses[-1])
+        raise TranslationError("Gemini failed to translate text batch.") from last_error
 
     def _translate_with_model(
         self,
@@ -647,11 +835,122 @@ class GeminiTranslateProvider:
             pair=request.pair,
         )
 
+    def _translate_many_with_model(
+        self,
+        requests: Sequence[TranslationRequest],
+        model: str,
+    ) -> Tuple[TranslationResult, ...]:
+        pair = requests[0].pair
+        if any(request.pair != pair for request in requests):
+            return tuple(self._translate_with_model(request, model) for request in requests)
+
+        response = self.session.post(
+            self.endpoint_for_model(model),
+            headers={
+                "x-goog-api-key": self.api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "system_instruction": {
+                    "parts": [
+                        {
+                            "text": (
+                                "You are a translation engine. Return only JSON. "
+                                "Preserve names, links, emojis, punctuation, tone, "
+                                "and Discord-style casualness. Translate each item "
+                                "independently and keep each id unchanged."
+                            )
+                        }
+                    ],
+                },
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": (
+                                    f"Translate each item from {pair.source} to "
+                                    f"{pair.target}. Return exactly this JSON shape: "
+                                    '{"translations":[{"id":"...","translated_text":"..."}]}'
+                                    "\n\nItems:\n"
+                                    f"{self.batch_items_json(requests)}"
+                                )
+                            }
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": max(1024, 512 * len(requests)),
+                    "responseMimeType": "application/json",
+                    "responseSchema": {
+                        "type": "object",
+                        "properties": {
+                            "translations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "translated_text": {"type": "string"},
+                                    },
+                                    "required": ["id", "translated_text"],
+                                },
+                            }
+                        },
+                        "required": ["translations"],
+                    },
+                },
+            },
+            timeout=self.timeout_seconds,
+        )
+
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            raise TranslationError(
+                f"Gemini model {model!r} failed to translate text batch."
+            ) from exc
+
+        try:
+            translations = self.translations_from_payload(response.json())
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise TranslationError("Gemini returned an invalid translation batch.") from exc
+
+        results = []
+        for index, request in enumerate(requests):
+            item_id = self.batch_item_id(index)
+            translated_text = translations.get(item_id, "").strip()
+            if not translated_text:
+                raise TranslationError(
+                    f"Gemini omitted translation batch item {item_id!r}."
+                )
+            results.append(
+                TranslationResult(
+                    translated_text=translated_text,
+                    provider=self.name,
+                    source_text=request.text,
+                    pair=request.pair,
+                )
+            )
+        return tuple(results)
+
     @classmethod
     def translated_text_from_payload(cls, payload: dict) -> str:
         content = cls.content_from_payload(payload)
         data = json.loads(content)
         return str(data.get("translated_text") or "").strip()
+
+    @classmethod
+    def translations_from_payload(cls, payload: dict) -> dict:
+        content = cls.content_from_payload(payload)
+        data = json.loads(content)
+        translations = data.get("translations") or []
+        return {
+            str(item.get("id") or ""): str(item.get("translated_text") or "")
+            for item in translations
+            if isinstance(item, dict)
+        }
 
     @staticmethod
     def content_from_payload(payload: dict) -> str:
@@ -662,6 +961,38 @@ class GeminiTranslateProvider:
     @classmethod
     def endpoint_for_model(cls, model: str) -> str:
         return f"{cls.BASE_URL}/models/{model}:generateContent"
+
+    @staticmethod
+    def batch_item_id(index: int) -> str:
+        return str(index)
+
+    @classmethod
+    def batch_items_json(cls, requests: Sequence[TranslationRequest]) -> str:
+        return json.dumps(
+            [
+                {
+                    "id": cls.batch_item_id(index),
+                    "text": request.text,
+                }
+                for index, request in enumerate(requests)
+            ],
+            ensure_ascii=False,
+        )
+
+    def _is_cooling_down(self) -> bool:
+        return time.monotonic() < self._cooldown_until
+
+    def _start_rate_limit_cooldown(self, response) -> None:
+        retry_after = response.headers.get("Retry-After") if response else None
+        try:
+            cooldown_seconds = float(retry_after) if retry_after else None
+        except ValueError:
+            cooldown_seconds = None
+
+        if cooldown_seconds is None:
+            cooldown_seconds = self.rate_limit_cooldown_seconds
+
+        self._cooldown_until = time.monotonic() + max(0.0, cooldown_seconds)
 
 
 class ArgosTranslateProvider:
