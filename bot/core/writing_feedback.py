@@ -332,6 +332,7 @@ class GeminiWritingRewriteProvider:
         timeout_seconds: float = 4.0,
         rate_limit_cooldown_seconds: float = 300.0,
         extra_instructions: str = "",
+        session=None,
     ):
         self.api_key = api_key
         self.models = tuple(item.strip() for item in model.split(",") if item.strip())
@@ -339,6 +340,7 @@ class GeminiWritingRewriteProvider:
         self.timeout_seconds = timeout_seconds
         self.rate_limit_cooldown_seconds = max(0.0, rate_limit_cooldown_seconds)
         self.extra_instructions = extra_instructions.strip()
+        self.session = session or requests.Session()
         self._cooldown_until = 0.0
 
     @property
@@ -423,7 +425,7 @@ class GeminiWritingRewriteProvider:
         *,
         max_output_tokens: int,
     ) -> Optional[WritingRewriteResult]:
-        response = requests.post(
+        response = self.session.post(
             self.endpoint_for_model(model),
             headers={
                 "x-goog-api-key": self.api_key,

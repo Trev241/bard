@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 import requests
 
@@ -16,6 +18,7 @@ from bot.core.translation import (
     TranslationRequest,
     TranslationResult,
     TranslationService,
+    SQLiteTranslationCache,
 )
 from bot.core.writing_feedback import WritingFeedbackIssue, WritingFeedbackResult
 from bot.core.translation_settings import GuildTranslationSettings
@@ -44,6 +47,11 @@ class FakeTranslationProvider(TranslationProvider):
             source_text=request.text,
             pair=request.pair,
         )
+
+
+class FakeHTTPSession:
+    def __init__(self, post):
+        self.post = post
 
 
 class FakeAuthor:
@@ -140,6 +148,28 @@ async def test_translation_service_cache_is_scoped_by_guild():
     assert first == third
     assert second.translated_text == "translated:hello"
     assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_sqlite_translation_cache_persists_between_instances(tmp_path):
+    cache_path = tmp_path / "translation-cache.sqlite3"
+    provider = FakeTranslationProvider()
+    pair = LanguagePair("en", "fr")
+    request = TranslationRequest("hello", pair, context={"guild_id": 1})
+    first_service = TranslationService(
+        [provider],
+        cache=SQLiteTranslationCache(cache_path, max_size=10),
+    )
+
+    first = await first_service.translate(request)
+    second_service = TranslationService(
+        [provider],
+        cache=SQLiteTranslationCache(cache_path, max_size=10),
+    )
+    second = await second_service.translate(request)
+
+    assert second == first
+    assert provider.calls == 1
 
 
 @pytest.mark.asyncio
@@ -263,11 +293,11 @@ def test_gemini_translate_provider_tries_next_model_after_http_error(monkeypatch
             return failed_response
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiTranslateProvider(
         [LanguagePair("en", "fr")],
         api_key="key",
         model="model-one,model-two",
+        session=FakeHTTPSession(fake_post),
     )
 
     result = provider.translate_sync(
@@ -562,6 +592,40 @@ def test_feedback_language_for_rejects_source_webhook_and_bot_messages(monkeypat
     assert cog._feedback_language_for(
         FakeMessage(channel=FakeChannel(id=200), author=FakeAuthor(bot=True))
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_schedule_writing_feedback_tracks_background_task(monkeypatch):
+    pair = TranslationChannelPair(
+        source_channel_id=100,
+        mirror_channel_id=200,
+        source_lang="en",
+        mirror_lang="fr",
+    )
+    cog = Translation(client=None, service=None, channel_pairs=[pair])
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_send_writing_feedback(*args):
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(cog, "_send_writing_feedback", fake_send_writing_feedback)
+
+    cog._schedule_writing_feedback(
+        FakeMessage(channel=FakeChannel(id=200)),
+        pair,
+        LanguagePair("fr", "en"),
+    )
+    await started.wait()
+
+    assert len(cog._background_tasks) == 1
+    task = next(iter(cog._background_tasks))
+
+    release.set()
+    await task
+
+    assert len(cog._background_tasks) == 0
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,10 @@
 import asyncio
+import hashlib
 import json
 import logging
 import re
+import sqlite3
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,13 +68,20 @@ class TranslationProvider(Protocol):
 class TranslationCache:
     def __init__(self, max_size: int = 1000):
         self.max_size = max(0, max_size)
-        self._items: "OrderedDict[Tuple[str, str, str, str], TranslationResult]" = OrderedDict()
+        self._items: (
+            "OrderedDict[Tuple[str, str, str, str, str], TranslationResult]"
+        ) = OrderedDict()
 
-    def get(self, request: TranslationRequest) -> Optional[TranslationResult]:
+    def get(
+        self,
+        request: TranslationRequest,
+        *,
+        namespace: str = "",
+    ) -> Optional[TranslationResult]:
         if self.max_size == 0:
             return None
 
-        key = self._key(request)
+        key = self._key(request, namespace=namespace)
         result = self._items.get(key)
         if result is None:
             return None
@@ -79,11 +89,17 @@ class TranslationCache:
         self._items.move_to_end(key)
         return result
 
-    def set(self, request: TranslationRequest, result: TranslationResult) -> None:
+    def set(
+        self,
+        request: TranslationRequest,
+        result: TranslationResult,
+        *,
+        namespace: str = "",
+    ) -> None:
         if self.max_size == 0:
             return
 
-        key = self._key(request)
+        key = self._key(request, namespace=namespace)
         self._items[key] = result
         self._items.move_to_end(key)
 
@@ -91,12 +107,146 @@ class TranslationCache:
             self._items.popitem(last=False)
 
     @staticmethod
-    def _key(request: TranslationRequest) -> Tuple[str, str, str, str]:
+    def _key(
+        request: TranslationRequest,
+        *,
+        namespace: str = "",
+    ) -> Tuple[str, str, str, str, str]:
         return (
+            namespace.casefold(),
             str(request.context.get("guild_id") or ""),
             request.pair.source.casefold(),
             request.pair.target.casefold(),
             " ".join(request.text.split()),
+        )
+
+
+class SQLiteTranslationCache(TranslationCache):
+    def __init__(self, path: Path, max_size: int = 1000):
+        super().__init__(max_size=max_size)
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def get(
+        self,
+        request: TranslationRequest,
+        *,
+        namespace: str = "",
+    ) -> Optional[TranslationResult]:
+        if self.max_size == 0:
+            return None
+
+        cache_key = self._sqlite_key(request, namespace=namespace)
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT payload FROM translation_cache WHERE cache_key = ?",
+                    (cache_key,),
+                ).fetchone()
+                if row is None:
+                    return None
+                connection.execute(
+                    "UPDATE translation_cache SET updated_at = ? WHERE cache_key = ?",
+                    (time.time(), cache_key),
+                )
+        except sqlite3.Error:
+            log.warning("Failed to read translation cache.", exc_info=True)
+            return None
+
+        try:
+            return self._result_from_payload(json.loads(row[0]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            log.warning("Skipping invalid cached translation payload.", exc_info=True)
+            return None
+
+    def set(
+        self,
+        request: TranslationRequest,
+        result: TranslationResult,
+        *,
+        namespace: str = "",
+    ) -> None:
+        if self.max_size == 0:
+            return
+
+        cache_key = self._sqlite_key(request, namespace=namespace)
+        payload = json.dumps(self._result_to_payload(result), separators=(",", ":"))
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO translation_cache
+                        (cache_key, payload, updated_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (cache_key, payload, time.time()),
+                )
+                self._prune(connection)
+        except sqlite3.Error:
+            log.warning("Failed to write translation cache.", exc_info=True)
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS translation_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+
+    def _connect(self):
+        return sqlite3.connect(self.path)
+
+    def _sqlite_key(self, request: TranslationRequest, *, namespace: str = "") -> str:
+        key = json.dumps(
+            self._key(request, namespace=namespace),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    def _prune(self, connection) -> None:
+        connection.execute(
+            """
+            DELETE FROM translation_cache
+            WHERE cache_key IN (
+                SELECT cache_key
+                FROM translation_cache
+                ORDER BY updated_at DESC
+                LIMIT -1 OFFSET ?
+            )
+            """,
+            (self.max_size,),
+        )
+
+    @staticmethod
+    def _result_to_payload(result: TranslationResult) -> dict:
+        return {
+            "translated_text": result.translated_text,
+            "provider": result.provider,
+            "source_text": result.source_text,
+            "pair": {
+                "source": result.pair.source,
+                "target": result.pair.target,
+            },
+            "alternatives": list(result.alternatives),
+            "notes": list(result.notes),
+        }
+
+    @staticmethod
+    def _result_from_payload(payload: dict) -> TranslationResult:
+        pair = payload["pair"]
+        return TranslationResult(
+            translated_text=str(payload["translated_text"]),
+            provider=str(payload["provider"]),
+            source_text=str(payload["source_text"]),
+            pair=LanguagePair(str(pair["source"]), str(pair["target"])),
+            alternatives=tuple(str(item) for item in payload.get("alternatives") or ()),
+            notes=tuple(str(item) for item in payload.get("notes") or ()),
         )
 
 
@@ -129,15 +279,16 @@ class TranslationService:
             pair=request.pair,
             context=request.context,
         )
-        cached = self.cache.get(normalized_request)
+        provider = self._select_provider(normalized_request.pair)
+        cache_namespace = self._cache_namespace(provider, normalized_request)
+        cached = self.cache.get(normalized_request, namespace=cache_namespace)
         if cached is not None:
             return cached
 
-        provider = self._select_provider(normalized_request.pair)
         async with self.semaphore:
             result = await asyncio.to_thread(provider.translate_sync, normalized_request)
 
-        self.cache.set(normalized_request, result)
+        self.cache.set(normalized_request, result, namespace=cache_namespace)
         return result
 
     def _select_provider(self, pair: LanguagePair) -> TranslationProvider:
@@ -148,6 +299,16 @@ class TranslationService:
         raise TranslationError(
             f"No translation provider supports {pair.source!r} -> {pair.target!r}."
         )
+
+    @staticmethod
+    def _cache_namespace(
+        provider: TranslationProvider,
+        request: TranslationRequest,
+    ) -> str:
+        cache_key_for_request = getattr(provider, "cache_key_for_request", None)
+        if cache_key_for_request is not None:
+            return str(cache_key_for_request(request))
+        return getattr(provider, "name", provider.__class__.__name__)
 
 
 @dataclass(frozen=True)
@@ -281,6 +442,15 @@ class SlangAwareTranslationProvider:
             notes=result.notes + normalization.notes,
         )
 
+    def cache_key_for_request(self, request: TranslationRequest) -> str:
+        cache_key_for_request = getattr(self.provider, "cache_key_for_request", None)
+        provider_key = (
+            cache_key_for_request(request)
+            if cache_key_for_request is not None
+            else self.provider.name
+        )
+        return f"slang:{provider_key}"
+
 
 class TranslationProviderRouter:
     name = "router"
@@ -302,12 +472,7 @@ class TranslationProviderRouter:
                 warmup_sync()
 
     def translate_sync(self, request: TranslationRequest) -> TranslationResult:
-        provider = self._select_provider(request.pair)
-        guild_id = request.context.get("guild_id")
-        if guild_id is not None:
-            routed_provider = self._select_routed_provider(int(guild_id), request.pair)
-            if routed_provider is not None:
-                provider = routed_provider
+        provider = self._select_provider_for_request(request)
 
         if provider is None:
             raise TranslationError(
@@ -315,6 +480,28 @@ class TranslationProviderRouter:
                 f"{request.pair.target!r}."
             )
         return provider.translate_sync(request)
+
+    def cache_key_for_request(self, request: TranslationRequest) -> str:
+        provider = self._select_provider_for_request(request)
+        provider_name = provider.name if provider is not None else "none"
+        guild_id = request.context.get("guild_id") or ""
+        return (
+            f"router:{guild_id}:"
+            f"{request.pair.source.casefold()}->{request.pair.target.casefold()}:"
+            f"{provider_name.casefold()}"
+        )
+
+    def _select_provider_for_request(
+        self,
+        request: TranslationRequest,
+    ) -> Optional[TranslationProvider]:
+        provider = self._select_provider(request.pair)
+        guild_id = request.context.get("guild_id")
+        if guild_id is not None:
+            routed_provider = self._select_routed_provider(int(guild_id), request.pair)
+            if routed_provider is not None:
+                provider = routed_provider
+        return provider
 
     def _select_provider(self, pair: LanguagePair) -> Optional[TranslationProvider]:
         for provider in self.providers:
@@ -348,6 +535,7 @@ class GeminiTranslateProvider:
         api_key: str,
         model: str,
         timeout_seconds: float = 4.0,
+        session=None,
     ):
         self.language_pairs = {
             (pair.source.casefold(), pair.target.casefold()) for pair in language_pairs
@@ -356,6 +544,7 @@ class GeminiTranslateProvider:
         self.models = tuple(item.strip() for item in model.split(",") if item.strip())
         self.model = self.models[0] if self.models else ""
         self.timeout_seconds = timeout_seconds
+        self.session = session or requests.Session()
 
     def supports(self, pair: LanguagePair) -> bool:
         return (pair.source.casefold(), pair.target.casefold()) in self.language_pairs
@@ -385,7 +574,7 @@ class GeminiTranslateProvider:
         request: TranslationRequest,
         model: str,
     ) -> TranslationResult:
-        response = requests.post(
+        response = self.session.post(
             self.endpoint_for_model(model),
             headers={
                 "x-goog-api-key": self.api_key,

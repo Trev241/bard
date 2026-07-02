@@ -20,6 +20,7 @@ from bot.core.translation import (
     TranslationRequest,
     TranslationResult,
     TranslationService,
+    SQLiteTranslationCache,
 )
 from bot.core.translation_settings import (
     GuildTranslationSettings,
@@ -110,6 +111,7 @@ class Translation(commands.Cog):
         self.registry = TranslationMirrorRegistry()
         self._webhooks: Dict[int, discord.Webhook] = {}
         self._webhook_unavailable_channel_ids = set()
+        self._background_tasks = set()
         self._locks = {}
         self._set_translation_state(channel_pairs, guild_settings or {})
         self.feedback_context_menu = None
@@ -127,6 +129,8 @@ class Translation(commands.Cog):
             self.client.tree.add_command(self.rewrite_context_menu)
 
     def cog_unload(self):
+        for task in self._background_tasks:
+            task.cancel()
         for command in (self.feedback_context_menu, self.rewrite_context_menu):
             if command is None:
                 continue
@@ -169,7 +173,33 @@ class Translation(commands.Cog):
         async with lock:
             await self._mirror_message(message, language_pair, target_channel_id)
             if config.WRITING_FEEDBACK_AUTO_REPLY:
-                await self._send_writing_feedback(message, channel_pair, language_pair)
+                self._schedule_writing_feedback(
+                    message,
+                    channel_pair,
+                    language_pair,
+                )
+
+    def _schedule_writing_feedback(
+        self,
+        message: discord.Message,
+        channel_pair: TranslationChannelPair,
+        language_pair: LanguagePair,
+    ) -> None:
+        task = asyncio.create_task(
+            self._send_writing_feedback(message, channel_pair, language_pair)
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        task.add_done_callback(self._log_background_task_failure)
+
+    @staticmethod
+    def _log_background_task_failure(task) -> None:
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            log.warning("Background translation task failed.", exc_info=True)
 
     async def feedback_context_menu_callback(
         self,
@@ -821,9 +851,21 @@ def build_translation_service(channel_pairs, guild_settings=None) -> Translation
 
     return TranslationService(
         [provider],
-        cache=TranslationCache(max_size=config.TRANSLATION_CACHE_SIZE),
+        cache=build_translation_cache(),
         max_concurrency=config.TRANSLATION_MAX_CONCURRENCY,
     )
+
+
+def build_translation_cache():
+    if (
+        config.TRANSLATION_PERSISTENT_CACHE_ENABLED
+        and config.TRANSLATION_CACHE_SIZE > 0
+    ):
+        return SQLiteTranslationCache(
+            config.TRANSLATION_CACHE_FILE,
+            max_size=config.TRANSLATION_CACHE_SIZE,
+        )
+    return TranslationCache(max_size=config.TRANSLATION_CACHE_SIZE)
 
 
 def build_writing_feedback_service() -> Optional[WritingFeedbackService]:

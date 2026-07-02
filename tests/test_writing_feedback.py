@@ -47,6 +47,11 @@ class FakeRewriteProvider:
         )
 
 
+class FakeHTTPSession:
+    def __init__(self, post):
+        self.post = post
+
+
 @pytest.mark.asyncio
 async def test_writing_feedback_service_suppresses_high_scores():
     result = WritingFeedbackResult(
@@ -362,11 +367,11 @@ def test_gemini_rewrite_provider_enters_cooldown_on_rate_limit(monkeypatch):
     def fake_post(*args, **kwargs):
         return response
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="model-one,model-two",
         rate_limit_cooldown_seconds=300,
+        session=FakeHTTPSession(fake_post),
     )
 
     with pytest.raises(WritingRewriteUnavailable):
@@ -399,10 +404,10 @@ def test_gemini_rewrite_provider_tries_next_model_after_rate_limit(monkeypatch):
             return rate_limited_response
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="model-one,model-two",
+        session=FakeHTTPSession(fake_post),
     )
 
     rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
@@ -436,10 +441,10 @@ def test_gemini_rewrite_provider_tries_next_model_after_503(monkeypatch):
             return unavailable_response
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="model-one,model-two",
+        session=FakeHTTPSession(fake_post),
     )
 
     rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
@@ -467,10 +472,10 @@ def test_gemini_rewrite_provider_tries_next_model_after_timeout(monkeypatch):
             raise requests.Timeout("timed out")
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="model-one,model-two",
+        session=FakeHTTPSession(fake_post),
     )
 
     rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
@@ -484,10 +489,10 @@ def test_gemini_rewrite_provider_reports_transient_failures_after_all_models(mon
     def fake_post(*args, **kwargs):
         raise requests.Timeout("timed out")
 
-    monkeypatch.setattr(requests, "post", fake_post)
     provider = GeminiWritingRewriteProvider(
         api_key="key",
         model="model-one,model-two",
+        session=FakeHTTPSession(fake_post),
     )
 
     with pytest.raises(WritingRewriteUnavailable):
@@ -511,8 +516,11 @@ def test_gemini_rewrite_provider_sends_structured_json_request(monkeypatch):
         captured["json"] = kwargs["json"]
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
-    provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="gemini-test",
+        session=FakeHTTPSession(fake_post),
+    )
 
     rewrite = provider.rewrite_sync(WritingRewriteRequest("Je aller.", "fr", 30))
 
@@ -539,8 +547,11 @@ def test_gemini_rewrite_provider_can_request_notes(monkeypatch):
         captured["json"] = kwargs["json"]
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
-    provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="gemini-test",
+        session=FakeHTTPSession(fake_post),
+    )
 
     rewrite = provider.rewrite_sync(
         WritingRewriteRequest("Je aller.", "fr", 30, include_notes=True)
@@ -635,8 +646,11 @@ def test_gemini_rewrite_provider_retries_with_larger_budget_after_max_tokens(mon
             return truncated_response
         return ok_response
 
-    monkeypatch.setattr(requests, "post", fake_post)
-    provider = GeminiWritingRewriteProvider(api_key="key", model="gemini-test")
+    provider = GeminiWritingRewriteProvider(
+        api_key="key",
+        model="gemini-test",
+        session=FakeHTTPSession(fake_post),
+    )
 
     rewrite = provider.rewrite_sync(
         WritingRewriteRequest("Je aller.", "fr", 30, include_notes=True)
