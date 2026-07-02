@@ -1009,11 +1009,12 @@ class ArgosTranslateProvider:
     def warmup_sync(self) -> None:
         try:
             import argostranslate.translate
-        except ImportError as exc:
-            raise TranslationError(
+        except ImportError:
+            log.warning(
                 "Argos Translate is not installed. Install argostranslate and the "
                 "required language models."
-            ) from exc
+            )
+            return
 
         installed_languages = argostranslate.translate.get_installed_languages()
         for source_lang, target_lang in self.language_pairs:

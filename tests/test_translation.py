@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 
 import pytest
 import requests
@@ -10,6 +11,7 @@ from bot.core.translation import (
     CasualEnglishNormalizer,
     GeminiTranslateProvider,
     LanguagePair,
+    ArgosTranslateProvider,
     SlangAwareTranslationProvider,
     TranslationCache,
     TranslationError,
@@ -378,6 +380,20 @@ def test_gemini_translate_provider_enters_cooldown_after_rate_limit():
 
     assert calls == 1
     assert provider._cooldown_until > 0
+
+
+def test_argos_warmup_does_not_require_argostranslate(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("argostranslate"):
+            raise ImportError("missing argos")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    provider = ArgosTranslateProvider([LanguagePair("en", "fr")])
+
+    provider.warmup_sync()
 
 
 def test_translation_provider_router_selects_provider_by_direction():
