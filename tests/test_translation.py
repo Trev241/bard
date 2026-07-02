@@ -61,12 +61,14 @@ class FakeMessage:
         author=None,
         channel=None,
         webhook_id=None,
+        jump_url="https://discord.com/channels/1/2/3",
     ):
         self.id = id
         self.content = content
         self.author = author or FakeAuthor()
         self.channel = channel
         self.webhook_id = webhook_id
+        self.jump_url = jump_url
 
 
 class FakeWebhook:
@@ -415,7 +417,8 @@ def test_format_context_message_caps_content():
     assert formatted.endswith("...")
 
 
-def test_format_webhook_mirror_message_omits_author_header():
+def test_format_webhook_mirror_message_adds_source_subtext_link():
+    message = FakeMessage(jump_url="https://discord.com/channels/1/2/3")
     result = TranslationResult(
         translated_text="Bonjour le monde",
         provider="fake",
@@ -423,7 +426,25 @@ def test_format_webhook_mirror_message_omits_author_header():
         pair=LanguagePair("en", "fr"),
     )
 
-    assert Translation._format_webhook_mirror_message(result) == "Bonjour le monde"
+    assert (
+        Translation._format_webhook_mirror_message(message, result)
+        == "Bonjour le monde\n-# [View original](https://discord.com/channels/1/2/3)"
+    )
+
+
+def test_format_webhook_mirror_message_keeps_translation_text_plain():
+    message = FakeMessage(jump_url="https://discord.com/channels/1/2/3")
+    result = TranslationResult(
+        translated_text="Bonjour [ami]",
+        provider="fake",
+        source_text="Hello [friend]",
+        pair=LanguagePair("en", "fr"),
+    )
+
+    assert (
+        Translation._format_webhook_mirror_message(message, result)
+        == "Bonjour [ami]\n-# [View original](https://discord.com/channels/1/2/3)"
+    )
 
 
 def test_webhook_username_and_avatar_url():
@@ -456,7 +477,10 @@ async def test_send_mirrored_message_uses_webhook(monkeypatch):
     mirrored = await cog._send_mirrored_message(channel, source_message, result)
 
     assert mirrored.id == 500
-    assert channel.webhook.sent[0][0] == "Bonjour"
+    assert (
+        channel.webhook.sent[0][0]
+        == "Bonjour\n-# [View original](https://discord.com/channels/1/2/3)"
+    )
     assert channel.webhook.sent[0][1]["username"] == "Trevis"
     assert channel.webhook.sent[0][1]["avatar_url"] == "https://example.com/a.png"
     assert channel.bot_messages == []

@@ -364,7 +364,7 @@ class Translation(commands.Cog):
                 webhook = await self._webhook_for_channel(target_channel)
                 if webhook is not None:
                     return await webhook.send(
-                        self._format_webhook_mirror_message(result),
+                        self._format_webhook_mirror_message(source_message, result),
                         username=self._webhook_username(source_message),
                         avatar_url=self._webhook_avatar_url(source_message),
                         allowed_mentions=discord.AllowedMentions.none(),
@@ -628,11 +628,22 @@ class Translation(commands.Cog):
         return f"{body[:1996]}..."
 
     @staticmethod
-    def _format_webhook_mirror_message(result: TranslationResult) -> str:
+    def _format_webhook_mirror_message(
+        message: discord.Message,
+        result: TranslationResult,
+    ) -> str:
         translated_text = result.translated_text.strip()
-        if len(translated_text) <= 2000:
-            return translated_text
-        return f"{translated_text[:1996]}..."
+        source_url = getattr(message, "jump_url", None)
+        if not source_url:
+            if len(translated_text) <= 2000:
+                return translated_text
+            return f"{translated_text[:1996]}..."
+
+        source_link = f"\n-# [View original]({source_url})"
+        max_text_length = max(1, 2000 - len(source_link) - 3)
+        if len(translated_text) > max_text_length:
+            translated_text = f"{translated_text[:max_text_length]}..."
+        return f"{translated_text}{source_link}"
 
     @staticmethod
     def _webhook_username(message: discord.Message) -> str:
