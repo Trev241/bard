@@ -939,7 +939,7 @@ class Translation(commands.Cog):
                 return translated_text
             return f"{translated_text[:1996]}..."
 
-        source_link = f"\n-# [View original]({source_url})"
+        source_link = f"\n-# [↗]({source_url})"
         max_text_length = max(1, 2000 - len(source_link) - 3)
         if len(translated_text) > max_text_length:
             translated_text = f"{translated_text[:max_text_length]}..."

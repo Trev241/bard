@@ -539,7 +539,7 @@ def test_format_webhook_mirror_message_adds_source_subtext_link():
 
     assert (
         Translation._format_webhook_mirror_message(message, result)
-        == "Bonjour le monde\n-# [View original](https://discord.com/channels/1/2/3)"
+        == "Bonjour le monde\n-# [↗](https://discord.com/channels/1/2/3)"
     )
 
 
@@ -554,7 +554,7 @@ def test_format_webhook_mirror_message_keeps_translation_text_plain():
 
     assert (
         Translation._format_webhook_mirror_message(message, result)
-        == "Bonjour [ami]\n-# [View original](https://discord.com/channels/1/2/3)"
+        == "Bonjour [ami]\n-# [↗](https://discord.com/channels/1/2/3)"
     )
 
 
@@ -590,7 +590,7 @@ async def test_send_mirrored_message_uses_webhook(monkeypatch):
     assert mirrored.id == 500
     assert (
         channel.webhook.sent[0][0]
-        == "Bonjour\n-# [View original](https://discord.com/channels/1/2/3)"
+        == "Bonjour\n-# [↗](https://discord.com/channels/1/2/3)"
     )
     assert channel.webhook.sent[0][1]["username"] == "Trevis"
     assert channel.webhook.sent[0][1]["avatar_url"] == "https://example.com/a.png"
