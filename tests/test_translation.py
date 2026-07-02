@@ -562,6 +562,38 @@ def test_feedback_language_for_rejects_source_webhook_and_bot_messages(monkeypat
     ) is None
 
 
+def test_automatic_writing_feedback_enabled_uses_guild_settings():
+    pair = TranslationChannelPair(
+        source_channel_id=100,
+        mirror_channel_id=200,
+        source_lang="en",
+        mirror_lang="fr",
+        guild_id=1,
+    )
+    cog = Translation(
+        client=None,
+        service=None,
+        channel_pairs=[pair],
+        guild_settings={
+            1: GuildTranslationSettings(guild_id=1, auto_rewrite_enabled=True)
+        },
+    )
+
+    assert cog._automatic_writing_feedback_enabled(pair)
+
+
+def test_automatic_writing_feedback_disabled_without_guild_settings():
+    pair = TranslationChannelPair(
+        source_channel_id=100,
+        mirror_channel_id=200,
+        source_lang="en",
+        mirror_lang="fr",
+    )
+    cog = Translation(client=None, service=None, channel_pairs=[pair])
+
+    assert not cog._automatic_writing_feedback_enabled(pair)
+
+
 @pytest.mark.asyncio
 async def test_schedule_writing_feedback_tracks_background_task(monkeypatch):
     pair = TranslationChannelPair(

@@ -170,7 +170,7 @@ class Translation(commands.Cog):
         ]
         async with lock:
             await self._mirror_message(message, language_pair, target_channel_id)
-            if config.WRITING_FEEDBACK_AUTO_REPLY:
+            if self._automatic_writing_feedback_enabled(channel_pair):
                 self._schedule_writing_feedback(
                     message,
                     channel_pair,
@@ -546,10 +546,21 @@ class Translation(commands.Cog):
             return None
         return self.guild_settings.get(int(guild_id))
 
+    def _automatic_writing_feedback_enabled(
+        self,
+        channel_pair: TranslationChannelPair,
+    ) -> bool:
+        if channel_pair.guild_id is None:
+            return False
+        settings = self.guild_settings.get(channel_pair.guild_id)
+        if settings is None:
+            return False
+        return settings.auto_rewrite_enabled
+
     def _auto_rewrite_threshold_for(self, message: discord.Message) -> Optional[int]:
         settings = self._settings_for_message(message)
         if settings is None:
-            return config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD
+            return None
         return settings.auto_rewrite_threshold
 
     def _auto_rewrite_enabled_for(self, message: discord.Message) -> bool:
@@ -857,7 +868,6 @@ def build_writing_feedback_service() -> Optional[WritingFeedbackService]:
         rewrite_provider=rewrite_provider,
         score_threshold=config.WRITING_FEEDBACK_SCORE_THRESHOLD,
         recommend_threshold=config.WRITING_FEEDBACK_RECOMMEND_THRESHOLD,
-        auto_rewrite_threshold=config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD,
     )
 
 
@@ -878,7 +888,6 @@ def build_writing_rewrite_provider():
         rate_limit_cooldown_seconds=(
             config.WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS
         ),
-        extra_instructions=config.WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS,
     )
 
 

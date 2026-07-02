@@ -63,16 +63,13 @@ TRANSLATION_CACHE_FILE=bot/resources/translation/cache.sqlite3
 TRANSLATION_USE_WEBHOOKS=true
 TRANSLATION_NORMALIZE_SLANG=true
 WRITING_FEEDBACK_ENABLED=true
-WRITING_FEEDBACK_AUTO_REPLY=false
 WRITING_FEEDBACK_PROVIDER=grammalecte
 WRITING_FEEDBACK_LANGUAGES=fr
 WRITING_FEEDBACK_SCORE_THRESHOLD=75
 WRITING_FEEDBACK_RECOMMEND_THRESHOLD=45
-WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD=25
 WRITING_FEEDBACK_LLM_PROVIDER=gemini
 WRITING_FEEDBACK_GEMINI_API_KEY=<your Google AI Studio Gemini API key>
 WRITING_FEEDBACK_GEMINI_MODEL=gemini-3.5-flash
-WRITING_FEEDBACK_LLM_EXTRA_INSTRUCTIONS=
 WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 ```
 
@@ -86,7 +83,7 @@ When `TRANSLATION_NORMALIZE_SLANG=true`, Bard normalizes common casual English b
 
 When writing feedback is enabled, Bard can check messages written in the mirror channel for the configured foreign language. For French, Bard uses Grammalecte to produce a rule-based writing score from grammar, typography, and suggestion density. Feedback is on demand by default: right-click or long-press a mirror-channel message and choose `Apps > French Feedback`, or react with `📝` to request basic feedback in the channel. Basic feedback is rule-based and does not call the LLM. Automatic feedback replies run after the translated message is mirrored, so feedback and rewrite latency does not delay the translation send path.
 
-For a fuller LLM rewrite, choose `Apps > French Rewrite` or react with `✨`. Bard asks Gemini for a natural rewrite plus short English notes focused on corrections and the reasoning behind them. Rewrite requests post the original message, natural rewrite, and notes inline. Scores at or below `WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD` also trigger an LLM rewrite automatically when feedback is requested. Set `WRITING_FEEDBACK_AUTO_REPLY=true` to restore automatic feedback replies for messages at or below `WRITING_FEEDBACK_SCORE_THRESHOLD`.
+For a fuller LLM rewrite, choose `Apps > French Rewrite` or react with `✨`. Bard asks Gemini for a natural rewrite plus short English notes focused on corrections and the reasoning behind them. Rewrite requests post the original message, natural rewrite, and notes inline. Automatic feedback/rewrite behavior, rewrite threshold, and extra LLM instructions are configured per guild from the dashboard translation settings page.
 
 The `French Feedback` and `French Rewrite` context menus are Discord app commands. Bard syncs them to each connected server on startup, so restart Bard after enabling translation feedback. If the commands do not appear under `Apps`, make sure the bot was invited with the `applications.commands` scope and that you have permission to use application commands in the channel.
 
