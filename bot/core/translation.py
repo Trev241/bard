@@ -65,7 +65,7 @@ class TranslationProvider(Protocol):
 class TranslationCache:
     def __init__(self, max_size: int = 1000):
         self.max_size = max(0, max_size)
-        self._items: "OrderedDict[Tuple[str, str, str], TranslationResult]" = OrderedDict()
+        self._items: "OrderedDict[Tuple[str, str, str, str], TranslationResult]" = OrderedDict()
 
     def get(self, request: TranslationRequest) -> Optional[TranslationResult]:
         if self.max_size == 0:
@@ -91,8 +91,9 @@ class TranslationCache:
             self._items.popitem(last=False)
 
     @staticmethod
-    def _key(request: TranslationRequest) -> Tuple[str, str, str]:
+    def _key(request: TranslationRequest) -> Tuple[str, str, str, str]:
         return (
+            str(request.context.get("guild_id") or ""),
             request.pair.source.casefold(),
             request.pair.target.casefold(),
             " ".join(request.text.split()),

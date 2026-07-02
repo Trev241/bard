@@ -124,7 +124,10 @@ class WritingFeedbackService:
         auto_rewrite_threshold = _clamp_score(
             request.context.get("auto_rewrite_threshold", self.auto_rewrite_threshold)
         )
-        if result.score <= auto_rewrite_threshold:
+        auto_rewrite_enabled = bool(
+            request.context.get("auto_rewrite_enabled", True)
+        )
+        if auto_rewrite_enabled and result.score <= auto_rewrite_threshold:
             return await self.assess(request, force_rewrite=True)
 
         if result.score > self.recommend_threshold:

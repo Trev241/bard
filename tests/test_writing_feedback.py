@@ -190,6 +190,46 @@ async def test_writing_feedback_service_auto_rewrites_atrocious_scores():
 
 
 @pytest.mark.asyncio
+async def test_writing_feedback_service_respects_disabled_auto_rewrite():
+    result = WritingFeedbackResult(
+        score=20,
+        language="fr",
+        source_text="Je aller au magasin.",
+        provider="fake",
+        issues=(
+            WritingFeedbackIssue(
+                start=3,
+                end=8,
+                message="Conjugaison incorrecte.",
+                suggestions=("vais",),
+            ),
+        ),
+        recommendation="Je vais au magasin.",
+    )
+    rewrite_provider = FakeRewriteProvider("Je vais au magasin.")
+    service = WritingFeedbackService(
+        [FakeWritingFeedbackProvider(result)],
+        rewrite_provider=rewrite_provider,
+        score_threshold=75,
+        recommend_threshold=45,
+        auto_rewrite_threshold=25,
+    )
+
+    checked = await service.check(
+        WritingFeedbackRequest(
+            "Je aller au magasin.",
+            "FR",
+            context={"auto_rewrite_enabled": False},
+        )
+    )
+
+    assert checked is not None
+    assert checked.recommendation == "Je vais au magasin."
+    assert not checked.llm_rewrite
+    assert rewrite_provider.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_writing_feedback_service_assess_can_force_rewrite_with_notes():
     result = WritingFeedbackResult(
         score=100,

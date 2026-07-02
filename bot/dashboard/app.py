@@ -256,6 +256,12 @@ def translation_settings_from_form(guild, form):
         errors.append("Source channel must belong to the selected guild.")
     if mirror_channel_id and mirror_channel_id not in channel_ids:
         errors.append("Mirror channel must belong to the selected guild.")
+    if (
+        source_channel_id
+        and mirror_channel_id
+        and source_channel_id == mirror_channel_id
+    ):
+        errors.append("Source and mirror channels must be different.")
 
     for label, value in (
         ("Source channel ID", source_channel_id),

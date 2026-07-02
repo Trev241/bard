@@ -464,6 +464,7 @@ class Translation(commands.Cog):
                 "channel_id": message.channel.id,
                 "author_id": message.author.id,
                 "conversation_context": await self._writing_context_for(message),
+                "auto_rewrite_enabled": self._auto_rewrite_enabled_for(message),
                 "auto_rewrite_threshold": self._auto_rewrite_threshold_for(message),
                 "llm_extra_instructions": self._llm_extra_instructions_for(message),
             },
@@ -521,8 +522,14 @@ class Translation(commands.Cog):
     def _auto_rewrite_threshold_for(self, message: discord.Message) -> Optional[int]:
         settings = self._settings_for_message(message)
         if settings is None:
-            return None
+            return config.WRITING_FEEDBACK_AUTO_REWRITE_THRESHOLD
         return settings.auto_rewrite_threshold
+
+    def _auto_rewrite_enabled_for(self, message: discord.Message) -> bool:
+        settings = self._settings_for_message(message)
+        if settings is None:
+            return True
+        return settings.auto_rewrite_enabled
 
     def _llm_extra_instructions_for(self, message: discord.Message) -> str:
         settings = self._settings_for_message(message)

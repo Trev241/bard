@@ -118,6 +118,31 @@ async def test_translation_service_uses_provider_and_cache():
 
 
 @pytest.mark.asyncio
+async def test_translation_service_cache_is_scoped_by_guild():
+    provider = FakeTranslationProvider()
+    service = TranslationService(
+        [provider],
+        cache=TranslationCache(max_size=10),
+        max_concurrency=1,
+    )
+    pair = LanguagePair("en", "fr")
+
+    first = await service.translate(
+        TranslationRequest("hello", pair, context={"guild_id": 1})
+    )
+    second = await service.translate(
+        TranslationRequest("hello", pair, context={"guild_id": 2})
+    )
+    third = await service.translate(
+        TranslationRequest("hello", pair, context={"guild_id": 1})
+    )
+
+    assert first == third
+    assert second.translated_text == "translated:hello"
+    assert provider.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_translation_service_warms_up_provider():
     provider = FakeTranslationProvider()
     service = TranslationService([provider])
