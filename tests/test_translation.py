@@ -6,6 +6,8 @@ import requests
 
 from bot import config
 from bot.cogs.translation import TranslationChannelPair
+from bot.cogs.translation import MirroredMessage
+from bot.cogs.translation import TranslationMirrorRegistry
 from bot.cogs.translation import Translation
 from bot.core.translation import (
     CasualEnglishNormalizer,
@@ -63,6 +65,18 @@ class FakeAuthor:
         self.display_avatar = type("Avatar", (), {"url": avatar_url})()
 
 
+class FakeGuild:
+    def __init__(self, id=1):
+        self.id = id
+
+
+class FakeReference:
+    def __init__(self, message_id=None, resolved=None, channel_id=None):
+        self.message_id = message_id
+        self.resolved = resolved
+        self.channel_id = channel_id
+
+
 class FakeMessage:
     def __init__(
         self,
@@ -72,6 +86,8 @@ class FakeMessage:
         channel=None,
         webhook_id=None,
         jump_url="https://discord.com/channels/1/2/3",
+        reference=None,
+        guild=None,
     ):
         self.id = id
         self.content = content
@@ -79,6 +95,8 @@ class FakeMessage:
         self.channel = channel
         self.webhook_id = webhook_id
         self.jump_url = jump_url
+        self.reference = reference
+        self.guild = guild or getattr(channel, "guild", None)
 
 
 class FakeWebhook:
@@ -92,8 +110,9 @@ class FakeWebhook:
 
 
 class FakeChannel:
-    def __init__(self, id=200):
+    def __init__(self, id=200, guild=None):
         self.id = id
+        self.guild = guild or FakeGuild()
         self.webhook = FakeWebhook()
         self.bot_messages = []
 
@@ -435,6 +454,65 @@ def test_translation_channel_pair_maps_both_directions():
     assert pair.target_channel_id_for(300) is None
 
 
+def test_translation_mirror_registry_prunes_oldest_pair():
+    registry = TranslationMirrorRegistry(max_size=2)
+    first = MirroredMessage(
+        source_message_id=1,
+        mirror_message_id=101,
+        source_channel_id=10,
+        mirror_channel_id=20,
+        pair=LanguagePair("en", "fr"),
+        provider="fake",
+    )
+    second = MirroredMessage(
+        source_message_id=2,
+        mirror_message_id=102,
+        source_channel_id=10,
+        mirror_channel_id=20,
+        pair=LanguagePair("en", "fr"),
+        provider="fake",
+    )
+    third = MirroredMessage(
+        source_message_id=3,
+        mirror_message_id=103,
+        source_channel_id=10,
+        mirror_channel_id=20,
+        pair=LanguagePair("en", "fr"),
+        provider="fake",
+    )
+
+    registry.add(first)
+    registry.add(second)
+    registry.add(third)
+
+    assert not registry.contains_message(1)
+    assert not registry.contains_message(101)
+    assert registry.contains_message(2)
+    assert registry.contains_message(102)
+    assert registry.contains_message(3)
+    assert registry.contains_message(103)
+    assert len(registry.by_source_message_id) == 2
+    assert len(registry.by_mirror_message_id) == 2
+
+
+def test_translation_mirror_registry_can_be_disabled():
+    registry = TranslationMirrorRegistry(max_size=0)
+
+    registry.add(
+        MirroredMessage(
+            source_message_id=1,
+            mirror_message_id=101,
+            source_channel_id=10,
+            mirror_channel_id=20,
+            pair=LanguagePair("en", "fr"),
+            provider="fake",
+        )
+    )
+
+    assert not registry.contains_message(1)
+    assert not registry.contains_message(101)
+
+
 def test_format_writing_feedback_includes_score_issues_and_recommendation():
     cog = Translation(client=None, service=None, channel_pairs=[])
     message = type(
@@ -558,6 +636,33 @@ def test_format_webhook_mirror_message_keeps_translation_text_plain():
     )
 
 
+def test_format_webhook_mirror_message_omits_source_link_for_passthrough():
+    message = FakeMessage(
+        content="https://youtube.com/watch?v=abc",
+        jump_url="https://discord.com/channels/1/2/3",
+    )
+    result = Translation._passthrough_translation_result(
+        message,
+        LanguagePair("en", "fr"),
+    )
+
+    assert (
+        Translation._format_webhook_mirror_message(message, result)
+        == "https://youtube.com/watch?v=abc"
+    )
+
+
+def test_format_mirror_message_omits_header_for_passthrough():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    message = FakeMessage(content="😂😂")
+    result = Translation._passthrough_translation_result(
+        message,
+        LanguagePair("en", "fr"),
+    )
+
+    assert cog._format_mirror_message(message, result) == "😂😂"
+
+
 def test_webhook_username_and_avatar_url():
     message = FakeMessage(
         author=FakeAuthor(
@@ -595,6 +700,160 @@ async def test_send_mirrored_message_uses_webhook(monkeypatch):
     assert channel.webhook.sent[0][1]["username"] == "Trevis"
     assert channel.webhook.sent[0][1]["avatar_url"] == "https://example.com/a.png"
     assert channel.bot_messages == []
+
+
+@pytest.mark.asyncio
+async def test_send_mirrored_message_adds_reply_marker_for_webhook(monkeypatch):
+    monkeypatch.setattr(config, "TRANSLATION_USE_WEBHOOKS", True)
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    channel = FakeChannel(id=200, guild=FakeGuild(id=1))
+    replied_message = FakeMessage(
+        id=10,
+        content="This is the original point",
+        author=FakeAuthor(display_name="Ari"),
+        channel=FakeChannel(id=100, guild=channel.guild),
+    )
+    cog.registry.add(
+        MirroredMessage(
+            source_message_id=10,
+            mirror_message_id=20,
+            source_channel_id=100,
+            mirror_channel_id=200,
+            pair=LanguagePair("en", "fr"),
+            provider="fake",
+            source_reply_label="Ari: This is the original point",
+            mirror_reply_label="Ari: C'est le point d'origine",
+        )
+    )
+    source_message = FakeMessage(
+        id=11,
+        reference=FakeReference(message_id=10, resolved=replied_message),
+        channel=FakeChannel(id=100, guild=channel.guild),
+    )
+    result = TranslationResult(
+        translated_text="Bonjour",
+        provider="fake",
+        source_text="Hello",
+        pair=LanguagePair("en", "fr"),
+    )
+
+    await cog._send_mirrored_message(channel, source_message, result)
+
+    assert channel.webhook.sent[0][0] == (
+        "-# ↩ Replying to [Ari: C'est le point d'origine]"
+        "(https://discord.com/channels/1/200/20)\n"
+        "Bonjour\n-# [↗](https://discord.com/channels/1/2/3)"
+    )
+
+
+def test_reply_marker_uses_generic_text_without_resolved_message():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    channel = FakeChannel(id=200, guild=FakeGuild(id=1))
+    cog.registry.add(
+        MirroredMessage(
+            source_message_id=10,
+            mirror_message_id=20,
+            source_channel_id=100,
+            mirror_channel_id=200,
+            pair=LanguagePair("en", "fr"),
+            provider="fake",
+        )
+    )
+    source_message = FakeMessage(
+        id=11,
+        reference=FakeReference(message_id=10),
+        channel=FakeChannel(id=100, guild=channel.guild),
+    )
+
+    assert cog._reply_marker_for(source_message, channel) == (
+        "↩ Replying to [mirrored message]"
+        "(https://discord.com/channels/1/200/20)"
+    )
+
+
+def test_reply_marker_uses_label_matching_linked_side():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    channel = FakeChannel(id=100, guild=FakeGuild(id=1))
+    cog.registry.add(
+        MirroredMessage(
+            source_message_id=10,
+            mirror_message_id=20,
+            source_channel_id=100,
+            mirror_channel_id=200,
+            pair=LanguagePair("en", "fr"),
+            provider="fake",
+            source_reply_label="Trev: What? Don't have your head?",
+            mirror_reply_label="Trev: Quoi ? Tu n'as pas ta tete ?",
+        )
+    )
+    source_message = FakeMessage(
+        id=21,
+        reference=FakeReference(message_id=20),
+        channel=FakeChannel(id=200, guild=channel.guild),
+    )
+
+    assert cog._reply_marker_for(source_message, channel) == (
+        "↩ Replying to [Trev: What? Don't have your head?]"
+        "(https://discord.com/channels/1/100/10)"
+    )
+
+
+def test_mirrored_message_registry_stores_source_and_mirror_reply_labels():
+    cog = Translation(client=None, service=None, channel_pairs=[])
+    message = FakeMessage(
+        content="What? Don't have your head?",
+        author=FakeAuthor(display_name="Trev"),
+    )
+    result = TranslationResult(
+        translated_text="Quoi ? Tu n'as pas ta tete ?",
+        provider="fake",
+        source_text=message.content,
+        pair=LanguagePair("en", "fr"),
+    )
+
+    assert (
+        cog._reply_label_for_message(message)
+        == "Trev: What? Don't have your head?"
+    )
+    assert (
+        cog._reply_label_for_result(message, result)
+        == "Trev: Quoi ? Tu n'as pas ta tete ?"
+    )
+
+
+def test_reply_marker_excerpt_strips_mirror_source_link_before_truncating():
+    content = (
+        "What? Don't have your head?\n"
+        "-# [↗](https://discord.com/channels/423759031157653504/"
+        "1522832892546257006/1522835279587704962)"
+    )
+
+    assert (
+        Translation._reply_marker_excerpt(content)
+        == "What? Don't have your head?"
+    )
+
+
+def test_reply_marker_excerpt_strips_previous_reply_marker():
+    content = (
+        "-# ↩ Replying to [Ari: Earlier point]"
+        "(https://discord.com/channels/1/200/20)\n"
+        "What? Don't have your head?\n"
+        "-# [↗](https://discord.com/channels/423759031157653504/"
+        "1522832892546257006/1522835279587704962)"
+    )
+
+    assert (
+        Translation._reply_marker_excerpt(content)
+        == "What? Don't have your head?"
+    )
+
+
+def test_reply_marker_excerpt_is_capped_for_long_messages():
+    excerpt = Translation._reply_marker_excerpt("word " * 100)
+
+    assert len(excerpt) == 80
+    assert excerpt.endswith("...")
 
 
 def test_should_use_context_message_skips_bots_and_mirrors():

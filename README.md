@@ -58,6 +58,7 @@ Example `.env` configuration:
 TRANSLATION_ENABLED=true
 TRANSLATION_MAX_CONCURRENCY=1
 TRANSLATION_CACHE_SIZE=1000
+TRANSLATION_MIRROR_REGISTRY_SIZE=2000
 TRANSLATION_PERSISTENT_CACHE_ENABLED=true
 TRANSLATION_CACHE_FILE=bot/resources/translation/cache.sqlite3
 TRANSLATION_USE_WEBHOOKS=true
@@ -81,6 +82,8 @@ WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 Bard loads translation channel pairs and per-direction engines from `bot/resources/translation/settings.json`, which is managed through the dashboard translation settings page. If a guild is missing source channel, mirror channel, language codes, or either direction's translation provider in that settings file, translation mirroring is unavailable for that guild instead of falling back to `.env`.
 
 `TRANSLATION_CACHE_SIZE` controls the maximum number of cached translations. When `TRANSLATION_PERSISTENT_CACHE_ENABLED=true`, Bard stores those entries in `TRANSLATION_CACHE_FILE` so repeated phrases survive restarts. Cache entries are scoped by guild, language direction, normalized text, and selected translation route.
+
+`TRANSLATION_MIRROR_REGISTRY_SIZE` controls how many recent mirrored message pairs Bard keeps in memory for reply mapping and loop prevention. Older pairs are pruned automatically to prevent long-running memory growth.
 
 When `TRANSLATION_USE_WEBHOOKS=true`, Bard sends mirrored translations through a channel webhook named `Bard Translation Mirror` using the original author's display name and avatar. This makes mirror channels look closer to the source channel. Bard needs `Manage Webhooks` in each mirror channel for this; if webhook sending fails, Bard falls back to a normal bot message.
 

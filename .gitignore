@@ -169,3 +169,4 @@ stats.db
 stats.db-journal
 head-commit.json
 entries.json
+cache.sqlite3

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -83,22 +84,54 @@ class MirroredMessage:
     mirror_channel_id: int
     pair: LanguagePair
     provider: str
+    source_reply_label: str = "mirrored message"
+    mirror_reply_label: str = "mirrored message"
 
 
 class TranslationMirrorRegistry:
-    def __init__(self):
+    def __init__(self, max_size: int = 10000):
+        self.max_size = max(0, max_size)
         self.by_source_message_id: Dict[int, MirroredMessage] = {}
         self.by_mirror_message_id: Dict[int, MirroredMessage] = {}
+        self._source_message_order = OrderedDict()
 
     def add(self, mirrored_message: MirroredMessage) -> None:
+        if self.max_size == 0:
+            return
+
+        self._remove_by_source_message_id(mirrored_message.source_message_id)
+        self._remove_by_mirror_message_id(mirrored_message.mirror_message_id)
+
         self.by_source_message_id[mirrored_message.source_message_id] = mirrored_message
         self.by_mirror_message_id[mirrored_message.mirror_message_id] = mirrored_message
+        self._source_message_order[mirrored_message.source_message_id] = None
+        self._source_message_order.move_to_end(mirrored_message.source_message_id)
+
+        while len(self._source_message_order) > self.max_size:
+            source_message_id, _ = self._source_message_order.popitem(last=False)
+            mirrored = self.by_source_message_id.pop(source_message_id, None)
+            if mirrored is not None:
+                self.by_mirror_message_id.pop(mirrored.mirror_message_id, None)
 
     def contains_message(self, message_id: int) -> bool:
         return (
             message_id in self.by_source_message_id
             or message_id in self.by_mirror_message_id
         )
+
+    def _remove_by_source_message_id(self, source_message_id: int) -> None:
+        mirrored = self.by_source_message_id.pop(source_message_id, None)
+        if mirrored is None:
+            return
+        self.by_mirror_message_id.pop(mirrored.mirror_message_id, None)
+        self._source_message_order.pop(source_message_id, None)
+
+    def _remove_by_mirror_message_id(self, mirror_message_id: int) -> None:
+        mirrored = self.by_mirror_message_id.pop(mirror_message_id, None)
+        if mirrored is None:
+            return
+        self.by_source_message_id.pop(mirrored.source_message_id, None)
+        self._source_message_order.pop(mirrored.source_message_id, None)
 
 
 class Translation(commands.Cog):
@@ -115,7 +148,7 @@ class Translation(commands.Cog):
         self.writing_feedback_service = writing_feedback_service
         self.channel_pairs = []
         self.guild_settings = {}
-        self.registry = TranslationMirrorRegistry()
+        self.registry = TranslationMirrorRegistry(config.TRANSLATION_MIRROR_REGISTRY_SIZE)
         self._webhooks: Dict[int, discord.Webhook] = {}
         self._webhook_unavailable_channel_ids = set()
         self._background_tasks = set()
@@ -603,6 +636,8 @@ class Translation(commands.Cog):
                 mirror_channel_id=target_channel_id,
                 pair=language_pair,
                 provider=result.provider,
+                source_reply_label=self._reply_label_for_message(message),
+                mirror_reply_label=self._reply_label_for_result(message, result),
             )
         )
 
@@ -617,7 +652,14 @@ class Translation(commands.Cog):
                 webhook = await self._webhook_for_channel(target_channel)
                 if webhook is not None:
                     return await webhook.send(
-                        self._format_webhook_mirror_message(source_message, result),
+                        self._format_webhook_mirror_message(
+                            source_message,
+                            result,
+                            reply_marker=self._reply_marker_for(
+                                source_message,
+                                target_channel,
+                            ),
+                        ),
                         username=self._webhook_username(source_message),
                         avatar_url=self._webhook_avatar_url(source_message),
                         allowed_mentions=discord.AllowedMentions.none(),
@@ -633,7 +675,11 @@ class Translation(commands.Cog):
                 )
 
         return await target_channel.send(
-            self._format_mirror_message(source_message, result),
+            self._format_mirror_message(
+                source_message,
+                result,
+                reply_marker=self._reply_marker_for(source_message, target_channel),
+            ),
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -914,36 +960,183 @@ class Translation(commands.Cog):
         self,
         message: discord.Message,
         result: TranslationResult,
+        *,
+        reply_marker: str = "",
     ) -> str:
-        author = discord.utils.escape_markdown(message.author.display_name)
         translated_text = result.translated_text.strip()
+        if self._is_passthrough_translation_result(result):
+            if len(translated_text) <= 2000:
+                return self._with_reply_marker(translated_text, reply_marker)
+            return self._with_reply_marker(f"{translated_text[:1996]}...", reply_marker)
+
+        author = discord.utils.escape_markdown(message.author.display_name)
         body = (
             f"**{author}** [{result.pair.source}->{result.pair.target}]\n"
             f"{translated_text}"
         )
 
         if len(body) <= 2000:
-            return body
+            return self._with_reply_marker(body, reply_marker)
 
-        return f"{body[:1996]}..."
+        return self._with_reply_marker(f"{body[:1996]}...", reply_marker)
 
     @staticmethod
     def _format_webhook_mirror_message(
         message: discord.Message,
         result: TranslationResult,
+        *,
+        reply_marker: str = "",
     ) -> str:
         translated_text = result.translated_text.strip()
+        if Translation._is_passthrough_translation_result(result):
+            if len(translated_text) <= 2000:
+                return Translation._with_reply_marker(translated_text, reply_marker)
+            return Translation._with_reply_marker(
+                f"{translated_text[:1996]}...",
+                reply_marker,
+            )
+
         source_url = getattr(message, "jump_url", None)
         if not source_url:
             if len(translated_text) <= 2000:
-                return translated_text
-            return f"{translated_text[:1996]}..."
+                return Translation._with_reply_marker(translated_text, reply_marker)
+            return Translation._with_reply_marker(
+                f"{translated_text[:1996]}...",
+                reply_marker,
+            )
 
         source_link = f"\n-# [↗]({source_url})"
         max_text_length = max(1, 2000 - len(source_link) - 3)
         if len(translated_text) > max_text_length:
             translated_text = f"{translated_text[:max_text_length]}..."
-        return f"{translated_text}{source_link}"
+        return Translation._with_reply_marker(
+            f"{translated_text}{source_link}",
+            reply_marker,
+        )
+
+    @staticmethod
+    def _is_passthrough_translation_result(result: TranslationResult) -> bool:
+        return result.provider == "passthrough"
+
+    def _reply_marker_for(self, message: discord.Message, target_channel) -> str:
+        reference = getattr(message, "reference", None)
+        if reference is None:
+            return ""
+
+        referenced_message_id = getattr(reference, "message_id", None)
+        referenced_message = getattr(reference, "resolved", None)
+        if referenced_message_id is None:
+            referenced_message_id = getattr(referenced_message, "id", None)
+        if referenced_message_id is None:
+            return ""
+
+        mirrored_message = self.registry.by_source_message_id.get(referenced_message_id)
+        if mirrored_message is not None:
+            target_message_id = mirrored_message.mirror_message_id
+            target_channel_id = mirrored_message.mirror_channel_id
+            reply_label = mirrored_message.mirror_reply_label
+        else:
+            mirrored_message = self.registry.by_mirror_message_id.get(
+                referenced_message_id
+            )
+            if mirrored_message is None:
+                return ""
+            target_message_id = mirrored_message.source_message_id
+            target_channel_id = mirrored_message.source_channel_id
+            reply_label = mirrored_message.source_reply_label
+
+        guild_id = getattr(getattr(target_channel, "guild", None), "id", None)
+        if guild_id is None:
+            guild_id = getattr(getattr(message, "guild", None), "id", None)
+
+        if guild_id is None:
+            return reply_label
+
+        reply_url = (
+            f"https://discord.com/channels/{guild_id}/"
+            f"{target_channel_id}/{target_message_id}"
+        )
+        return f"↩ Replying to [{reply_label}]({reply_url})"
+
+    @classmethod
+    def _reply_label_for_message(cls, message: discord.Message) -> str:
+        author = getattr(message, "author", None)
+        author_name = getattr(author, "display_name", None) or getattr(
+            author,
+            "name",
+            None,
+        )
+        content = cls._reply_marker_excerpt(getattr(message, "content", ""))
+
+        return cls._reply_label_from_parts(author_name, content)
+
+    @classmethod
+    def _reply_label_for_result(
+        cls,
+        message: discord.Message,
+        result: TranslationResult,
+    ) -> str:
+        author = getattr(message, "author", None)
+        author_name = getattr(author, "display_name", None) or getattr(
+            author,
+            "name",
+            None,
+        )
+        content = cls._reply_marker_excerpt(result.translated_text)
+
+        return cls._reply_label_from_parts(author_name, content)
+
+    @classmethod
+    def _reply_label_from_parts(cls, author_name, content: str) -> str:
+        if author_name and content:
+            return cls._escape_reply_link_text(f"{author_name}: {content}")
+        if author_name:
+            return cls._escape_reply_link_text(str(author_name))
+        if content:
+            return cls._escape_reply_link_text(content)
+        return "mirrored message"
+
+    @staticmethod
+    def _reply_marker_excerpt(content: str, max_length: int = 80) -> str:
+        text = Translation._without_mirror_chrome(str(content or ""))
+        text = " ".join(text.split())
+        if not text:
+            return ""
+        if len(text) <= max_length:
+            return text
+        return f"{text[: max_length - 3].rstrip()}..."
+
+    @staticmethod
+    def _without_mirror_chrome(content: str) -> str:
+        text = re.sub(
+            r"^-#\s*↩\s*Replying to\s+.+\n",
+            "",
+            content,
+            count=1,
+        )
+        text = re.sub(
+            r"(?:^|\n)-#\s*\[↗\]\(https://discord\.com/channels/\d+/\d+/\d+\)\s*$",
+            "",
+            text,
+        ).strip()
+        return text
+
+    @staticmethod
+    def _escape_reply_link_text(text: str) -> str:
+        escaped = discord.utils.escape_markdown(str(text), as_needed=True)
+        return escaped.replace("[", r"\[").replace("]", r"\]")
+
+    @staticmethod
+    def _with_reply_marker(text: str, reply_marker: str = "") -> str:
+        if not reply_marker:
+            return text
+
+        prefix = f"-# {reply_marker}\n"
+        if len(prefix) + len(text) <= 2000:
+            return f"{prefix}{text}"
+
+        max_text_length = max(1, 2000 - len(prefix) - 3)
+        return f"{prefix}{text[:max_text_length]}..."
 
     @staticmethod
     def _webhook_username(message: discord.Message) -> str:
