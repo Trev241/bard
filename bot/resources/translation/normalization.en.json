@@ -33,9 +33,9 @@
       "description": "Treat remaining ur tokens as your."
     },
     {
-      "pattern": "\\bvas\\b",
-      "replacement": "what's up",
-      "description": "Normalize server shorthand for a casual greeting/check-in."
+      "pattern": "\\bvas+\\b",
+      "replacement": "what",
+      "description": "Normalize infamous ohnepixel vas as what"
     }
   ]
 }

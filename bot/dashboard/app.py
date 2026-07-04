@@ -4,6 +4,7 @@ import hmac
 import hashlib
 import secrets
 import asyncio
+import re
 from urllib.parse import urlencode
 
 from bot import client, app, config, socketio
@@ -34,6 +35,7 @@ DISCORD_API_BASE_URL = "https://discord.com/api/v10"
 DISCORD_OAUTH_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 DISCORD_OAUTH_TOKEN_URL = f"{DISCORD_API_BASE_URL}/oauth2/token"
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
+NORMALIZATION_RULES_FILE = config.TRANSLATION_RESOURCES_DIR / "normalization.en.json"
 TRANSLATION_SETTINGS_STORE = TranslationSettingsStore(
     config.TRANSLATION_GUILD_SETTINGS_FILE
 )
@@ -189,6 +191,24 @@ def translation_settings_dashboard():
             )
             schedule_translation_settings_reload()
             status = "reset"
+        elif action == "add_normalization_rule" and selected_guild is not None:
+            normalization_errors = add_normalization_rule_from_form(request.form)
+            errors.extend(normalization_errors)
+            if not errors:
+                schedule_translation_settings_reload()
+                status = "normalization_added"
+        elif action == "edit_normalization_rule" and selected_guild is not None:
+            normalization_errors = edit_normalization_rule_from_form(request.form)
+            errors.extend(normalization_errors)
+            if not errors:
+                schedule_translation_settings_reload()
+                status = "normalization_updated"
+        elif action == "delete_normalization_rule" and selected_guild is not None:
+            normalization_errors = delete_normalization_rule_from_form(request.form)
+            errors.extend(normalization_errors)
+            if not errors:
+                schedule_translation_settings_reload()
+                status = "normalization_deleted"
         elif selected_guild is not None:
             setting, form_errors = translation_settings_from_form(
                 selected_guild,
@@ -207,6 +227,7 @@ def translation_settings_dashboard():
         selected_guild=selected_guild,
         channels=text_channels_for_guild(selected_guild),
         settings=settings,
+        normalization_rules=load_normalization_rules(),
         default_prompt=GeminiWritingRewriteProvider.DEFAULT_SYSTEM_PROMPT,
         status=status,
         errors=errors,
@@ -296,6 +317,144 @@ def translation_settings_from_form(guild, form):
         ),
         errors,
     )
+
+
+def load_normalization_rules():
+    data = load_normalization_data()
+    rules = data.get("rules") or []
+    indexed_rules = []
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            continue
+        indexed_rule = dict(rule)
+        indexed_rule["index"] = index
+        indexed_rules.append(indexed_rule)
+    return indexed_rules
+
+
+def load_normalization_data():
+    try:
+        return json.loads(NORMALIZATION_RULES_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"version": 1, "source_language": "en", "rules": []}
+    except (OSError, json.JSONDecodeError):
+        return {"version": 1, "source_language": "en", "rules": []}
+
+
+def save_normalization_data(data):
+    NORMALIZATION_RULES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    NORMALIZATION_RULES_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def add_normalization_rule_from_form(form):
+    errors = []
+    phrase = (form.get("normalization_phrase") or "").strip()
+    replacement = (form.get("normalization_replacement") or "").strip()
+    description = (form.get("normalization_description") or "").strip()
+
+    if not phrase:
+        errors.append("Normalization phrase is required.")
+    if not replacement:
+        errors.append("Normalization replacement is required.")
+    if len(phrase) > 80:
+        errors.append("Normalization phrase must be 80 characters or fewer.")
+    if len(replacement) > 120:
+        errors.append("Normalization replacement must be 120 characters or fewer.")
+    if errors:
+        return errors
+
+    data = load_normalization_data()
+    rules = data.setdefault("rules", [])
+    if not isinstance(rules, list):
+        return ["Normalization rules file has an invalid rules list."]
+
+    pattern = normalization_pattern_for_phrase(phrase)
+    if any(str(rule.get("pattern") or "") == pattern for rule in rules if isinstance(rule, dict)):
+        return ["That normalization phrase already exists."]
+
+    rule = {
+        "pattern": pattern,
+        "replacement": replacement,
+        "description": description or f"Normalize dashboard phrase: {phrase}",
+    }
+    rules.append(rule)
+    save_normalization_data(data)
+    return []
+
+
+def edit_normalization_rule_from_form(form):
+    index, errors = normalization_rule_index_from_form(form)
+    if errors:
+        return errors
+
+    rule_errors = []
+    pattern = (form.get("normalization_pattern") or "").strip()
+    replacement = (form.get("normalization_replacement") or "").strip()
+    description = (form.get("normalization_description") or "").strip()
+
+    if not pattern:
+        rule_errors.append("Normalization pattern is required.")
+    if not replacement:
+        rule_errors.append("Normalization replacement is required.")
+    if len(pattern) > 240:
+        rule_errors.append("Normalization pattern must be 240 characters or fewer.")
+    if len(replacement) > 120:
+        rule_errors.append("Normalization replacement must be 120 characters or fewer.")
+    try:
+        re.compile(pattern)
+    except re.error:
+        rule_errors.append("Normalization pattern must be a valid regular expression.")
+    if rule_errors:
+        return rule_errors
+
+    data = load_normalization_data()
+    rules = data.get("rules") or []
+    if not isinstance(rules, list) or index >= len(rules):
+        return ["Normalization rule no longer exists."]
+    rules[index] = {
+        "pattern": pattern,
+        "replacement": replacement,
+        "description": description,
+    }
+    save_normalization_data(data)
+    return []
+
+
+def delete_normalization_rule_from_form(form):
+    index, errors = normalization_rule_index_from_form(form)
+    if errors:
+        return errors
+
+    data = load_normalization_data()
+    rules = data.get("rules") or []
+    if not isinstance(rules, list) or index >= len(rules):
+        return ["Normalization rule no longer exists."]
+    del rules[index]
+    save_normalization_data(data)
+    return []
+
+
+def normalization_rule_index_from_form(form):
+    try:
+        index = int((form.get("normalization_rule_index") or "").strip())
+    except ValueError:
+        return 0, ["Normalization rule index is invalid."]
+    if index < 0:
+        return 0, ["Normalization rule index is invalid."]
+    return index, []
+
+
+def normalization_pattern_for_phrase(phrase: str) -> str:
+    escaped_parts = [re.escape(part) for part in phrase.split()]
+    pattern = r"\s+".join(escaped_parts)
+    if phrase[0].isalnum():
+        pattern = rf"\b{pattern}"
+    if phrase[-1].isalnum():
+        pattern = rf"{pattern}\b"
+    return pattern
 
 
 def dashboard_oauth_configured():

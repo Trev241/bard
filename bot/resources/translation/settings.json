@@ -7,7 +7,7 @@
       "source_lang": "en",
       "mirror_lang": "fr",
       "providers": {
-        "en->fr": "gemini",
+        "en->fr": "argos",
         "fr->en": "argos"
       },
       "auto_rewrite_enabled": false,
