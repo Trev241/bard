@@ -17,15 +17,52 @@ document.addEventListener("DOMContentLoaded", (event) => {
   let currentScroll = 0;
   let scrollDirection = 1;
 
-  let loops = gsap.utils.toArray(".abilities").map((line, i) => {
-    const links = line.querySelectorAll(".ability");
-    return horizontalLoop(links, {
-      repeat: -1,
-      speed: 1.5 + i * 0.5,
-      reversed: false,
-      paused: true,
-      paddingRight: parseFloat(gsap.getProperty(links[0], "marginRight", "px")),
+  let loops = [];
+  let abilitiesReady = false;
+  let fontsReady = !document.fonts;
+  let resizeRefresh;
+
+  const buildAbilityLoops = () => {
+    loops.forEach((tl) => tl.kill());
+    loops = [];
+
+    gsap.utils.toArray(".ability").forEach((item) => {
+      gsap.set(item, { clearProps: "x,xPercent" });
     });
+
+    loops = gsap.utils.toArray(".abilities").map((line, i) => {
+      const links = line.querySelectorAll(".ability");
+      return horizontalLoop(links, {
+        repeat: -1,
+        speed: 1.5 + i * 0.5,
+        reversed: false,
+        paused: true,
+        paddingRight: parseFloat(gsap.getProperty(links[0], "marginRight", "px")),
+      });
+    });
+  };
+
+  const startAbilityLoops = () => {
+    if (!abilitiesReady || !fontsReady) return;
+
+    buildAbilityLoops();
+    loops.forEach((tl) => tl.resume());
+  };
+
+  if (document.fonts) {
+    document.fonts.ready
+      .catch(() => null)
+      .then(() => {
+        fontsReady = true;
+        startAbilityLoops();
+      });
+  }
+
+  window.addEventListener("resize", () => {
+    if (!abilitiesReady) return;
+
+    clearTimeout(resizeRefresh);
+    resizeRefresh = setTimeout(startAbilityLoops, 150);
   });
 
   window.addEventListener("scroll", () => {
@@ -83,7 +120,10 @@ document.addEventListener("DOMContentLoaded", (event) => {
       width: "100%",
       padding: "2rem",
       delay: 2,
-      onComplete: () => loops.forEach((tl) => tl.resume()),
+      onComplete: () => {
+        abilitiesReady = true;
+        startAbilityLoops();
+      },
     }
   );
 });

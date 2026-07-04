@@ -1,5 +1,6 @@
 import asyncio
 import builtins
+import json
 
 import pytest
 import requests
@@ -139,6 +140,21 @@ class FakeClient:
         return self.channels.get(channel_id)
 
 
+def make_test_normalizer(tmp_path, rules):
+    rules_path = tmp_path / "normalization.test.json"
+    rules_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "source_language": "en",
+                "rules": rules,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return CasualEnglishNormalizer(rules_path)
+
+
 @pytest.mark.asyncio
 async def test_translation_service_uses_provider_and_cache():
     provider = FakeTranslationProvider()
@@ -223,10 +239,27 @@ async def test_translation_service_rejects_unsupported_pair():
 
 
 @pytest.mark.asyncio
-async def test_translation_service_normalizes_casual_english_before_provider():
+async def test_translation_service_normalizes_casual_english_before_provider(tmp_path):
     provider = FakeTranslationProvider()
+    normalizer = make_test_normalizer(
+        tmp_path,
+        [
+            {
+                "pattern": r"\ban\s+llm\b",
+                "replacement": "a large language model",
+            },
+            {
+                "pattern": (
+                    r"\bur\s+(?=(?:using|doing|going|making|being|trying|talking|"
+                    r"lying|asking|saying|playing|running|coming|working|looking|"
+                    r"getting)\b)"
+                ),
+                "replacement": "you are ",
+            },
+        ],
+    )
     service = TranslationService(
-        [SlangAwareTranslationProvider(provider)],
+        [SlangAwareTranslationProvider(provider, normalizer=normalizer)],
         cache=TranslationCache(max_size=0),
     )
 
@@ -241,10 +274,27 @@ async def test_translation_service_normalizes_casual_english_before_provider():
 
 
 @pytest.mark.asyncio
-async def test_translation_service_normalizes_slang_phrases_before_provider():
+async def test_translation_service_normalizes_slang_phrases_before_provider(tmp_path):
     provider = FakeTranslationProvider()
+    normalizer = make_test_normalizer(
+        tmp_path,
+        [
+            {
+                "pattern": r"\bdon['\u2019]?t\b",
+                "replacement": "do not",
+            },
+            {
+                "pattern": r"\bbs\b",
+                "replacement": "bullshit",
+            },
+            {
+                "pattern": r"\bvas\b",
+                "replacement": "what's up",
+            },
+        ],
+    )
     service = TranslationService(
-        [SlangAwareTranslationProvider(provider)],
+        [SlangAwareTranslationProvider(provider, normalizer=normalizer)],
         cache=TranslationCache(max_size=0),
     )
 
