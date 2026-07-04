@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from bot.core.translation_settings import TranslationSettingsStore
+
 load_dotenv()
 
 
@@ -96,13 +98,13 @@ TRANSLATION_GEMINI_BATCH_ENABLED = parse_bool_env(
     "TRANSLATION_GEMINI_BATCH_ENABLED",
     True,
 )
-TRANSLATION_GEMINI_BATCH_WINDOW_MS = parse_int_env(
+DEFAULT_TRANSLATION_GEMINI_BATCH_WINDOW_MS = parse_int_env(
     "TRANSLATION_GEMINI_BATCH_WINDOW_MS",
-    750,
+    2000,
 )
-TRANSLATION_GEMINI_BATCH_MAX_SIZE = parse_int_env(
+DEFAULT_TRANSLATION_GEMINI_BATCH_MAX_SIZE = parse_int_env(
     "TRANSLATION_GEMINI_BATCH_MAX_SIZE",
-    5,
+    10,
 )
 WRITING_FEEDBACK_ENABLED = parse_bool_env("WRITING_FEEDBACK_ENABLED", False)
 WRITING_FEEDBACK_PROVIDER = os.getenv(
@@ -162,6 +164,16 @@ TRANSLATION_CACHE_FILE = Path(
         str(TRANSLATION_RESOURCES_DIR / "cache.sqlite3"),
     )
 )
+
+_TRANSLATION_GLOBAL_SETTINGS = TranslationSettingsStore(
+    TRANSLATION_GUILD_SETTINGS_FILE,
+    default_batch_window_ms=DEFAULT_TRANSLATION_GEMINI_BATCH_WINDOW_MS,
+    default_batch_max_size=DEFAULT_TRANSLATION_GEMINI_BATCH_MAX_SIZE,
+).get_global()
+TRANSLATION_GEMINI_BATCH_WINDOW_MS = (
+    _TRANSLATION_GLOBAL_SETTINGS.gemini_batch_window_ms
+)
+TRANSLATION_GEMINI_BATCH_MAX_SIZE = _TRANSLATION_GLOBAL_SETTINGS.gemini_batch_max_size
 
 AUTOPLAY_PLAYLIST_URL = os.getenv(
     "AUTOPLAY_PLAYLIST_URL",

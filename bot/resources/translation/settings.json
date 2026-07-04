@@ -1,5 +1,11 @@
 {
   "version": 1,
+  "global": {
+    "translation": {
+      "gemini_batch_window_ms": 2000,
+      "gemini_batch_max_size": 10
+    }
+  },
   "guilds": {
     "423759031157653504": {
       "source_channel_id": 554542209010106377,

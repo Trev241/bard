@@ -199,6 +199,41 @@ async def test_translation_service_cache_is_scoped_by_guild():
 
 
 @pytest.mark.asyncio
+async def test_translation_cache_normalizes_short_chat_variants():
+    provider = FakeTranslationProvider()
+    service = TranslationService(
+        [provider],
+        cache=TranslationCache(max_size=10),
+        max_concurrency=1,
+    )
+    pair = LanguagePair("en", "fr")
+
+    first = await service.translate(TranslationRequest("Hi!", pair))
+    second = await service.translate(TranslationRequest(" hi :)", pair))
+
+    assert second == first
+    assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_translation_cache_preserves_meaningful_punctuation():
+    provider = FakeTranslationProvider()
+    service = TranslationService(
+        [provider],
+        cache=TranslationCache(max_size=10),
+        max_concurrency=1,
+    )
+    pair = LanguagePair("en", "fr")
+
+    first = await service.translate(TranslationRequest("Let's eat, grandma", pair))
+    second = await service.translate(TranslationRequest("lets eat grandma", pair))
+
+    assert first.translated_text == "translated:Let's eat, grandma"
+    assert second.translated_text == "translated:lets eat grandma"
+    assert provider.calls == 2
+
+
+@pytest.mark.asyncio
 async def test_sqlite_translation_cache_persists_between_instances(tmp_path):
     cache_path = tmp_path / "translation-cache.sqlite3"
     provider = FakeTranslationProvider()

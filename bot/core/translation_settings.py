@@ -5,6 +5,12 @@ from typing import Dict, Iterable, Optional
 
 
 @dataclass(frozen=True)
+class GlobalTranslationSettings:
+    gemini_batch_window_ms: int
+    gemini_batch_max_size: int
+
+
+@dataclass(frozen=True)
 class GuildTranslationSettings:
     guild_id: int
     source_channel_id: Optional[int] = None
@@ -37,17 +43,19 @@ class GuildTranslationSettings:
 
 
 class TranslationSettingsStore:
-    def __init__(self, path: Path):
+    def __init__(
+        self,
+        path: Path,
+        *,
+        default_batch_window_ms: int = 2000,
+        default_batch_max_size: int = 10,
+    ):
         self.path = Path(path)
+        self.default_batch_window_ms = default_batch_window_ms
+        self.default_batch_max_size = default_batch_max_size
 
     def load_all(self) -> Dict[int, GuildTranslationSettings]:
-        if not self.path.exists():
-            return {}
-
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
+        data = self._read_data()
 
         settings = {}
         for guild_id, raw_settings in (data.get("guilds") or {}).items():
@@ -57,6 +65,30 @@ class TranslationSettingsStore:
                 continue
             settings[setting.guild_id] = setting
         return settings
+
+    def get_global(self) -> GlobalTranslationSettings:
+        global_settings = self._read_data().get("global") or {}
+        translation = global_settings.get("translation") or {}
+        return GlobalTranslationSettings(
+            gemini_batch_window_ms=clamp_int(
+                translation.get("gemini_batch_window_ms"),
+                minimum=0,
+                maximum=10000,
+                default=self.default_batch_window_ms,
+            ),
+            gemini_batch_max_size=clamp_int(
+                translation.get("gemini_batch_max_size"),
+                minimum=1,
+                maximum=50,
+                default=self.default_batch_max_size,
+            ),
+        )
+
+    def save_global(self, settings: GlobalTranslationSettings) -> None:
+        data = self._read_data()
+        global_settings = data.setdefault("global", {})
+        global_settings["translation"] = asdict(settings)
+        self._write_data(data)
 
     def get(self, guild_id: int) -> GuildTranslationSettings:
         return self.load_all().get(
@@ -70,14 +102,31 @@ class TranslationSettingsStore:
         self.save_all(settings.values())
 
     def save_all(self, settings: Iterable[GuildTranslationSettings]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "version": 1,
-            "guilds": {
-                str(setting.guild_id): self._setting_to_data(setting)
-                for setting in settings
-            },
+        data = self._read_data()
+        data["version"] = 1
+        data["guilds"] = {
+            str(setting.guild_id): self._setting_to_data(setting)
+            for setting in settings
         }
+        self._write_data(data)
+
+    def _read_data(self) -> dict:
+        if not self.path.exists():
+            return {"version": 1, "guilds": {}}
+
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"version": 1, "guilds": {}}
+
+        if not isinstance(data, dict):
+            return {"version": 1, "guilds": {}}
+        data.setdefault("version", 1)
+        data.setdefault("guilds", {})
+        return data
+
+    def _write_data(self, data: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     @staticmethod
@@ -121,3 +170,11 @@ def clamp_score(value) -> int:
     except (TypeError, ValueError):
         score = 25
     return max(0, min(score, 100))
+
+
+def clamp_int(value, *, minimum: int, maximum: int, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))

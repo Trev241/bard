@@ -34,7 +34,7 @@ Bard can play songs on demand and manages all queued songs using an internal que
 
 Bard hosts a web dashboard that is accessible on your machine's IP address on port 5000. If you are on the same machine that the bot is hosted on, you can access it at http://127.0.0.1:5000.
 
-Translation mirror settings can be edited at `/dashboard/translation`. The page writes guild-specific non-secret settings to `bot/resources/translation/settings.json` and live-reloads the running translation cog after saving.
+Translation mirror settings can be edited at `/dashboard/translation`. The page writes guild-specific non-secret settings and global runtime tuning to `bot/resources/translation/settings.json`, and live-reloads the running translation cog after saving guild mirror settings.
 
 Dashboard routes are protected with Discord OAuth by default. Configure these values in `.env`:
 
@@ -66,8 +66,8 @@ TRANSLATION_NORMALIZE_SLANG=true
 TRANSLATION_SKIP_LOW_VALUE_MESSAGES=true
 TRANSLATION_GEMINI_RATE_LIMIT_COOLDOWN_SECONDS=60
 TRANSLATION_GEMINI_BATCH_ENABLED=true
-TRANSLATION_GEMINI_BATCH_WINDOW_MS=750
-TRANSLATION_GEMINI_BATCH_MAX_SIZE=5
+TRANSLATION_GEMINI_BATCH_WINDOW_MS=2000
+TRANSLATION_GEMINI_BATCH_MAX_SIZE=10
 WRITING_FEEDBACK_ENABLED=true
 WRITING_FEEDBACK_PROVIDER=grammalecte
 WRITING_FEEDBACK_LANGUAGES=fr
@@ -79,9 +79,9 @@ WRITING_FEEDBACK_GEMINI_MODEL=gemini-3.5-flash
 WRITING_FEEDBACK_LLM_RATE_LIMIT_COOLDOWN_SECONDS=300
 ```
 
-Bard loads translation channel pairs and per-direction engines from `bot/resources/translation/settings.json`, which is managed through the dashboard translation settings page. If a guild is missing source channel, mirror channel, language codes, or either direction's translation provider in that settings file, translation mirroring is unavailable for that guild instead of falling back to `.env`.
+Bard loads translation channel pairs, per-direction engines, and dashboard-editable global tuning from `bot/resources/translation/settings.json`, which is managed through the dashboard translation settings page. `.env` values for Gemini batch window and batch size are used as startup defaults when the global section is absent from that settings file. If a guild is missing source channel, mirror channel, language codes, or either direction's translation provider in the guild settings file, translation mirroring is unavailable for that guild instead of falling back to `.env`.
 
-`TRANSLATION_CACHE_SIZE` controls the maximum number of cached translations. When `TRANSLATION_PERSISTENT_CACHE_ENABLED=true`, Bard stores those entries in `TRANSLATION_CACHE_FILE` so repeated phrases survive restarts. Cache entries are scoped by guild, language direction, normalized text, and selected translation route.
+`TRANSLATION_CACHE_SIZE` controls the maximum number of cached translations. When `TRANSLATION_PERSISTENT_CACHE_ENABLED=true`, Bard stores those entries in `TRANSLATION_CACHE_FILE` so repeated phrases survive restarts. Cache entries are scoped by guild, language direction, normalized text, and selected translation route. Short simple chat phrases are normalized for cache lookup, so variants like `Hi!`, `hi`, and `hi :)` can reuse the same cached translation while longer or punctuation-sensitive text keeps a stricter cache key.
 
 `TRANSLATION_MIRROR_REGISTRY_SIZE` controls how many recent mirrored message pairs Bard keeps in memory for reply mapping and loop prevention. Older pairs are pruned automatically to prevent long-running memory growth.
 

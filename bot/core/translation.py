@@ -117,8 +117,33 @@ class TranslationCache:
             str(request.context.get("guild_id") or ""),
             request.pair.source.casefold(),
             request.pair.target.casefold(),
-            " ".join(request.text.split()),
+            normalize_translation_cache_text(request.text),
         )
+
+
+def normalize_translation_cache_text(text: str) -> str:
+    normalized = " ".join(str(text or "").split())
+    simplified = normalized.strip()
+
+    while simplified and not simplified[0].isalnum():
+        simplified = simplified[1:].lstrip()
+    while simplified and not simplified[-1].isalnum():
+        simplified = simplified[:-1].rstrip()
+
+    if _is_simple_chat_cache_text(simplified):
+        return simplified.casefold()
+
+    return normalized
+
+
+def _is_simple_chat_cache_text(text: str) -> bool:
+    if not text or len(text) > 80:
+        return False
+    if any(character.isdigit() for character in text):
+        return False
+    if re.search(r"https?://|www\.|<[@#&:]|[/\\]", text, re.IGNORECASE):
+        return False
+    return re.fullmatch(r"[\w\s'\u2019-]+", text, re.UNICODE) is not None
 
 
 class SQLiteTranslationCache(TranslationCache):

@@ -24,6 +24,7 @@ import requests
 from bot.cogs.music import Music
 from bot.core.logging_service import recent_logs
 from bot.core.translation_settings import (
+    GlobalTranslationSettings,
     GuildTranslationSettings,
     TranslationSettingsStore,
     direction_key,
@@ -37,7 +38,9 @@ DISCORD_OAUTH_TOKEN_URL = f"{DISCORD_API_BASE_URL}/oauth2/token"
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 NORMALIZATION_RULES_FILE = config.TRANSLATION_RESOURCES_DIR / "normalization.en.json"
 TRANSLATION_SETTINGS_STORE = TranslationSettingsStore(
-    config.TRANSLATION_GUILD_SETTINGS_FILE
+    config.TRANSLATION_GUILD_SETTINGS_FILE,
+    default_batch_window_ms=config.DEFAULT_TRANSLATION_GEMINI_BATCH_WINDOW_MS,
+    default_batch_max_size=config.DEFAULT_TRANSLATION_GEMINI_BATCH_MAX_SIZE,
 )
 
 
@@ -175,41 +178,53 @@ def translation_settings_dashboard():
     status = None
     errors = []
     guilds = authorized_dashboard_guilds()
+    active_tab = normalized_translation_tab(request.args.get("tab"))
     selected_guild_id = selected_dashboard_guild_id(guilds)
     selected_guild = guild_by_id(selected_guild_id)
 
     if request.method == "POST":
         selected_guild_id = selected_dashboard_guild_id(guilds, request.form)
         selected_guild = guild_by_id(selected_guild_id)
-        if selected_guild is None:
-            errors.append("Choose a guild before changing translation settings.")
+        action = request.form.get("action", "save_mirror_settings")
+        active_tab = tab_for_action(action)
 
-        action = request.form.get("action", "save")
-        if action == "reset" and selected_guild is not None:
-            TRANSLATION_SETTINGS_STORE.save(
-                GuildTranslationSettings(guild_id=selected_guild.id)
-            )
-            schedule_translation_settings_reload()
-            status = "reset"
-        elif action == "add_normalization_rule" and selected_guild is not None:
+        if action == "save_batch_config":
+            batch_errors = save_batch_config_from_form(request.form)
+            errors.extend(batch_errors)
+            if not errors:
+                status = "batch_config_saved"
+        elif action == "add_normalization_rule":
             normalization_errors = add_normalization_rule_from_form(request.form)
             errors.extend(normalization_errors)
             if not errors:
                 schedule_translation_settings_reload()
                 status = "normalization_added"
-        elif action == "edit_normalization_rule" and selected_guild is not None:
+        elif action == "edit_normalization_rule":
             normalization_errors = edit_normalization_rule_from_form(request.form)
             errors.extend(normalization_errors)
             if not errors:
                 schedule_translation_settings_reload()
                 status = "normalization_updated"
-        elif action == "delete_normalization_rule" and selected_guild is not None:
+        elif action == "delete_normalization_rule":
             normalization_errors = delete_normalization_rule_from_form(request.form)
             errors.extend(normalization_errors)
             if not errors:
                 schedule_translation_settings_reload()
                 status = "normalization_deleted"
-        elif selected_guild is not None:
+        elif selected_guild is None:
+            errors.append("Choose a guild before changing translation settings.")
+        elif action == "reset" and selected_guild is not None:
+            TRANSLATION_SETTINGS_STORE.save(
+                GuildTranslationSettings(guild_id=selected_guild.id)
+            )
+            schedule_translation_settings_reload()
+            status = "reset"
+        elif action in {
+            "save_guild_settings",
+            "save_mirror_settings",
+            "save_feedback_settings",
+            "save",
+        }:
             setting, form_errors = translation_settings_from_form(
                 selected_guild,
                 request.form,
@@ -218,7 +233,17 @@ def translation_settings_dashboard():
             if not errors:
                 TRANSLATION_SETTINGS_STORE.save(setting)
                 schedule_translation_settings_reload()
-                status = "saved"
+                status = "guild_saved"
+        elif action == "save_translation_settings":
+            setting, form_errors = translation_settings_from_form(
+                selected_guild,
+                request.form,
+            )
+            errors.extend(form_errors)
+            if not errors:
+                TRANSLATION_SETTINGS_STORE.save(setting)
+                schedule_translation_settings_reload()
+                status = "translation_saved"
 
     settings = current_translation_dashboard_settings(selected_guild)
     return render_template(
@@ -227,6 +252,8 @@ def translation_settings_dashboard():
         selected_guild=selected_guild,
         channels=text_channels_for_guild(selected_guild),
         settings=settings,
+        batch_config=current_batch_config(),
+        active_tab=active_tab,
         normalization_rules=load_normalization_rules(),
         default_prompt=GeminiWritingRewriteProvider.DEFAULT_SYSTEM_PROMPT,
         status=status,
@@ -248,6 +275,98 @@ def current_translation_dashboard_settings(guild):
         return GuildTranslationSettings(guild_id=0)
 
     return TRANSLATION_SETTINGS_STORE.get(guild.id)
+
+
+def current_batch_config():
+    return {
+        "window_ms": config.TRANSLATION_GEMINI_BATCH_WINDOW_MS,
+        "max_size": config.TRANSLATION_GEMINI_BATCH_MAX_SIZE,
+    }
+
+
+def tab_for_action(action):
+    if action in {
+        "save_batch_config",
+        "add_normalization_rule",
+        "edit_normalization_rule",
+        "delete_normalization_rule",
+    }:
+        return "global"
+    return "guild"
+
+
+def normalized_translation_tab(tab):
+    tab = str(tab or "guild").strip().casefold()
+    if tab in {"guild", "global"}:
+        return tab
+    if tab in {"mirror", "translation", "feedback"}:
+        return "guild"
+    if tab == "normalization":
+        return "global"
+    return "guild"
+
+
+def save_batch_config_from_form(form):
+    batch_settings, errors = batch_config_from_form(form)
+    if errors:
+        return errors
+
+    persist_batch_config(batch_settings)
+    return []
+
+
+def batch_config_from_form(form):
+    window_ms, window_errors = int_from_form(
+        form,
+        "translation_gemini_batch_window_ms",
+        "Batch window",
+        minimum=0,
+        maximum=10000,
+    )
+    max_size, max_size_errors = int_from_form(
+        form,
+        "translation_gemini_batch_max_size",
+        "Batch size",
+        minimum=1,
+        maximum=50,
+    )
+    errors = window_errors + max_size_errors
+    if errors:
+        return None, errors
+
+    return (
+        GlobalTranslationSettings(
+            gemini_batch_window_ms=window_ms,
+            gemini_batch_max_size=max_size,
+        ),
+        [],
+    )
+
+
+def persist_batch_config(batch_settings):
+    TRANSLATION_SETTINGS_STORE.save_global(batch_settings)
+    config.TRANSLATION_GEMINI_BATCH_WINDOW_MS = (
+        batch_settings.gemini_batch_window_ms
+    )
+    config.TRANSLATION_GEMINI_BATCH_MAX_SIZE = batch_settings.gemini_batch_max_size
+    logger.info(
+        "Updated Gemini translation batching: window_ms=%s, max_size=%s.",
+        batch_settings.gemini_batch_window_ms,
+        batch_settings.gemini_batch_max_size,
+    )
+
+
+def int_from_form(form, field_name, label, *, minimum, maximum):
+    raw_value = (form.get(field_name) or "").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return None, [f"{label} must be a number from {minimum} to {maximum}."]
+
+    if not minimum <= value <= maximum:
+        return None, [f"{label} must be from {minimum} to {maximum}."]
+
+    return value, []
 
 
 def translation_settings_from_form(guild, form):

@@ -3,9 +3,11 @@ from werkzeug.datastructures import MultiDict
 from bot.dashboard import app as dashboard_app
 from bot.dashboard.app import (
     add_normalization_rule_from_form,
+    current_batch_config,
     delete_normalization_rule_from_form,
     edit_normalization_rule_from_form,
     normalization_pattern_for_phrase,
+    save_batch_config_from_form,
     translation_settings_from_form,
 )
 
@@ -50,6 +52,61 @@ def test_normalization_pattern_for_phrase_escapes_plain_text():
     assert normalization_pattern_for_phrase("omw") == r"\bomw\b"
     assert normalization_pattern_for_phrase("on my way") == r"\bon\s+my\s+way\b"
     assert normalization_pattern_for_phrase("c++") == r"\bc\+\+"
+
+
+def test_save_batch_config_updates_global_settings_and_live_config(tmp_path, monkeypatch):
+    settings_path = tmp_path / "settings.json"
+    store = dashboard_app.TranslationSettingsStore(settings_path)
+    monkeypatch.setattr(dashboard_app, "TRANSLATION_SETTINGS_STORE", store)
+    monkeypatch.setattr(
+        dashboard_app.config,
+        "TRANSLATION_GEMINI_BATCH_WINDOW_MS",
+        dashboard_app.config.TRANSLATION_GEMINI_BATCH_WINDOW_MS,
+    )
+    monkeypatch.setattr(
+        dashboard_app.config,
+        "TRANSLATION_GEMINI_BATCH_MAX_SIZE",
+        dashboard_app.config.TRANSLATION_GEMINI_BATCH_MAX_SIZE,
+    )
+
+    errors = save_batch_config_from_form(
+        MultiDict(
+            {
+                "translation_gemini_batch_window_ms": "2500",
+                "translation_gemini_batch_max_size": "12",
+            }
+        )
+    )
+
+    assert errors == []
+    assert dashboard_app.config.TRANSLATION_GEMINI_BATCH_WINDOW_MS == 2500
+    assert dashboard_app.config.TRANSLATION_GEMINI_BATCH_MAX_SIZE == 12
+    assert current_batch_config() == {"window_ms": 2500, "max_size": 12}
+    assert store.get_global() == dashboard_app.GlobalTranslationSettings(
+        gemini_batch_window_ms=2500,
+        gemini_batch_max_size=12,
+    )
+
+
+def test_save_batch_config_rejects_invalid_values(tmp_path, monkeypatch):
+    settings_path = tmp_path / "settings.json"
+    store = dashboard_app.TranslationSettingsStore(settings_path)
+    monkeypatch.setattr(dashboard_app, "TRANSLATION_SETTINGS_STORE", store)
+
+    errors = save_batch_config_from_form(
+        MultiDict(
+            {
+                "translation_gemini_batch_window_ms": "10001",
+                "translation_gemini_batch_max_size": "0",
+            }
+        )
+    )
+
+    assert errors == [
+        "Batch window must be from 0 to 10000.",
+        "Batch size must be from 1 to 50.",
+    ]
+    assert not settings_path.exists()
 
 
 def test_add_normalization_rule_from_form_appends_rule(tmp_path, monkeypatch):
