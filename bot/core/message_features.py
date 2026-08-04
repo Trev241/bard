@@ -20,37 +20,52 @@ class PingAutomation:
 
     def __init__(self, client):
         self.client = client
-        self._last_message = None
-        self._repetitions = 0
+        # A single global "last message" makes an otherwise valid sequence fail
+        # whenever traffic from another user or channel arrives between mentions.
+        # Keep independent sequences per author and channel instead.
+        self._sequences = {}
+
+    @staticmethod
+    def _sequence_key(message):
+        return (message.channel.id, message.author.id)
+
+    @staticmethod
+    def _mention_ids(message):
+        return {member.id for member in message.mentions}
 
     async def handle_message(self, message: Message):
         util_base = self.client.get_cog("Utils")
         if not util_base:
-            self._last_message = message
             return
 
         if util_base.is_pinging and util_base.ping_who.get(message.author, 0) > 0:
             util_base.ping_who[message.author] = 0
             await util_base.channel.send("You're back!")
 
-        if (
-            self._last_message
-            and len(message.mentions) > 0
-            and set(self._last_message.mentions) == set(message.mentions)
+        key = self._sequence_key(message)
+        last_message, repetitions = self._sequences.get(key, (None, 0))
+        is_repetition = (
+            last_message
+            and message.mentions
+            and self._mention_ids(last_message) == self._mention_ids(message)
             and message.type == MessageType.default
-            and (message.created_at - self._last_message.created_at).total_seconds()
+            and 0
+            <= (message.created_at - last_message.created_at).total_seconds()
             < self.AUTO_PING_MAX_INTERVAL
-        ):
-            self._repetitions += 1
-            if self._repetitions >= self.AUTO_PING_THRESHOLD:
-                ctx = await self.client.get_context(message)
-                if await is_trusted_user(ctx):
-                    await util_base.ping(message.channel, message.mentions, 25)
-                self._repetitions = 0
-        else:
-            self._repetitions = 0
+        )
 
-        self._last_message = message
+        if is_repetition:
+            repetitions += 1
+            if repetitions >= self.AUTO_PING_THRESHOLD:
+                # Reset before awaiting so concurrent message events cannot start
+                # the same automatic ping sequence twice.
+                self._sequences[key] = (message, 0)
+                await util_base.ping(message.channel, message.mentions, 25)
+                return
+        else:
+            repetitions = 0
+
+        self._sequences[key] = (message, repetitions)
 
 
 class StickerResponder:
